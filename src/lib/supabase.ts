@@ -26,7 +26,7 @@ import {
 } from '@/types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mock-sampath-jewellery.supabase.co';
-const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'mock-key-12345';
+const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || 'mock-key-12345';
 
 export const supabase = createClient(supabaseUrl, supabasePublishableKey);
 
