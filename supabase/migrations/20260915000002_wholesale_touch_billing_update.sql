@@ -1,0 +1,40 @@
+-- ============================================================================
+-- SAMPATH JEWELLERY ERP — WHOLESALE TOUCH BILLING & 916 GOLD SETTLEMENT UPDATE
+-- Migration Script
+-- ============================================================================
+
+-- 1. ALTER CUSTOMERS TABLE for Customer-Specific Touch
+ALTER TABLE customers
+ADD COLUMN IF NOT EXISTS default_actual_touch NUMERIC(5,2) DEFAULT 37.00,
+ADD COLUMN IF NOT EXISTS default_profit_touch NUMERIC(5,2) DEFAULT 10.00,
+ADD COLUMN IF NOT EXISTS default_billing_touch NUMERIC(5,2) DEFAULT 47.00;
+
+-- 2. ALTER WHOLESALE ISSUES TABLE for Touch Totals & 916 Gold Payments
+ALTER TABLE wholesale_issues
+ADD COLUMN IF NOT EXISTS total_deduction_weight_g NUMERIC(10,3) DEFAULT 0.000,
+ADD COLUMN IF NOT EXISTS total_fine_gold_g NUMERIC(10,3) DEFAULT 0.000,
+ADD COLUMN IF NOT EXISTS gold_rate_per_gram NUMERIC(12,2) DEFAULT 7450.00,
+ADD COLUMN IF NOT EXISTS total_cash_value NUMERIC(12,2) DEFAULT 0.00,
+ADD COLUMN IF NOT EXISTS cash_paid NUMERIC(12,2) DEFAULT 0.00,
+ADD COLUMN IF NOT EXISTS gold_916_weight_paid_g NUMERIC(10,3) DEFAULT 0.000,
+ADD COLUMN IF NOT EXISTS gold_916_rate NUMERIC(12,2) DEFAULT 6830.00,
+ADD COLUMN IF NOT EXISTS gold_916_value_paid NUMERIC(12,2) DEFAULT 0.00,
+ADD COLUMN IF NOT EXISTS remaining_balance NUMERIC(12,2) DEFAULT 0.00;
+
+-- 3. ALTER WHOLESALE ISSUE ITEMS TABLE for Touch Calculations
+ALTER TABLE wholesale_issue_items
+ADD COLUMN IF NOT EXISTS deduction_weight_g NUMERIC(10,3) DEFAULT 0.000,
+ADD COLUMN IF NOT EXISTS actual_touch NUMERIC(5,2) DEFAULT 37.00,
+ADD COLUMN IF NOT EXISTS profit_touch NUMERIC(5,2) DEFAULT 10.00,
+ADD COLUMN IF NOT EXISTS billing_touch NUMERIC(5,2) DEFAULT 47.00,
+ADD COLUMN IF NOT EXISTS fine_gold_g NUMERIC(10,3) DEFAULT 0.000;
+
+-- 4. ALTER WHOLESALE PAYMENTS TABLE for Pure 916 Gold & Cash Payments
+ALTER TABLE wholesale_payments
+ADD COLUMN IF NOT EXISTS payment_method TEXT CHECK (payment_method IN ('cash', 'gold_916', 'split')) DEFAULT 'cash',
+ADD COLUMN IF NOT EXISTS cash_amount NUMERIC(12,2) DEFAULT 0.00,
+ADD COLUMN IF NOT EXISTS gold_weight_g NUMERIC(10,3) DEFAULT 0.000,
+ADD COLUMN IF NOT EXISTS gold_purity TEXT DEFAULT '916',
+ADD COLUMN IF NOT EXISTS gold_rate NUMERIC(12,2) DEFAULT 6830.00,
+ADD COLUMN IF NOT EXISTS gold_value NUMERIC(12,2) DEFAULT 0.00;
+

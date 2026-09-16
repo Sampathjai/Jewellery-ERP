@@ -1,0 +1,17 @@
+{
+  "short_name": "Shankar ERP",
+  "name": "Shankar Jewellery ERP & Wholesale Management",
+  "icons": [
+    {
+      "src": "/gold-logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#121217",
+  "theme_color": "#d4af37",
+  "display": "standalone",
+  "orientation": "any"
+}
+
