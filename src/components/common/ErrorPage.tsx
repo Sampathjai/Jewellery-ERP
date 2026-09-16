@@ -142,6 +142,13 @@ export const ErrorPage: React.FC<ErrorPageProps> = ({
           </button>
 
           <button
+            onClick={() => navigate('/login')}
+            className="flex items-center gap-2 rounded-xl border border-gold-400/40 bg-gold-50/50 px-4 py-2.5 text-xs font-bold text-amber-900 hover:bg-gold-100 dark:border-gold-800 dark:bg-gold-950/40 dark:text-gold-300 transition-all active:scale-95"
+          >
+            Go to Login
+          </button>
+
+          <button
             onClick={() => navigate(-1)}
             className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-charcoal-700 dark:text-slate-400 dark:hover:bg-charcoal-800 transition-all"
           >

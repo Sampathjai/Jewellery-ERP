@@ -73,14 +73,30 @@ export const Dashboard: React.FC = () => {
     .filter((s) => s.status !== 'paid')
     .reduce((sum, s) => sum + s.balance_due, 0);
 
-  const totalExpenses = db.expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = (db.expenses || []).reduce((sum, e) => sum + (e.amount || 0), 0);
 
-  const grossProfit = monthSales * 0.18 + outstandingWholesaleBalances * 0.4;
+  // Compute real gross profit from actual database invoices and wholesale settlements
+  const retailGrossProfit = (db.retailInvoices || []).reduce((sum, inv) => {
+    const invCost = (inv.items || []).reduce((iSum, item) => iSum + (item.metal_value || 0), 0);
+    const profit = Math.max(0, (inv.total_amount || 0) - invCost);
+    return sum + profit;
+  }, 0);
+
+  const wholesaleGrossProfit = (db.wholesaleSettlements || []).reduce((sum, s) => sum + (s.shop_profit_share || 0), 0);
+
+  const grossProfit = retailGrossProfit + wholesaleGrossProfit;
   const netProfit = Math.max(0, grossProfit - totalExpenses);
 
-  const pendingPayments = db.retailInvoices
+  const pendingPayments = (db.retailInvoices || [])
     .filter((i) => i.payment_status !== 'paid')
-    .reduce((sum, i) => sum + i.balance_due, 0);
+    .reduce((sum, i) => sum + (i.balance_due || 0), 0);
+
+  // Dynamic Stock & Settlement Alerts from Database
+  const lowStockProducts = (db.products || []).filter((p) => p.quantity <= (p.minimum_stock || 5));
+  const overdueWholesaleIssues = (db.wholesaleIssues || []).filter(
+    (w) => w.status === 'active' && w.expected_return_date && new Date(w.expected_return_date) < new Date()
+  );
+  const pendingWholesaleSettlements = (db.wholesaleSettlements || []).filter((s) => s.balance_due > 0);
 
   // Dynamic Chart Data from DB
   const daysOfWeek = [
@@ -94,14 +110,14 @@ export const Dashboard: React.FC = () => {
   ];
 
   const dailySalesTrendData = daysOfWeek.map((d) => {
-    const retailTotal = db.retailInvoices
+    const retailTotal = (db.retailInvoices || [])
       .filter((i) => {
         const dt = new Date(i.invoice_date);
         return dt.getDay() === d.key;
       })
       .reduce((sum, i) => sum + (i.total_amount || 0), 0);
 
-    const wholesaleTotal = db.wholesaleIssues
+    const wholesaleTotal = (db.wholesaleIssues || [])
       .filter((w) => {
         const dt = new Date(w.issue_date);
         return dt.getDay() === d.key;
@@ -116,16 +132,18 @@ export const Dashboard: React.FC = () => {
   });
 
   const catCountMap = new Map<string, number>();
-  db.products.forEach((p) => {
+  (db.products || []).forEach((p) => {
     const cName = p.category_name || 'Jewellery';
-    catCountMap.set(cName, (catCountMap.get(cName) || 0) + p.quantity);
+    catCountMap.set(cName, (catCountMap.get(cName) || 0) + (p.quantity || 0));
   });
 
-  const totalProdQty = db.products.reduce((sum, p) => sum + p.quantity, 0) || 1;
-  const categoryDistribution = Array.from(catCountMap.entries()).slice(0, 4).map(([name, qty]) => ({
-    name,
-    value: Math.round((qty / totalProdQty) * 100),
-  }));
+  const totalProdQty = (db.products || []).reduce((sum, p) => sum + (p.quantity || 0), 0);
+  const categoryDistribution = totalProdQty > 0
+    ? Array.from(catCountMap.entries()).slice(0, 4).map(([name, qty]) => ({
+        name,
+        value: Math.round((qty / totalProdQty) * 100),
+      }))
+    : [];
 
   const COLORS = ['#d4af37', '#b8860b', '#f59e0b', '#3c3e4a'];
 
@@ -218,7 +236,7 @@ export const Dashboard: React.FC = () => {
           subtitle={language === 'ta' ? 'கடை ரொக்க விற்பனை' : 'Shop counter billing'}
           icon={ShoppingCart}
           highlight
-          trend={{ value: '12%', isPositive: true }}
+          trend={{ value: todaySales > 0 ? 'Live' : '0%', isPositive: true }}
         />
         <StatCard
           title={t('monthly_retail_sales')}
@@ -366,7 +384,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Business Alerts Banner */}
+      {/* Dynamic Business Alerts Banner */}
       <div className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 dark:border-gold-800/60 dark:bg-gold-950/20">
         <div className="flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-gold-400 shrink-0 mt-0.5" />
@@ -375,9 +393,24 @@ export const Dashboard: React.FC = () => {
               {language === 'ta' ? 'கடை எச்சரிக்கைகள் மற்றும் நினைவூட்டல்கள்' : 'System Reminders & Stock Alerts'}
             </h4>
             <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs text-amber-800 dark:text-gold-400">
-              <div>• <strong>ஸ்ரீ லட்சுமி ஜுவல்லரி:</strong> {language === 'ta' ? '15 நகைகள் 15 நாட்களுக்கு மேலாக வரவில்லை.' : '15 items pending return for over 15 days.'}</div>
-              <div>• <strong>குறைந்த இருப்பு:</strong> {language === 'ta' ? '22K ஆன்டிக் ஜிமிக்கி (2 மட்டுமே உள்ளது).' : '22K Gold Antique Jhumka (2 units remaining).'}</div>
-              <div>• <strong>நிலுவை லாபம்:</strong> {language === 'ta' ? 'கணக்கு WST-2026-001 இல் ₹24,550 பாக்கி உள்ளது.' : 'Settlement WST-2026-001 has ₹24,550 due balance.'}</div>
+              <div>
+                • <strong>{language === 'ta' ? 'குறைந்த இருப்பு எச்சரிக்கை:' : 'Low Stock Alerts:'}</strong>{' '}
+                {lowStockProducts.length > 0
+                  ? `${lowStockProducts[0].name} (${lowStockProducts[0].quantity} units remaining)`
+                  : 'All inventory levels are optimal.'}
+              </div>
+              <div>
+                • <strong>{language === 'ta' ? 'மொத்த வியாபார நிலுவை:' : 'Consignment Tracking:'}</strong>{' '}
+                {overdueWholesaleIssues.length > 0
+                  ? `${overdueWholesaleIssues[0].customer_name} has pending items overdue.`
+                  : 'No overdue consignment returns.'}
+              </div>
+              <div>
+                • <strong>{language === 'ta' ? 'நிலுவை தொகை பாக்கி:' : 'Pending Settlements:'}</strong>{' '}
+                {pendingWholesaleSettlements.length > 0
+                  ? `${pendingWholesaleSettlements[0].customer_name} has ${formatCurrency(pendingWholesaleSettlements[0].balance_due)} due.`
+                  : 'All wholesale settlements are clear.'}
+              </div>
             </div>
           </div>
         </div>
@@ -385,3 +418,4 @@ export const Dashboard: React.FC = () => {
     </div>
   );
 };
+

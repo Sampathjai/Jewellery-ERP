@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserProfile, UserRole, PermissionCode } from '@/types';
-import { getLocalDb, saveLocalDb } from './supabase';
+import { getLocalDb, saveLocalDb, supabase } from './supabase';
 import { hasPermission } from './utils';
 import { InactivityWarningModal } from '@/components/common/InactivityWarningModal';
 
@@ -70,6 +70,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Logout Handler
   const logout = useCallback((reason?: string) => {
+    if (supabase) {
+      try {
+        supabase.auth.signOut().catch((e) => console.warn('Supabase signout error:', e));
+      } catch (e) {
+        console.warn('Supabase signout exception:', e);
+      }
+    }
     setUser(null);
     setRole('admin');
     localStorage.removeItem('sampath_auth_user');

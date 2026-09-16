@@ -103,3 +103,4 @@ export const ConfigErrorPage: React.FC<ConfigErrorPageProps> = ({ onContinueDemo
     </div>
   );
 };
+

@@ -27,27 +27,34 @@ export const WholesaleHoldings: React.FC = () => {
 
   // Filter active consignment issues (where status is active or remaining items > 0)
   const activeHoldings = useMemo(() => {
-    return wholesaleIssues.flatMap((issue) => {
-      const customer = customers.find((c) => c.id === issue.customer_id);
+    return (wholesaleIssues || []).flatMap((issue) => {
+      if (!issue) return [];
+      const customer = (customers || []).find((c) => c?.id === issue.customer_id);
       const items = issue.items || [];
-      const activeItems = items.filter((item) => (item.quantity_remaining ?? item.quantity_issued) > 0);
+      const activeItems = items.filter((item) => item && (item.quantity_remaining ?? item.quantity_issued ?? 0) > 0);
 
       if (activeItems.length === 0 && issue.status !== 'active') return [];
 
       return activeItems.map((item) => {
-        const agreedTouch = customer?.agreed_customer_touch ?? item.actual_touch ?? 0;
-        const netW = item.net_weight_g || (item.gross_weight_g - item.deduction_weight_g) || 0;
-        const fineW = item.fine_gold_g || (netW * agreedTouch) / 100;
-        const remainingQty = item.quantity_remaining ?? item.quantity_issued;
-        const proportionalNetW = (netW / (item.quantity_issued || 1)) * remainingQty;
-        const proportionalFineW = (fineW / (item.quantity_issued || 1)) * remainingQty;
+        const agreedTouch = customer?.agreed_customer_touch ?? item?.actual_touch ?? 0;
+        const grossW = item?.gross_weight_g || 0;
+        const dedW = item?.deduction_weight_g || 0;
+        const netW = item?.net_weight_g || (grossW - dedW) || 0;
+        const fineW = item?.fine_gold_g || (netW * agreedTouch) / 100;
+        const qtyIssued = item?.quantity_issued || 1;
+        const remainingQty = item?.quantity_remaining ?? qtyIssued;
+        const proportionalNetW = (netW / qtyIssued) * remainingQty;
+        const proportionalFineW = (fineW / qtyIssued) * remainingQty;
+        const totalValuation = item?.unit_cost_valuation
+          ? item.unit_cost_valuation * remainingQty
+          : (item?.total_issue_value || 0);
 
         return {
-          issueId: issue.id,
-          issueNumber: issue.issue_number,
-          issueDate: issue.issue_date,
-          customerId: issue.customer_id,
-          customerName: issue.customer_name,
+          issueId: issue.id || `issue-${Date.now()}`,
+          issueNumber: issue.issue_number || 'WI-000',
+          issueDate: issue.issue_date || '',
+          customerId: issue.customer_id || '',
+          customerName: issue.customer_name || customer?.full_name || 'Wholesale Partner',
           dealerShop: customer?.shop_name || issue.customer_name || 'Wholesale Partner',
           customerCity: customer?.city || 'Trichy',
           agreedTouch,
@@ -55,7 +62,7 @@ export const WholesaleHoldings: React.FC = () => {
           remainingQty,
           proportionalNetW,
           proportionalFineW,
-          totalValuation: item.unit_cost_valuation ? item.unit_cost_valuation * remainingQty : item.total_issue_value,
+          totalValuation,
         };
       });
     });
@@ -63,6 +70,7 @@ export const WholesaleHoldings: React.FC = () => {
 
   const filteredHoldings = useMemo(() => {
     return activeHoldings.filter((h) => {
+      if (!h || !h.item) return false;
       const custName = (h.customerName || '').toLowerCase();
       const shopName = (h.dealerShop || '').toLowerCase();
       const prodName = (h.item.product_name || '').toLowerCase();
@@ -75,7 +83,7 @@ export const WholesaleHoldings: React.FC = () => {
         prodName.includes(query) ||
         issueNum.includes(query);
 
-      const matchesMetal = metalFilter === 'all' || h.item.metal_type === metalFilter;
+      const matchesMetal = metalFilter === 'all' || (h.item.metal_type || 'gold') === metalFilter;
       return matchesSearch && matchesMetal;
     });
   }, [activeHoldings, searchQuery, metalFilter]);
@@ -90,9 +98,10 @@ export const WholesaleHoldings: React.FC = () => {
     filteredHoldings.forEach((h) => {
       totalItemsCount += h.remainingQty;
       totalValuationINR += h.totalValuation;
-      if (h.item.metal_type === 'gold') {
+      const metal = (h.item?.metal_type || 'gold').toLowerCase();
+      if (metal === 'gold') {
         totalFineGoldG += h.proportionalFineW;
-      } else if (h.item.metal_type === 'silver') {
+      } else if (metal === 'silver') {
         totalFineSilverG += h.proportionalFineW;
       }
     });
