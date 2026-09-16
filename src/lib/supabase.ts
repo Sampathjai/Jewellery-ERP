@@ -30,13 +30,13 @@ const supabaseUrl =
   import.meta.env.NEXT_PUBLIC_SUPABASE_URL ||
   'https://czrqgnoqdbzdlarslqlk.supabase.co';
 
-const supabasePublishableKey =
+const supabaseKey =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
   'sb_publishable_gCtxdfxlqViuHBs-MAlcEQ_2NhkX8cz';
 
-export const supabase = createClient(supabaseUrl, supabasePublishableKey);
+export const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ============================================================================
 // MOCK PERSISTENT DATA STORAGE ENGINE FOR CLIENT/DEMO MODE
