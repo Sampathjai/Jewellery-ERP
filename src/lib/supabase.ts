@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { syncEngine } from './syncEngine';
 import {
   UserProfile,
   BusinessSettings,
@@ -871,9 +872,12 @@ export const getLocalDb = (): DbStore => {
   return defaultSeedStore;
 };
 
-export const saveLocalDb = (data: DbStore) => {
+export const saveLocalDb = (data: DbStore, tableName?: string, eventType?: 'INSERT' | 'UPDATE' | 'DELETE', payload?: any) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    if (tableName) {
+      syncEngine.notifyDataChange(tableName, eventType || 'UPDATE', payload);
+    }
   } catch (e) {
     console.error('Error saving local storage DB:', e);
   }

@@ -15,6 +15,8 @@ import {
   Menu,
 } from 'lucide-react';
 
+import { SyncStatusBadge } from '@/components/common/SyncStatusBadge';
+
 interface HeaderProps {
   onToggleSidebar: () => void;
   onToggleNotifications: () => void;
@@ -95,7 +97,9 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right / Center-Right Section */}
-      <div className="flex items-center gap-2 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Real-Time Sync Status Badge */}
+        <SyncStatusBadge />
         {/* Dynamic Welcome Back Banner */}
         <div className="hidden sm:flex items-center gap-1 text-xs font-semibold text-charcoal-900 dark:text-slate-100">
           <span>Welcome back, <strong className="font-bold text-amber-900 dark:text-gold-300">{displayName}</strong> 👋</span>

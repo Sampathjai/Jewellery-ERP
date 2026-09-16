@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
 import { NotificationDrawer } from './NotificationDrawer';
 import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { syncEngine } from '@/lib/syncEngine';
 import { NotificationItem } from '@/types';
 
 export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -12,6 +13,13 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
   const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
     return getLocalDb().notifications || [];
   });
+
+  useEffect(() => {
+    syncEngine.startRealtimeSync();
+    return () => {
+      syncEngine.stopRealtimeSync();
+    };
+  }, []);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
