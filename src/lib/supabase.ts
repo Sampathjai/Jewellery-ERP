@@ -25,8 +25,16 @@ import {
   PurchasePayment,
 } from '@/types';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mock-sampath-jewellery.supabase.co';
-const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || 'mock-key-12345';
+const supabaseUrl =
+  import.meta.env.VITE_SUPABASE_URL ||
+  import.meta.env.NEXT_PUBLIC_SUPABASE_URL ||
+  'https://czrqgnoqdbzdlarslqlk.supabase.co';
+
+const supabasePublishableKey =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  'sb_publishable_gCtxdfxlqViuHBs-MAlcEQ_2NhkX8cz';
 
 export const supabase = createClient(supabaseUrl, supabasePublishableKey);
 
