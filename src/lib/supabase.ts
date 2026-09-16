@@ -36,16 +36,18 @@ const getEnvVar = (key: string): string => {
   return '';
 };
 
-const rawSupabaseUrl =
+export const rawSupabaseUrl = (
   getEnvVar('VITE_SUPABASE_URL') ||
   getEnvVar('NEXT_PUBLIC_SUPABASE_URL') ||
-  'https://czrqgnoqdbzdlarslqlk.supabase.co';
+  'https://czrqgnoqdbzdlarslqlk.supabase.co'
+).trim();
 
-const rawSupabaseKey =
+export const rawSupabaseKey = (
   getEnvVar('VITE_SUPABASE_ANON_KEY') ||
   getEnvVar('VITE_SUPABASE_PUBLISHABLE_KEY') ||
   getEnvVar('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY') ||
-  'sb_publishable_gCtxdfxlqViuHBs-MAlcEQ_2NhkX8cz';
+  'sb_publishable_gCtxdfxlqViuHBs-MAlcEQ_2NhkX8cz'
+).trim();
 
 export const isValidHttpUrl = (urlStr: string): boolean => {
   if (!urlStr || typeof urlStr !== 'string') return false;
@@ -60,15 +62,16 @@ export const isValidHttpUrl = (urlStr: string): boolean => {
 };
 
 export const isSupabaseConfigured = (): boolean => {
-  return isValidHttpUrl(rawSupabaseUrl) && Boolean(rawSupabaseKey && rawSupabaseKey.trim().length > 0);
+  return isValidHttpUrl(rawSupabaseUrl) && Boolean(rawSupabaseKey && rawSupabaseKey.length > 0);
 };
 
 export const getSupabaseClient = () => {
   if (!isSupabaseConfigured()) {
+    console.warn('Supabase URL or Key is missing or invalid. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
     return null;
   }
   try {
-    return createClient(rawSupabaseUrl.trim(), rawSupabaseKey.trim());
+    return createClient(rawSupabaseUrl, rawSupabaseKey);
   } catch (e) {
     console.warn('Supabase createClient error prevented crash:', e);
     return null;
