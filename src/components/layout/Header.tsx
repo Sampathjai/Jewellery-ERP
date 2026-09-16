@@ -68,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
   const displayName = getUserDisplayName();
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur dark:border-charcoal-800 dark:bg-charcoal-900/95 sm:px-6">
+    <header className="flex min-h-[4rem] h-auto flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur dark:border-charcoal-800 dark:bg-charcoal-900/95 sm:px-6">
       {/* Mobile-only toggle sidebar & branding */}
       <div className="flex items-center gap-2 lg:hidden">
         <button
@@ -81,44 +81,45 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gold-500 text-charcoal-950 font-serif font-bold text-sm shadow-gold">
             SJ
           </div>
-          <span className="font-serif text-sm font-bold tracking-tight text-charcoal-900 dark:text-slate-100">
+          <span className="font-serif text-xs font-bold tracking-tight text-charcoal-900 dark:text-slate-100 sm:text-sm">
             {language === 'ta' ? 'சங்கர் ஜுவல்லரி' : 'Shankar Jewellery'}
           </span>
         </div>
       </div>
 
-      {/* Center: Today's Metal Rates Ticker */}
-      <div className="flex items-center gap-3 rounded-full border border-amber-200 bg-amber-50/70 px-3.5 py-1 text-xs text-amber-900 dark:border-gold-800/40 dark:bg-gold-950/30 dark:text-gold-300">
-        <TrendingUp className="h-3.5 w-3.5 text-gold-600" />
-        <span className="font-bold">{t('today_rates')}:</span>
-        <span>{t('gold_24k')}: <strong className="font-bold">{formatCurrency(todayRate.gold_24k_per_gram || 7450)}/g</strong></span>
+      {/* Center: Today's Metal Rates Ticker (Responsive) */}
+      <div className="flex flex-wrap items-center gap-2 rounded-full border border-amber-200 bg-amber-50/80 px-3 py-1 text-[11px] text-amber-900 dark:border-gold-800/40 dark:bg-gold-950/40 dark:text-gold-300 max-w-full overflow-x-auto">
+        <TrendingUp className="h-3.5 w-3.5 shrink-0 text-gold-600" />
+        <span className="font-bold shrink-0">{t('today_rates')}:</span>
+        <span className="whitespace-nowrap">{t('gold_24k')}: <strong className="font-bold">{formatCurrency(todayRate.gold_24k_per_gram || 7450)}/g</strong></span>
         <span className="text-amber-300 dark:text-gold-700">|</span>
-        <span>{t('silver_925')}: <strong className="font-bold">{formatCurrency(todayRate.silver_per_gram || 89.5)}/g</strong></span>
+        <span className="whitespace-nowrap">{t('silver_925')}: <strong className="font-bold">{formatCurrency(todayRate.silver_per_gram || 89.5)}/g</strong></span>
       </div>
 
       {/* Right / Center-Right Section */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3">
         {/* Real-Time Sync Status Badge */}
         <SyncStatusBadge />
+
         {/* Dynamic Welcome Back Banner */}
-        <div className="hidden sm:flex items-center gap-1 text-xs font-semibold text-charcoal-900 dark:text-slate-100">
+        <div className="hidden md:flex items-center gap-1 text-xs font-semibold text-charcoal-900 dark:text-slate-100">
           <span>Welcome back, <strong className="font-bold text-amber-900 dark:text-gold-300">{displayName}</strong> 👋</span>
         </div>
 
         {/* ENG / தமிழ் Language Toggle Button */}
         <button
           onClick={toggleLanguage}
-          className="flex items-center gap-1.5 rounded-lg border border-gold-400 bg-gold-50 px-2.5 py-1.5 text-xs font-bold text-charcoal-950 shadow-sm hover:bg-gold-100 dark:border-gold-700 dark:bg-gold-950/60 dark:text-gold-200"
+          className="flex items-center gap-1 rounded-lg border border-gold-400 bg-gold-50 px-2 py-1.5 text-xs font-bold text-charcoal-950 shadow-sm hover:bg-gold-100 dark:border-gold-700 dark:bg-gold-950/60 dark:text-gold-200"
           title="Switch Language (English / தமிழ்)"
         >
-          <Globe className="h-4 w-4 text-gold-600" />
+          <Globe className="h-3.5 w-3.5 text-gold-600" />
           <span>{language === 'en' ? 'தமிழ்' : 'English'}</span>
         </button>
 
         {/* Dark Mode Toggle */}
         <button
           onClick={toggleDarkMode}
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300 dark:hover:bg-charcoal-800"
+          className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300 dark:hover:bg-charcoal-800"
           title="Toggle Light/Dark Theme"
         >
           {darkMode ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-slate-600" />}
@@ -127,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Notifications Toggle */}
         <button
           onClick={onToggleNotifications}
-          className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300 dark:hover:bg-charcoal-800"
+          className="relative flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300 dark:hover:bg-charcoal-800"
           title="In-app Notifications"
         >
           <Bell className="h-4 w-4" />

@@ -922,6 +922,24 @@ export const resetToCleanProductionData = () => {
 // CUSTOMER PERSISTENCE & MULTI-DEVICE SYNC HELPERS
 // ============================================================================
 
+export const fetchCustomersFromSupabase = async (): Promise<Customer[]> => {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        const db = getLocalDb();
+        db.customers = data as Customer[];
+        saveLocalDb(db);
+        return data as Customer[];
+      }
+    } catch (err) {
+      console.warn('Error fetching customers from Supabase:', err);
+    }
+  }
+  const db = getLocalDb();
+  return db.customers || [];
+};
+
 export const saveCustomerRecord = async (customer: Customer) => {
   const db = getLocalDb();
   const existingIndex = db.customers.findIndex((c) => c.id === customer.id);

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb } from '@/lib/supabase';
+import { getLocalDb, fetchCustomersFromSupabase } from '@/lib/supabase';
+import { syncEngine } from '@/lib/syncEngine';
 import { Customer, CustomerType } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 import { openWhatsAppClickToChat, buildWhatsAppPaymentReminder } from '@/lib/whatsapp';
@@ -9,11 +10,38 @@ import { Plus, Search, MessageSquare, Phone, MapPin, Eye, Building } from 'lucid
 
 export const CustomersList: React.FC = () => {
   const navigate = useNavigate();
-  const [db] = useState(getLocalDb());
+  const [db, setDb] = useState(getLocalDb());
+  const [customersList, setCustomersList] = useState<Customer[]>(db.customers || []);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
 
-  const customers = db.customers.filter((c) => {
+  const loadCustomers = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await fetchCustomersFromSupabase();
+      setCustomersList(data);
+      setDb(getLocalDb());
+    } catch (e) {
+      console.warn('Error loading customers list:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCustomers();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'customers' || tableName === 'general') {
+        loadCustomers();
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [loadCustomers]);
+
+  const customers = customersList.filter((c) => {
     const matchesSearch =
       c.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.customer_code.toLowerCase().includes(searchTerm.toLowerCase()) ||

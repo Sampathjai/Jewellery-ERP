@@ -1,17 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb } from '@/lib/supabase';
+import { getLocalDb, fetchCustomersFromSupabase } from '@/lib/supabase';
+import { syncEngine } from '@/lib/syncEngine';
+import { Customer } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 import { openWhatsAppClickToChat, buildWhatsAppWholesaleIssueMessage } from '@/lib/whatsapp';
 import { HandCoins, Plus, Search, Building, Phone, MapPin, Eye, MessageSquare, BadgePercent } from 'lucide-react';
 
 export const WholesaleCustomers: React.FC = () => {
   const navigate = useNavigate();
-  const db = getLocalDb();
+  const [db, setDb] = useState(getLocalDb());
+  const [customersList, setCustomersList] = useState<Customer[]>(db.customers || []);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const wholesaleCustomers = db.customers.filter(
+  const loadWholesaleCustomers = useCallback(async () => {
+    try {
+      const data = await fetchCustomersFromSupabase();
+      setCustomersList(data);
+      setDb(getLocalDb());
+    } catch (e) {
+      console.warn('Error loading wholesale customers:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWholesaleCustomers();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'customers' || tableName === 'wholesale_issues' || tableName === 'general') {
+        loadWholesaleCustomers();
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [loadWholesaleCustomers]);
+
+  const wholesaleCustomers = customersList.filter(
     (c) =>
       c.customer_type === 'wholesale' &&
       (c.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
