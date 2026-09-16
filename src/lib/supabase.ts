@@ -25,18 +25,57 @@ import {
   PurchasePayment,
 } from '@/types';
 
-const supabaseUrl =
-  import.meta.env.VITE_SUPABASE_URL ||
-  import.meta.env.NEXT_PUBLIC_SUPABASE_URL ||
+const getEnvVar = (key: string): string => {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      return (import.meta.env[key] as string) || '';
+    }
+  } catch (e) {
+    // Ignore environment resolution error
+  }
+  return '';
+};
+
+const rawSupabaseUrl =
+  getEnvVar('VITE_SUPABASE_URL') ||
+  getEnvVar('NEXT_PUBLIC_SUPABASE_URL') ||
   'https://czrqgnoqdbzdlarslqlk.supabase.co';
 
-const supabaseKey =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+const rawSupabaseKey =
+  getEnvVar('VITE_SUPABASE_ANON_KEY') ||
+  getEnvVar('VITE_SUPABASE_PUBLISHABLE_KEY') ||
+  getEnvVar('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY') ||
   'sb_publishable_gCtxdfxlqViuHBs-MAlcEQ_2NhkX8cz';
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const isValidHttpUrl = (urlStr: string): boolean => {
+  if (!urlStr || typeof urlStr !== 'string') return false;
+  const trimmed = urlStr.trim();
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (e) {
+    return false;
+  }
+};
+
+export const isSupabaseConfigured = (): boolean => {
+  return isValidHttpUrl(rawSupabaseUrl) && Boolean(rawSupabaseKey && rawSupabaseKey.trim().length > 0);
+};
+
+export const getSupabaseClient = () => {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+  try {
+    return createClient(rawSupabaseUrl.trim(), rawSupabaseKey.trim());
+  } catch (e) {
+    console.warn('Supabase createClient error prevented crash:', e);
+    return null;
+  }
+};
+
+export const supabase = getSupabaseClient();
 
 // ============================================================================
 // MOCK PERSISTENT DATA STORAGE ENGINE FOR CLIENT/DEMO MODE
