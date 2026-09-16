@@ -33,13 +33,13 @@ export const WholesaleIssueDetails: React.FC = () => {
 
   const isAdmin = role === 'admin' || role === 'manager';
 
-  const issue = db.wholesaleIssues.find((w) => w.id === id) || db.wholesaleIssues[0];
-  const customer = db.customers.find((c) => c.id === issue?.customer_id) || db.customers[0];
+  const issue = db.wholesaleIssues.find((w) => w.id === id);
+  const customer = issue ? db.customers.find((c) => c.id === issue.customer_id) : undefined;
 
-  if (!issue) {
+  if (!issue || !customer) {
     return (
-      <div className="p-6 text-center text-slate-500">
-        Wholesale Invoice Voucher not found.
+      <div className="p-6 text-center text-slate-500 font-medium">
+        Wholesale Invoice Voucher or Customer Profile not found.
       </div>
     );
   }

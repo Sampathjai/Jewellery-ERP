@@ -54,3 +54,4 @@ export const SyncStatusBadge: React.FC = () => {
 
   return renderBadge();
 };
+

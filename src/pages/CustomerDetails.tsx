@@ -1,75 +1,299 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { getLocalDb, saveLocalDb, isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { openWhatsAppClickToChat, buildWhatsAppPaymentReminder } from '@/lib/whatsapp';
 import { CameraModal } from '@/components/common/CameraModal';
+import { Customer } from '@/types';
 import {
   ArrowLeft,
   MessageSquare,
   Printer,
   Building,
-  Phone,
-  MapPin,
   HandCoins,
-  FileText,
-  CheckCircle,
   Camera,
   Upload,
   Trash2,
   Edit,
+  Loader2,
 } from 'lucide-react';
+
+interface LedgerEntry {
+  id: string;
+  date: string;
+  reference: string;
+  type: string;
+  typeBadgeClass: string;
+  debit: number;
+  credit: number;
+  runningBalance?: number;
+}
 
 export const CustomerDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const [db, setDb] = useState(getLocalDb());
+  const [isLoading, setIsLoading] = useState(true);
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
+  const [totalOutstanding, setTotalOutstanding] = useState<number>(0);
+
   const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [isEditingPhoto, setIsEditingPhoto] = useState(false);
   const [isEditingTouch, setIsEditingTouch] = useState(false);
   const [touchInput, setTouchInput] = useState<number>(40);
 
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
-  const customerIndex = db.customers.findIndex((c) => c.id === id);
-  const customer = customerIndex !== -1 ? db.customers[customerIndex] : db.customers[0];
+  // Clear previous state and load customer ledger asynchronously whenever id changes
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    setCustomer(null);
+    setLedgerEntries([]);
+    setTotalOutstanding(0);
+
+    const loadCustomerData = async () => {
+      if (!id) {
+        if (isMounted) setIsLoading(false);
+        return;
+      }
+
+      const db = getLocalDb();
+
+      // Strict foreign key & primary key lookup (NEVER fallback to db.customers[0])
+      let targetCustomer = db.customers.find((c) => c.id === id || c.customer_code === id) || null;
+
+      // If Supabase is connected, query Supabase for customer profile directly
+      if (isSupabaseConfigured() && supabase) {
+        try {
+          const { data: supaCust } = await supabase
+            .from('customers')
+            .select('*')
+            .or(`id.eq.${id},customer_code.eq.${id}`)
+            .maybeSingle();
+
+          if (supaCust) {
+            targetCustomer = supaCust;
+          }
+        } catch (err) {
+          console.warn('Error querying customer from Supabase:', err);
+        }
+      }
+
+      if (!targetCustomer) {
+        if (isMounted) {
+          setCustomer(null);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      const custId = targetCustomer.id;
+
+      // Fetch transaction tables strictly filtered by customer_id = custId
+      let invoices = db.retailInvoices.filter((i) => i.customer_id === custId);
+      let wholesaleIssues = db.wholesaleIssues.filter((w) => w.customer_id === custId);
+      let wholesaleReturns = (db.wholesaleReturns || []).filter((r) => r.customer_id === custId);
+      let settlements = db.wholesaleSettlements.filter((s) => s.customer_id === custId);
+      let wholesalePayments = (db.wholesalePayments || []).filter((p) => p.customer_id === custId);
+      let retailPayments = (db.retailPayments || []).filter((p) =>
+        invoices.some((i) => i.id === p.invoice_id)
+      );
+
+      // If Supabase is configured, fetch live Supabase customer transactions
+      if (isSupabaseConfigured() && supabase) {
+        try {
+          const [
+            { data: sInvoices },
+            { data: sIssues },
+            { data: sReturns },
+            { data: sSettlements },
+            { data: sWPayments },
+            { data: sRPayments },
+          ] = await Promise.all([
+            supabase.from('retail_invoices').select('*').eq('customer_id', custId),
+            supabase.from('wholesale_issues').select('*').eq('customer_id', custId),
+            supabase.from('wholesale_returns').select('*').eq('customer_id', custId),
+            supabase.from('wholesale_settlements').select('*').eq('customer_id', custId),
+            supabase.from('wholesale_payments').select('*').eq('customer_id', custId),
+            supabase.from('retail_payments').select('*').eq('customer_id', custId),
+          ]);
+
+          if (sInvoices) invoices = sInvoices;
+          if (sIssues) wholesaleIssues = sIssues;
+          if (sReturns) wholesaleReturns = sReturns;
+          if (sSettlements) settlements = sSettlements;
+          if (sWPayments) wholesalePayments = sWPayments;
+          if (sRPayments) retailPayments = sRPayments;
+        } catch (err) {
+          console.warn('Error querying customer transactions from Supabase:', err);
+        }
+      }
+
+      const rawEntries: LedgerEntry[] = [];
+
+      // Retail Invoices (Debit)
+      invoices.forEach((inv) => {
+        if (inv.customer_id === custId) {
+          rawEntries.push({
+            id: `inv-${inv.id}`,
+            date: inv.invoice_date,
+            reference: inv.invoice_number,
+            type: 'Retail Invoice',
+            typeBadgeClass: 'bg-purple-100 text-purple-900 dark:bg-purple-950/60 dark:text-purple-300',
+            debit: inv.total_amount || 0,
+            credit: 0,
+          });
+        }
+      });
+
+      // Retail Payments (Credit)
+      retailPayments.forEach((pay) => {
+        rawEntries.push({
+          id: `rpay-${pay.id}`,
+          date: pay.payment_date,
+          reference: pay.reference_number || `PAY-${pay.id.slice(0, 6)}`,
+          type: 'Retail Payment',
+          typeBadgeClass: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300',
+          debit: 0,
+          credit: pay.amount || 0,
+        });
+      });
+
+      // Wholesale Issues (Debit + Initial Cash Credit if paid)
+      wholesaleIssues.forEach((issue) => {
+        if (issue.customer_id === custId) {
+          const cashValue = issue.total_cash_value || issue.total_valuation_amount || 0;
+          rawEntries.push({
+            id: `issue-${issue.id}`,
+            date: issue.issue_date,
+            reference: issue.issue_number,
+            type: 'Wholesale Issue',
+            typeBadgeClass: 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300',
+            debit: cashValue,
+            credit: 0,
+          });
+          if (issue.cash_paid && issue.cash_paid > 0) {
+            rawEntries.push({
+              id: `issue-cash-${issue.id}`,
+              date: issue.issue_date,
+              reference: `${issue.issue_number}-ADV`,
+              type: 'Advance Cash Paid',
+              typeBadgeClass: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300',
+              debit: 0,
+              credit: issue.cash_paid,
+            });
+          }
+        }
+      });
+
+      // Wholesale Returns (Credit)
+      wholesaleReturns.forEach((ret) => {
+        if (ret.customer_id === custId) {
+          const goldRate = db.metalRates[0]?.gold_22k_per_gram || 6850;
+          const returnVal = (ret.total_weight_returned_g || 0) * goldRate;
+          rawEntries.push({
+            id: `wret-${ret.id}`,
+            date: ret.return_date,
+            reference: ret.return_number,
+            type: 'Stock Return',
+            typeBadgeClass: 'bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-300',
+            debit: 0,
+            credit: returnVal,
+          });
+        }
+      });
+
+      // Wholesale Settlements
+      settlements.forEach((st) => {
+        if (st.customer_id === custId) {
+          if (st.net_payable_to_shop && st.net_payable_to_shop > 0) {
+            rawEntries.push({
+              id: `st-deb-${st.id}`,
+              date: st.settlement_date,
+              reference: st.settlement_number,
+              type: 'Wholesale Settlement',
+              typeBadgeClass: 'bg-indigo-100 text-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-300',
+              debit: st.net_payable_to_shop,
+              credit: 0,
+            });
+          }
+          if (st.amount_paid && st.amount_paid > 0) {
+            rawEntries.push({
+              id: `st-cred-${st.id}`,
+              date: st.settlement_date,
+              reference: `${st.settlement_number}-PAY`,
+              type: 'Settlement Payment',
+              typeBadgeClass: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300',
+              debit: 0,
+              credit: st.amount_paid,
+            });
+          }
+        }
+      });
+
+      // Wholesale Payments Received (Credit)
+      wholesalePayments.forEach((pay) => {
+        if (pay.customer_id === custId) {
+          rawEntries.push({
+            id: `wpay-${pay.id}`,
+            date: pay.payment_date,
+            reference: pay.reference_number || `PMT-${pay.id.slice(0, 6)}`,
+            type: 'Payment Received',
+            typeBadgeClass: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300',
+            debit: 0,
+            credit: pay.amount || 0,
+          });
+        }
+      });
+
+      // Sort chronologically (oldest first for accounting ledger)
+      rawEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      let currentBal = 0;
+      const compiled = rawEntries.map((entry) => {
+        currentBal += entry.debit - entry.credit;
+        return { ...entry, runningBalance: currentBal };
+      });
+
+      if (isMounted) {
+        setCustomer(targetCustomer);
+        setTouchInput(targetCustomer.agreed_customer_touch ?? targetCustomer.agreed_profit_percent ?? 40);
+        setLedgerEntries(compiled);
+        setTotalOutstanding(currentBal);
+        setIsLoading(false);
+      }
+    };
+
+    loadCustomerData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
 
   const handleSaveTouch = () => {
     if (!customer) return;
-    const updatedDb = getLocalDb();
-    const idx = updatedDb.customers.findIndex((c) => c.id === customer.id);
+    const db = getLocalDb();
+    const idx = db.customers.findIndex((c) => c.id === customer.id);
     if (idx !== -1) {
-      updatedDb.customers[idx].agreed_customer_touch = touchInput;
-      updatedDb.customers[idx].agreed_profit_percent = touchInput;
-      saveLocalDb(updatedDb);
-      setDb(updatedDb);
+      db.customers[idx].agreed_customer_touch = touchInput;
+      db.customers[idx].agreed_profit_percent = touchInput;
+      saveLocalDb(db, 'customers', 'UPDATE', db.customers[idx]);
+      setCustomer({ ...db.customers[idx] });
     }
     setIsEditingTouch(false);
   };
 
-  if (!customer) {
-    return (
-      <div className="p-6 text-center text-slate-500">
-        Customer profile not found.
-      </div>
-    );
-  }
-
-  const invoices = db.retailInvoices.filter((i) => i.customer_id === customer.id);
-  const wholesaleIssues = db.wholesaleIssues.filter((w) => w.customer_id === customer.id);
-  const settlements = db.wholesaleSettlements.filter((s) => s.customer_id === customer.id);
-
-  const totalOutstanding = settlements.reduce((sum, s) => sum + s.balance_due, 0);
-
   const handleUpdatePhoto = (newPhotoUrl: string) => {
-    const updatedDb = getLocalDb();
-    const idx = updatedDb.customers.findIndex((c) => c.id === customer.id);
+    if (!customer) return;
+    const db = getLocalDb();
+    const idx = db.customers.findIndex((c) => c.id === customer.id);
     if (idx !== -1) {
-      updatedDb.customers[idx].photo_url = newPhotoUrl;
-      saveLocalDb(updatedDb);
-      setDb(updatedDb);
+      db.customers[idx].photo_url = newPhotoUrl;
+      saveLocalDb(db, 'customers', 'UPDATE', db.customers[idx]);
+      setCustomer({ ...db.customers[idx] });
     }
   };
 
@@ -98,9 +322,28 @@ export const CustomerDetails: React.FC = () => {
   };
 
   const handleSendWhatsApp = () => {
-    const msg = buildWhatsAppPaymentReminder(customer.full_name, totalOutstanding || 24550, db.settings);
+    if (!customer) return;
+    const db = getLocalDb();
+    const msg = buildWhatsAppPaymentReminder(customer.full_name, totalOutstanding, db.settings);
     openWhatsAppClickToChat(customer.whatsapp_number || customer.phone, msg);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center space-x-2 text-slate-500">
+        <Loader2 className="h-6 w-6 animate-spin text-gold-500" />
+        <span className="text-sm font-medium">Loading customer profile & ledger...</span>
+      </div>
+    );
+  }
+
+  if (!customer) {
+    return (
+      <div className="p-8 text-center text-slate-500 font-medium">
+        Customer profile not found.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -264,9 +507,11 @@ export const CustomerDetails: React.FC = () => {
               Account Ledger Balance
             </span>
             <h3 className="mt-3 font-serif text-3xl font-bold text-charcoal-900 dark:text-slate-100">
-              {formatCurrency(totalOutstanding || 24550)}
+              {formatCurrency(totalOutstanding)}
             </h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Current Net Receivables Due</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {totalOutstanding === 0 ? 'No outstanding balance' : 'Current Net Receivables Due'}
+            </p>
           </div>
 
           <div className="mt-6 border-t border-gold-200 pt-4 dark:border-gold-800/40 space-y-2">
@@ -299,30 +544,39 @@ export const CustomerDetails: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
-              <tr className="hover:bg-slate-50 dark:hover:bg-charcoal-800/50">
-                <td className="p-3 font-mono">{formatDate(new Date(Date.now() - 15 * 86400000))}</td>
-                <td className="p-3 font-semibold text-charcoal-900 dark:text-slate-100">WI-2026-001</td>
-                <td className="p-3"><span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">Wholesale Issue</span></td>
-                <td className="p-3 text-right font-semibold">₹1,96,500.00</td>
-                <td className="p-3 text-right">-</td>
-                <td className="p-3 text-right font-bold text-amber-900 dark:text-gold-300">₹1,96,500.00</td>
-              </tr>
-              <tr className="hover:bg-slate-50 dark:hover:bg-charcoal-800/50">
-                <td className="p-3 font-mono">{formatDate(new Date(Date.now() - 2 * 86400000))}</td>
-                <td className="p-3 font-semibold text-charcoal-900 dark:text-slate-100">WR-2026-001</td>
-                <td className="p-3"><span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-900">Stock Return</span></td>
-                <td className="p-3 text-right">-</td>
-                <td className="p-3 text-right font-semibold text-emerald-600">₹1,17,750.00</td>
-                <td className="p-3 text-right font-bold text-amber-900 dark:text-gold-300">₹78,750.00</td>
-              </tr>
-              <tr className="hover:bg-slate-50 dark:hover:bg-charcoal-800/50">
-                <td className="p-3 font-mono">{formatDate(new Date(Date.now() - 1 * 86400000))}</td>
-                <td className="p-3 font-semibold text-charcoal-900 dark:text-slate-100">NEFT/SBI/89127394</td>
-                <td className="p-3"><span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">Payment Received</span></td>
-                <td className="p-3 text-right">-</td>
-                <td className="p-3 text-right font-semibold text-emerald-600">₹50,000.00</td>
-                <td className="p-3 text-right font-bold text-amber-900 dark:text-gold-300">₹24,550.00</td>
-              </tr>
+              {ledgerEntries.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-12 text-center text-slate-400 dark:text-slate-500 font-medium">
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">No transactions yet.</p>
+                    <p className="text-xs text-slate-500">
+                      This customer has no invoices, payments, returns, wholesale issues, or ledger entries.
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                ledgerEntries.map((entry) => (
+                  <tr key={entry.id} className="hover:bg-slate-50 dark:hover:bg-charcoal-800/50">
+                    <td className="p-3 font-mono">{formatDate(entry.date)}</td>
+                    <td className="p-3 font-semibold text-charcoal-900 dark:text-slate-100">
+                      {entry.reference}
+                    </td>
+                    <td className="p-3">
+                      <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${entry.typeBadgeClass}`}>
+                        {entry.type}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right font-semibold">
+                      {entry.debit > 0 ? formatCurrency(entry.debit) : '-'}
+                    </td>
+                    <td className="p-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                      {entry.credit > 0 ? formatCurrency(entry.credit) : '-'}
+                    </td>
+                    <td className="p-3 text-right font-bold text-amber-900 dark:text-gold-300">
+                      {formatCurrency(entry.runningBalance || 0)}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

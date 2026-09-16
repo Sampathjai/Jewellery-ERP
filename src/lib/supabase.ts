@@ -919,6 +919,162 @@ export const resetToCleanProductionData = () => {
 };
 
 // ============================================================================
+// CUSTOMER PERSISTENCE & MULTI-DEVICE SYNC HELPERS
+// ============================================================================
+
+export const saveCustomerRecord = async (customer: Customer) => {
+  const db = getLocalDb();
+  const existingIndex = db.customers.findIndex((c) => c.id === customer.id);
+  const eventType = existingIndex !== -1 ? 'UPDATE' : 'INSERT';
+
+  if (existingIndex !== -1) {
+    db.customers[existingIndex] = customer;
+  } else {
+    db.customers.unshift(customer);
+  }
+
+  saveLocalDb(db, 'customers', eventType, customer);
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      await supabase.from('customers').upsert(customer);
+    } catch (err) {
+      console.warn('Supabase customer upsert warning:', err);
+    }
+  }
+  return db;
+};
+
+export const saveWholesaleIssueRecord = async (issue: WholesaleIssue) => {
+  if (!issue || !issue.customer_id) return getLocalDb();
+  const db = getLocalDb();
+  const existingIdx = db.wholesaleIssues.findIndex((w) => w.id === issue.id);
+  const eventType = existingIdx !== -1 ? 'UPDATE' : 'INSERT';
+
+  if (existingIdx !== -1) {
+    db.wholesaleIssues[existingIdx] = issue;
+  } else {
+    db.wholesaleIssues.unshift(issue);
+  }
+
+  saveLocalDb(db, 'wholesale_issues', eventType, issue);
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      await supabase.from('wholesale_issues').upsert(issue);
+    } catch (err) {
+      console.warn('Supabase wholesale issue upsert warning:', err);
+    }
+  }
+  return db;
+};
+
+export const saveWholesaleReturnRecord = async (ret: WholesaleReturn) => {
+  if (!ret || !ret.customer_id) return getLocalDb();
+  const db = getLocalDb();
+  db.wholesaleReturns = db.wholesaleReturns || [];
+  const existingIdx = db.wholesaleReturns.findIndex((r) => r.id === ret.id);
+  const eventType = existingIdx !== -1 ? 'UPDATE' : 'INSERT';
+
+  if (existingIdx !== -1) {
+    db.wholesaleReturns[existingIdx] = ret;
+  } else {
+    db.wholesaleReturns.unshift(ret);
+  }
+
+  saveLocalDb(db, 'wholesale_returns', eventType, ret);
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      await supabase.from('wholesale_returns').upsert(ret);
+    } catch (err) {
+      console.warn('Supabase wholesale return upsert warning:', err);
+    }
+  }
+  return db;
+};
+
+export const saveWholesaleSettlementRecord = async (settlement: WholesaleSettlement) => {
+  if (!settlement || !settlement.customer_id) return getLocalDb();
+  const db = getLocalDb();
+  const existingIdx = db.wholesaleSettlements.findIndex((s) => s.id === settlement.id);
+  const eventType = existingIdx !== -1 ? 'UPDATE' : 'INSERT';
+
+  if (existingIdx !== -1) {
+    db.wholesaleSettlements[existingIdx] = settlement;
+  } else {
+    db.wholesaleSettlements.unshift(settlement);
+  }
+
+  saveLocalDb(db, 'wholesale_settlements', eventType, settlement);
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      await supabase.from('wholesale_settlements').upsert(settlement);
+    } catch (err) {
+      console.warn('Supabase wholesale settlement upsert warning:', err);
+    }
+  }
+  return db;
+};
+
+export const saveWholesalePaymentRecord = async (payment: WholesalePayment) => {
+  if (!payment || !payment.customer_id) return getLocalDb();
+  const db = getLocalDb();
+  db.wholesalePayments = db.wholesalePayments || [];
+  const existingIdx = db.wholesalePayments.findIndex((p) => p.id === payment.id);
+  const eventType = existingIdx !== -1 ? 'UPDATE' : 'INSERT';
+
+  if (existingIdx !== -1) {
+    db.wholesalePayments[existingIdx] = payment;
+  } else {
+    db.wholesalePayments.unshift(payment);
+  }
+
+  saveLocalDb(db, 'wholesale_payments', eventType, payment);
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      await supabase.from('wholesale_payments').upsert(payment);
+    } catch (err) {
+      console.warn('Supabase wholesale payment upsert warning:', err);
+    }
+  }
+  return db;
+};
+
+export const saveRetailInvoiceRecord = async (invoice: RetailInvoice, payment?: RetailPayment) => {
+  const db = getLocalDb();
+  const existingIdx = db.retailInvoices.findIndex((i) => i.id === invoice.id);
+  const eventType = existingIdx !== -1 ? 'UPDATE' : 'INSERT';
+
+  if (existingIdx !== -1) {
+    db.retailInvoices[existingIdx] = invoice;
+  } else {
+    db.retailInvoices.unshift(invoice);
+  }
+
+  if (payment) {
+    db.retailPayments = db.retailPayments || [];
+    db.retailPayments.unshift(payment);
+  }
+
+  saveLocalDb(db, 'retail_invoices', eventType, invoice);
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      await supabase.from('retail_invoices').upsert(invoice);
+      if (payment) {
+        await supabase.from('retail_payments').upsert(payment);
+      }
+    } catch (err) {
+      console.warn('Supabase retail invoice upsert warning:', err);
+    }
+  }
+  return db;
+};
+
+// ============================================================================
 // PURCHASE & SUPPLIER PAYMENT HELPER FUNCTIONS
 // ============================================================================
 

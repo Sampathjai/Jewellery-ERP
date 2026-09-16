@@ -39,6 +39,7 @@ import { UserManagement } from '@/pages/UserManagement';
 import { UserLoginSettings } from '@/pages/UserLoginSettings';
 import { RolesPermissions } from '@/pages/RolesPermissions';
 import { Settings } from '@/pages/Settings';
+import { SyncSettings } from '@/pages/SyncSettings';
 import { StorageDatabaseSettings } from '@/pages/StorageDatabaseSettings';
 import { AuditLogs } from '@/pages/AuditLogs';
 
@@ -116,6 +117,8 @@ export const App: React.FC = () => {
               <Route path="/admin/user-login-settings" element={<ProtectedRoute><UserLoginSettings /></ProtectedRoute>} />
               <Route path="/roles-permissions" element={<ProtectedRoute><RolesPermissions /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+              <Route path="/settings/sync" element={<ProtectedRoute><SyncSettings /></ProtectedRoute>} />
+              <Route path="/sync-settings" element={<ProtectedRoute><SyncSettings /></ProtectedRoute>} />
               <Route path="/admin/storage-database" element={<ProtectedRoute><StorageDatabaseSettings /></ProtectedRoute>} />
               <Route path="/audit-logs" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
 

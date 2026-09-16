@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PhotoUploader } from '@/components/common/PhotoUploader';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { getLocalDb, saveLocalDb, saveCustomerRecord } from '@/lib/supabase';
 import { Customer, CustomerType, Supplier, WholesaleProfitModel } from '@/types';
 import { ArrowLeft, Save } from 'lucide-react';
 
@@ -41,11 +41,10 @@ export const AddCustomer: React.FC = () => {
     }
   }, [initialType]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.full_name || !formData.phone) return;
 
-    const db = getLocalDb();
     const newCustomer: Customer = {
       id: `cust-${Date.now()}`,
       customer_code: formData.customer_code || `CUST-${Date.now()}`,
@@ -72,10 +71,11 @@ export const AddCustomer: React.FC = () => {
       created_at: new Date().toISOString(),
     };
 
-    db.customers.unshift(newCustomer);
+    await saveCustomerRecord(newCustomer);
 
     // If type is supplier, also sync a Supplier record in db.suppliers
     if (newCustomer.customer_type === 'supplier') {
+      const db = getLocalDb();
       const displayName = newCustomer.shop_name || newCustomer.full_name;
       const newSupplier: Supplier = {
         id: newCustomer.id,
@@ -99,9 +99,9 @@ export const AddCustomer: React.FC = () => {
       } else {
         db.suppliers.unshift(newSupplier);
       }
+      saveLocalDb(db, 'suppliers', 'INSERT', newSupplier);
     }
 
-    saveLocalDb(db);
     if (newCustomer.customer_type === 'supplier') {
       navigate('/purchases');
     } else {

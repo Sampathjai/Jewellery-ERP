@@ -10,20 +10,21 @@ import { BadgePercent, Plus, Download, MessageSquare, Check, Save } from 'lucide
 export const WholesaleSettlements: React.FC = () => {
   const [db, setDb] = useState(getLocalDb());
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(db.customers[0]?.id || '');
-  const [grossSales, setGrossSales] = useState<number>(78750);
-  const [valuationCost, setValuationCost] = useState<number>(68250);
-  const [amountPaid, setAmountPaid] = useState<number>(50000);
+  const [grossSales, setGrossSales] = useState<number>(0);
+  const [valuationCost, setValuationCost] = useState<number>(0);
+  const [amountPaid, setAmountPaid] = useState<number>(0);
 
-  const selectedCustomer = db.customers.find((c) => c.id === selectedCustomerId) || db.customers[0];
+  const selectedCustomer = db.customers.find((c) => c.id === selectedCustomerId);
 
   const grossProfit = Math.max(0, grossSales - valuationCost);
-  const customerShare = (grossProfit * (selectedCustomer.agreed_profit_percent || 40)) / 100;
+  const customerShare = selectedCustomer ? (grossProfit * (selectedCustomer.agreed_profit_percent || 40)) / 100 : 0;
   const shopShare = grossProfit - customerShare;
   const netPayableToShop = valuationCost + shopShare;
   const balanceDue = Math.max(0, netPayableToShop - amountPaid);
 
   const handleCreateSettlement = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedCustomer) return;
 
     const settleNo = `WST-2026-${Math.floor(100 + Math.random() * 900)}`;
     const newSettlement: WholesaleSettlement = {
@@ -50,13 +51,14 @@ export const WholesaleSettlements: React.FC = () => {
     };
 
     db.wholesaleSettlements.unshift(newSettlement);
-    saveLocalDb(db);
+    saveLocalDb(db, 'wholesale_settlements', 'INSERT', newSettlement);
     setDb({ ...db });
 
     generateWholesaleSettlementPDF(newSettlement, selectedCustomer, db.settings);
   };
 
   const handleWhatsApp = (s: WholesaleSettlement) => {
+    if (!selectedCustomer) return;
     const msg = buildWhatsAppSettlementMessage(s, db.settings);
     openWhatsAppClickToChat(selectedCustomer.whatsapp_number || selectedCustomer.phone, msg);
   };
@@ -134,7 +136,7 @@ export const WholesaleSettlements: React.FC = () => {
               <strong className="font-mono">{formatCurrency(grossProfit)}</strong>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Partner Profit Share ({selectedCustomer.agreed_profit_percent}%):</span>
+              <span className="text-slate-500">Partner Profit Share ({selectedCustomer?.agreed_profit_percent ?? 40}%):</span>
               <strong className="font-mono text-emerald-600">{formatCurrency(customerShare)}</strong>
             </div>
             <div className="flex justify-between">
@@ -176,24 +178,28 @@ export const WholesaleSettlements: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
-                {db.wholesaleSettlements.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-charcoal-800/50">
-                    <td className="p-3 font-mono font-bold text-amber-900 dark:text-gold-300">{s.settlement_number}</td>
-                    <td className="p-3 font-mono">{formatDate(s.settlement_date)}</td>
-                    <td className="p-3 font-bold text-charcoal-900 dark:text-slate-100">{s.customer_name}</td>
-                    <td className="p-3 text-right font-serif font-bold text-charcoal-900 dark:text-slate-100">{formatCurrency(s.total_gross_sales)}</td>
-                    <td className="p-3 text-right font-semibold text-emerald-600">{formatCurrency(s.customer_profit_share)}</td>
-                    <td className="p-3 text-right font-serif font-bold text-amber-900 dark:text-gold-300">{formatCurrency(s.shop_profit_share)}</td>
-                    <td className="p-3 text-right font-bold text-red-600">{formatCurrency(s.balance_due)}</td>
-                    <td className="p-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => generateWholesaleSettlementPDF(s, selectedCustomer, db.settings)}
-                          className="text-slate-700 hover:text-gold-600 dark:text-slate-300"
-                          title="Download PDF"
-                        >
-                          <Download className="h-4 w-4" />
-                        </button>
+                {db.wholesaleSettlements.map((s) => {
+                  const targetCust = db.customers.find((c) => c.id === s.customer_id) || selectedCustomer;
+                  return (
+                    <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-charcoal-800/50">
+                      <td className="p-3 font-mono font-bold text-amber-900 dark:text-gold-300">{s.settlement_number}</td>
+                      <td className="p-3 font-mono">{formatDate(s.settlement_date)}</td>
+                      <td className="p-3 font-bold text-charcoal-900 dark:text-slate-100">{s.customer_name}</td>
+                      <td className="p-3 text-right font-serif font-bold text-charcoal-900 dark:text-slate-100">{formatCurrency(s.total_gross_sales)}</td>
+                      <td className="p-3 text-right font-semibold text-emerald-600">{formatCurrency(s.customer_profit_share)}</td>
+                      <td className="p-3 text-right font-serif font-bold text-amber-900 dark:text-gold-300">{formatCurrency(s.shop_profit_share)}</td>
+                      <td className="p-3 text-right font-bold text-red-600">{formatCurrency(s.balance_due)}</td>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {targetCust && (
+                            <button
+                              onClick={() => generateWholesaleSettlementPDF(s, targetCust, db.settings)}
+                              className="text-slate-700 hover:text-gold-600 dark:text-slate-300"
+                              title="Download PDF"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                          )}
                         <button
                           onClick={() => handleWhatsApp(s)}
                           className="text-emerald-600 hover:text-emerald-700"
@@ -204,7 +210,8 @@ export const WholesaleSettlements: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

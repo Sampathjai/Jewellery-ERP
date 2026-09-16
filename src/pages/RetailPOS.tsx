@@ -14,7 +14,7 @@ export const RetailPOS: React.FC = () => {
   const todayRate = db.metalRates[0] || { gold_24k_per_gram: 7450, gold_22k_per_gram: 6830, silver_per_gram: 89.5 };
 
   // POS State
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('cust-4');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(db.customers[0]?.id || '');
   const [cartItems, setCartItems] = useState<RetailInvoiceItem[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -33,7 +33,7 @@ export const RetailPOS: React.FC = () => {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'card' | 'split'>('upi');
   const [notes, setNotes] = useState('');
 
-  const selectedCustomer = db.customers.find((c) => c.id === selectedCustomerId) || db.customers[0];
+  const selectedCustomer = db.customers.find((c) => c.id === selectedCustomerId);
 
   const handleAddProductToCart = (product: Product) => {
     // Metal rate selection based on purity/type
@@ -108,7 +108,7 @@ export const RetailPOS: React.FC = () => {
   const grandTotal = Math.round(taxableSubtotal + taxAmount);
 
   const handleFinalizeBill = () => {
-    if (cartItems.length === 0) return;
+    if (cartItems.length === 0 || !selectedCustomer) return;
 
     // 1. Stock Inventory Reduction for Retail Sale
     cartItems.forEach((cartItem) => {

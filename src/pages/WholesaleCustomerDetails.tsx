@@ -14,7 +14,7 @@ export const WholesaleCustomerDetails: React.FC = () => {
 
   const [isRecordPaymentModalOpen, setIsRecordPaymentModalOpen] = useState(false);
 
-  const customer = db.customers.find((c) => c.id === id) || db.customers[0];
+  const customer = db.customers.find((c) => c.id === id);
 
   if (!customer) {
     return <div className="p-6 text-center text-slate-500">Wholesale partner not found.</div>;
@@ -170,7 +170,15 @@ export const WholesaleCustomerDetails: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
-              {issues.map((i) => {
+              {issues.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="p-10 text-center text-slate-400 dark:text-slate-500 font-medium">
+                    <p className="text-sm font-bold text-slate-600 dark:text-slate-300 mb-1">No transactions yet.</p>
+                    <p className="text-xs">Transactions created for this customer will appear here.</p>
+                  </td>
+                </tr>
+              ) : (
+                issues.map((i) => {
                 const iCash = i.cash_paid || 0;
                 const iGold = i.gold_916_value_paid || 0;
                 const iPaid = iCash + iGold;
@@ -203,7 +211,7 @@ export const WholesaleCustomerDetails: React.FC = () => {
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Modal } from './Modal';
 import { PhotoUploader } from './PhotoUploader';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { getLocalDb, saveLocalDb, saveCustomerRecord } from '@/lib/supabase';
 import { Customer, WholesaleProfitModel } from '@/types';
 import { useLanguage } from '@/lib/i18n';
 import { Save, UserPlus, Sparkles } from 'lucide-react';
@@ -43,11 +43,10 @@ export const AddWholesaleCustomerModal: React.FC<AddWholesaleCustomerModalProps>
     is_active: true,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.full_name || !formData.phone) return;
 
-    const db = getLocalDb();
     const newCustomer: Customer = {
       id: `cust-${Date.now()}`,
       customer_code: formData.customer_code || `CUST-${Date.now()}`,
@@ -74,8 +73,7 @@ export const AddWholesaleCustomerModal: React.FC<AddWholesaleCustomerModalProps>
       created_at: new Date().toISOString(),
     };
 
-    db.customers.unshift(newCustomer);
-    saveLocalDb(db);
+    await saveCustomerRecord(newCustomer);
     onCustomerAdded(newCustomer);
     onClose();
   };

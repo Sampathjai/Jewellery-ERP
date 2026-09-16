@@ -9,14 +9,15 @@ import { RotateCcw, Check, Save } from 'lucide-react';
 export const WholesaleReturns: React.FC = () => {
   const [db, setDb] = useState(getLocalDb());
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(db.customers[0]?.id || '');
-  const [returnQty, setReturnQty] = useState<number>(10);
-  const [returnWeight, setReturnWeight] = useState<number>(4.0);
-  const [conditionNotes, setConditionNotes] = useState('Unsold items returned in original condition');
+  const [returnQty, setReturnQty] = useState<number>(0);
+  const [returnWeight, setReturnWeight] = useState<number>(0);
+  const [conditionNotes, setConditionNotes] = useState('');
 
-  const selectedCustomer = db.customers.find((c) => c.id === selectedCustomerId) || db.customers[0];
+  const selectedCustomer = db.customers.find((c) => c.id === selectedCustomerId);
 
   const handleRecordReturn = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedCustomer) return;
 
     const newReturn: WholesaleReturn = {
       id: `wret-${Date.now()}`,

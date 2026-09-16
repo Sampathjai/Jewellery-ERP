@@ -9,24 +9,25 @@ import { CircleDot, Plus, Save } from 'lucide-react';
 export const WholesaleSoldItems: React.FC = () => {
   const [db, setDb] = useState(getLocalDb());
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(db.customers[0]?.id || '');
-  const [buyerShopName, setBuyerShopName] = useState('Madurai Royal Jewellers');
-  const [buyerLocation, setBuyerLocation] = useState('Madurai Town');
-  const [soldQty, setSoldQty] = useState<number>(20);
-  const [soldWeight, setSoldWeight] = useState<number>(8.0);
-  const [totalSaleValue, setTotalSaleValue] = useState<number>(63000);
-  const [totalCostValuation, setTotalCostValuation] = useState<number>(54600);
+  const [buyerShopName, setBuyerShopName] = useState('');
+  const [buyerLocation, setBuyerLocation] = useState('');
+  const [soldQty, setSoldQty] = useState<number>(0);
+  const [soldWeight, setSoldWeight] = useState<number>(0);
+  const [totalSaleValue, setTotalSaleValue] = useState<number>(0);
+  const [totalCostValuation, setTotalCostValuation] = useState<number>(0);
 
-  const selectedCustomer = db.customers.find((c) => c.id === selectedCustomerId) || db.customers[0];
+  const selectedCustomer = db.customers.find((c) => c.id === selectedCustomerId);
 
   const profitCalc = calculateWholesaleProfit(
     totalSaleValue,
     totalCostValuation,
-    selectedCustomer.profit_sharing_model || 'model_a_profit_percent',
-    selectedCustomer.agreed_profit_percent || 40
+    selectedCustomer?.profit_sharing_model || 'model_a_profit_percent',
+    selectedCustomer?.agreed_profit_percent || 40
   );
 
   const handleRecordSale = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedCustomer) return;
 
     const newSale: WholesaleSale = {
       id: `wsale-${Date.now()}`,
@@ -157,7 +158,7 @@ export const WholesaleSoldItems: React.FC = () => {
               <strong className="font-mono">{formatCurrency(profitCalc.grossProfit)}</strong>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Partner Profit Share ({selectedCustomer.agreed_profit_percent}%):</span>
+              <span className="text-slate-500">Partner Profit Share ({selectedCustomer?.agreed_profit_percent ?? 40}%):</span>
               <strong className="font-mono text-emerald-600">{formatCurrency(profitCalc.customerProfitShare)}</strong>
             </div>
             <div className="flex justify-between font-bold border-t border-gold-200 pt-1 dark:border-gold-800 text-amber-900 dark:text-gold-300">
