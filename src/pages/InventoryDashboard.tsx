@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { getLocalDb, saveLocalDb, fetchProductsFromSupabase } from '@/lib/supabase';
+import { syncEngine } from '@/lib/syncEngine';
 import { Product, InventoryMovement } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import { MetalBadge } from '@/components/common/MetalBadge';
@@ -11,6 +12,27 @@ import { Boxes, History, Plus, AlertTriangle, Layers, Edit3, Check, X } from 'lu
 export const InventoryDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [db, setDb] = useState(getLocalDb());
+
+  const loadInventory = useCallback(async () => {
+    try {
+      await fetchProductsFromSupabase();
+      setDb(getLocalDb());
+    } catch (e) {
+      console.warn('Error loading live inventory:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInventory();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'products' || tableName === 'inventory_movements' || tableName === 'general') {
+        loadInventory();
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [loadInventory]);
 
   const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
   const [adjustQty, setAdjustQty] = useState<number>(0);

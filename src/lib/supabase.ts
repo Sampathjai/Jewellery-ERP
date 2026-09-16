@@ -842,13 +842,39 @@ const defaultSeedStore: DbStore = {
   whatsappMessages: [],
 };
 
+export const getCleanStore = (): DbStore => ({
+  settings: { ...defaultSeedStore.settings, next_invoice_number: 1001 },
+  metalRates: [defaultSeedStore.metalRates[0]],
+  categories: defaultSeedStore.categories,
+  products: [],
+  customers: [],
+  suppliers: [],
+  users: defaultSeedStore.users,
+  inventoryMovements: [],
+  manufacturingJobs: [],
+  retailInvoices: [],
+  retailPayments: [],
+  retailReturns: [],
+  wholesaleIssues: [],
+  wholesaleSales: [],
+  wholesaleReturns: [],
+  wholesaleSettlements: [],
+  wholesalePayments: [],
+  purchases: [],
+  purchasePayments: [],
+  expenses: [],
+  auditLogs: [],
+  notifications: [],
+  whatsappMessages: [],
+});
+
 export const getLocalDb = (): DbStore => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const data: DbStore = JSON.parse(raw);
-      if (!data.purchases) data.purchases = defaultSeedStore.purchases;
-      if (!data.purchasePayments) data.purchasePayments = defaultSeedStore.purchasePayments;
+      if (!data.purchases) data.purchases = [];
+      if (!data.purchasePayments) data.purchasePayments = [];
       if (!data.users || data.users.length === 0) data.users = defaultSeedStore.users;
       if (data.settings) {
         data.settings.shop_name = 'Shankar Jewellery';
@@ -868,8 +894,10 @@ export const getLocalDb = (): DbStore => {
   } catch (e) {
     console.error('Error loading local storage DB:', e);
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultSeedStore));
-  return defaultSeedStore;
+
+  const initialStore = isSupabaseConfigured() ? getCleanStore() : defaultSeedStore;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(initialStore));
+  return initialStore;
 };
 
 export const saveLocalDb = (data: DbStore, tableName?: string, eventType?: 'INSERT' | 'UPDATE' | 'DELETE', payload?: any) => {
@@ -938,6 +966,132 @@ export const fetchCustomersFromSupabase = async (): Promise<Customer[]> => {
   }
   const db = getLocalDb();
   return db.customers || [];
+};
+
+export const fetchProductsFromSupabase = async (): Promise<Product[]> => {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase.from('products').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        const db = getLocalDb();
+        db.products = data as Product[];
+        saveLocalDb(db);
+        return data as Product[];
+      }
+    } catch (err) {
+      console.warn('Error fetching products from Supabase:', err);
+    }
+  }
+  const db = getLocalDb();
+  return db.products || [];
+};
+
+export const fetchRetailInvoicesFromSupabase = async (): Promise<RetailInvoice[]> => {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase.from('retail_invoices').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        const db = getLocalDb();
+        db.retailInvoices = data as RetailInvoice[];
+        saveLocalDb(db);
+        return data as RetailInvoice[];
+      }
+    } catch (err) {
+      console.warn('Error fetching retail invoices from Supabase:', err);
+    }
+  }
+  const db = getLocalDb();
+  return db.retailInvoices || [];
+};
+
+export const fetchWholesaleIssuesFromSupabase = async (): Promise<WholesaleIssue[]> => {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase.from('wholesale_issues').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        const db = getLocalDb();
+        db.wholesaleIssues = data as WholesaleIssue[];
+        saveLocalDb(db);
+        return data as WholesaleIssue[];
+      }
+    } catch (err) {
+      console.warn('Error fetching wholesale issues from Supabase:', err);
+    }
+  }
+  const db = getLocalDb();
+  return db.wholesaleIssues || [];
+};
+
+export const fetchWholesaleSettlementsFromSupabase = async (): Promise<WholesaleSettlement[]> => {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase.from('wholesale_settlements').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        const db = getLocalDb();
+        db.wholesaleSettlements = data as WholesaleSettlement[];
+        saveLocalDb(db);
+        return data as WholesaleSettlement[];
+      }
+    } catch (err) {
+      console.warn('Error fetching wholesale settlements from Supabase:', err);
+    }
+  }
+  const db = getLocalDb();
+  return db.wholesaleSettlements || [];
+};
+
+export const fetchPurchasesFromSupabase = async (): Promise<Purchase[]> => {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase.from('purchases').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        const db = getLocalDb();
+        db.purchases = data as Purchase[];
+        saveLocalDb(db);
+        return data as Purchase[];
+      }
+    } catch (err) {
+      console.warn('Error fetching purchases from Supabase:', err);
+    }
+  }
+  const db = getLocalDb();
+  return db.purchases || [];
+};
+
+export const fetchExpensesFromSupabase = async (): Promise<Expense[]> => {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase.from('expenses').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        const db = getLocalDb();
+        db.expenses = data as Expense[];
+        saveLocalDb(db);
+        return data as Expense[];
+      }
+    } catch (err) {
+      console.warn('Error fetching expenses from Supabase:', err);
+    }
+  }
+  const db = getLocalDb();
+  return db.expenses || [];
+};
+
+export const fetchSuppliersFromSupabase = async (): Promise<Supplier[]> => {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase.from('suppliers').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        const db = getLocalDb();
+        db.suppliers = data as Supplier[];
+        saveLocalDb(db);
+        return data as Supplier[];
+      }
+    } catch (err) {
+      console.warn('Error fetching suppliers from Supabase:', err);
+    }
+  }
+  const db = getLocalDb();
+  return db.suppliers || [];
 };
 
 export const saveCustomerRecord = async (customer: Customer) => {

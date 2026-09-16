@@ -1,8 +1,17 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
-import { getLocalDb } from '@/lib/supabase';
+import {
+  getLocalDb,
+  fetchCustomersFromSupabase,
+  fetchProductsFromSupabase,
+  fetchRetailInvoicesFromSupabase,
+  fetchWholesaleIssuesFromSupabase,
+  fetchWholesaleSettlementsFromSupabase,
+  fetchExpensesFromSupabase,
+} from '@/lib/supabase';
+import { syncEngine } from '@/lib/syncEngine';
 import { useLanguage } from '@/lib/i18n';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import {
@@ -35,14 +44,44 @@ import {
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
-  const db = getLocalDb();
+  const [db, setDb] = useState(getLocalDb());
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Aggregate metrics from mock DB
-  const todaySales = db.retailInvoices
+  const loadDashboardData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      await Promise.all([
+        fetchCustomersFromSupabase(),
+        fetchProductsFromSupabase(),
+        fetchRetailInvoicesFromSupabase(),
+        fetchWholesaleIssuesFromSupabase(),
+        fetchWholesaleSettlementsFromSupabase(),
+        fetchExpensesFromSupabase(),
+      ]);
+      setDb(getLocalDb());
+    } catch (e) {
+      console.warn('Error loading live dashboard metrics:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboardData();
+    const unsubscribe = syncEngine.subscribeDataChange(() => {
+      loadDashboardData();
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [loadDashboardData]);
+
+  // Aggregate metrics from live DB
+  const todaySales = (db.retailInvoices || [])
     .filter((i) => i.invoice_date === new Date().toISOString().split('T')[0])
     .reduce((sum, i) => sum + i.total_amount, 0);
 
-  const monthSales = db.retailInvoices.reduce((sum, i) => sum + i.total_amount, 0);
+  const monthSales = (db.retailInvoices || []).reduce((sum, i) => sum + i.total_amount, 0);
 
   const totalGoldWeight = db.products
     .filter((p) => p.metal_type === 'gold')
