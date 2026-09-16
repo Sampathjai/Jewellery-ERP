@@ -44,10 +44,14 @@ import { AuditLogs } from '@/pages/AuditLogs';
 
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { ErrorPage } from '@/components/common/ErrorPage';
+import { GlobalLoader } from '@/components/common/GlobalLoader';
 import { LanguageProvider } from '@/lib/i18n';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
+  if (isLoading) {
+    return <GlobalLoader message="Verifying authentication session..." />;
+  }
   if (!user) {
     return <Navigate to="/login" replace />;
   }
@@ -61,6 +65,9 @@ export const App: React.FC = () => {
         <AuthProvider>
           <BrowserRouter>
             <Routes>
+              {/* Root URL Redirect */}
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
               {/* Public Auth Routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />

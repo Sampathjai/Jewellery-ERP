@@ -52,12 +52,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [role, setRole] = useState<UserRole>(user?.role || 'admin');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Read inactivity settings from database
   const db = getLocalDb();
   const autoLogoutEnabled = db.settings.inactivity_logout_enabled ?? true;
   const inactivityTimeoutMinutes = db.settings.inactivity_timeout_minutes ?? 15;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const resolveInitialSession = async () => {
+      try {
+        if (supabase) {
+          const { data } = await supabase.auth.getSession();
+          const session = data?.session;
+          if (isMounted && session?.user) {
+            const userEmail = session.user.email || '';
+            const currentDb = getLocalDb();
+            const dbUser = (currentDb.users || []).find((u) => u.email.toLowerCase() === userEmail.toLowerCase());
+
+            if (dbUser) {
+              setUser(dbUser);
+              setRole(dbUser.role);
+            } else {
+              const known = knownUsers[userEmail.toLowerCase()] || {
+                full_name: session.user.user_metadata?.full_name || 'Sampath Kumar',
+                role: (session.user.user_metadata?.role as UserRole) || 'admin',
+              };
+              const profile: UserProfile = {
+                id: session.user.id,
+                full_name: known.full_name,
+                email: userEmail,
+                role: known.role,
+                is_active: true,
+                last_login_at: new Date().toISOString(),
+              };
+              setUser(profile);
+              setRole(profile.role);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Initial session resolution error:', e);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    resolveInitialSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (user) {
