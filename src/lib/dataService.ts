@@ -725,13 +725,13 @@ export const dataService = {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(rateData.id);
 
-    const payload: MetalRate = {
+    // Standard columns present in Supabase metal_rates table
+    const payload: Record<string, any> = {
       id: validId,
       rate_date: rateData.rate_date || new Date().toISOString().split('T')[0],
       gold_24k_per_gram: Number(rateData.gold_24k_per_gram || 0),
       gold_22k_per_gram: Number(rateData.gold_22k_per_gram || 0),
       gold_18k_per_gram: Number(rateData.gold_18k_per_gram || 0),
-      gold_14k_per_gram: rateData.gold_14k_per_gram ? Number(rateData.gold_14k_per_gram) : undefined,
       silver_per_gram: Number(rateData.silver_per_gram || 0),
       silver_per_kg: Number(rateData.silver_per_kg || 0),
       source: rateData.source || 'manual',
@@ -741,7 +741,7 @@ export const dataService = {
 
     let { data, error } = await db.from('metal_rates').upsert(payload, { onConflict: 'rate_date' }).select().single();
     if (error) {
-      // Fallback upsert by id if onConflict constraint differs
+      // Fallback upsert by id
       const { data: retryData, error: retryError } = await db.from('metal_rates').upsert(payload).select().single();
       if (retryError) throw new Error(`Metal Rate Save Failed: ${retryError.message}`);
       data = retryData;

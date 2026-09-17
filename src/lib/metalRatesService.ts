@@ -162,7 +162,6 @@ export async function syncLiveRatesToSupabase(): Promise<MetalRate> {
     gold_24k_per_gram: live.gold_24k_per_gram,
     gold_22k_per_gram: live.gold_22k_per_gram,
     gold_18k_per_gram: live.gold_18k_per_gram,
-    gold_14k_per_gram: live.gold_14k_per_gram,
     silver_per_gram: live.silver_per_gram,
     silver_per_kg: live.silver_per_kg,
     source: 'automatic',
@@ -196,7 +195,6 @@ export async function saveManualShopRatesToSupabase(input: {
     gold_24k_per_gram: gold24k,
     gold_22k_per_gram: gold22k,
     gold_18k_per_gram: gold18k,
-    gold_14k_per_gram: gold14k,
     silver_per_gram: silver925,
     silver_per_kg: silverKg,
     source: 'manual',
@@ -225,3 +223,4 @@ export async function fetchCurrentMetalRate(): Promise<MetalRate | null> {
     return localRates?.[0] || null;
   }
 }
+
