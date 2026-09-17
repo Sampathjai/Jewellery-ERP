@@ -53,11 +53,16 @@ CREATE TABLE IF NOT EXISTS profiles (
     email TEXT UNIQUE NOT NULL,
     phone TEXT,
     avatar_url TEXT,
+    role TEXT DEFAULT 'billing_staff',
+    branch TEXT DEFAULT 'Trichy - Sandhukadai',
     is_active BOOLEAN DEFAULT true,
     last_login_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'billing_staff';
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS branch TEXT DEFAULT 'Trichy - Sandhukadai';
 
 CREATE TABLE IF NOT EXISTS roles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

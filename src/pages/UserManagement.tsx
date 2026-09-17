@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { UserProfile, UserRole } from '@/types';
 import { formatDateTime } from '@/lib/utils';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
+import { syncEngine } from '@/lib/syncEngine';
 import {
   UserCheck,
   UserPlus,
@@ -20,14 +21,13 @@ import {
   EyeOff,
   Trash2,
   AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 
 export const UserManagement: React.FC = () => {
-  const [users, setUsers] = useState<UserProfile[]>(() => {
-    const db = getLocalDb();
-    return db.users || [];
-  });
-
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
 
   // Modals
@@ -54,78 +54,106 @@ export const UserManagement: React.FC = () => {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const syncUsersToDb = (updatedUsers: UserProfile[]) => {
-    setUsers(updatedUsers);
-    const db = getLocalDb();
-    db.users = updatedUsers;
-    saveLocalDb(db);
-  };
+  const loadUsers = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const fetched = await dataService.getUsers();
+      setUsers(fetched);
+    } catch (err: any) {
+      console.error('Error loading users:', err);
+      setError(err.message || 'Failed to fetch user profiles from database.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
-  const handleDeleteUserLogin = (userToDelete: UserProfile) => {
+  useEffect(() => {
+    loadUsers();
+
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'profiles' || tableName === 'users') {
+        loadUsers();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [loadUsers]);
+
+  const handleDeleteUserLogin = async (userToDelete: UserProfile) => {
     if (userToDelete.role === 'admin' && userToDelete.email.includes('owner')) {
       alert('Cannot delete the primary Owner / Admin account.');
       return;
     }
 
-    const updated = users.filter((u) => u.id !== userToDelete.id);
-    syncUsersToDb(updated);
-    showToast(`User login for ${userToDelete.full_name} (${userToDelete.email}) permanently deleted. Business records preserved.`);
-    setSelectedUserForDelete(null);
+    try {
+      await dataService.deleteUserProfile(userToDelete.id);
+      showToast(`User login for ${userToDelete.full_name} (${userToDelete.email}) permanently deleted.`);
+      setSelectedUserForDelete(null);
+      await loadUsers();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete user account.');
+    }
   };
 
-  const handleRoleChange = (userId: string, updatedRole: UserRole) => {
-    const updated = users.map((u) => (u.id === userId ? { ...u, role: updatedRole } : u));
-    syncUsersToDb(updated);
-    showToast('User role updated successfully.');
+  const handleRoleChange = async (userId: string, updatedRole: UserRole) => {
+    try {
+      await dataService.updateUserProfile(userId, { role: updatedRole });
+      showToast('User role updated successfully.');
+      await loadUsers();
+    } catch (err: any) {
+      alert(err.message || 'Failed to update user role.');
+    }
   };
 
-  const handleToggleStatus = (userId: string) => {
-    let msgName = '';
-    let nextState = true;
-    const updated = users.map((u) => {
-      if (u.id === userId) {
-        nextState = !u.is_active;
-        msgName = u.full_name;
-        return { ...u, is_active: nextState };
-      }
-      return u;
-    });
-    syncUsersToDb(updated);
-    showToast(`Account for ${msgName} is now ${nextState ? 'ACTIVE' : 'DISABLED'}.`);
+  const handleToggleStatus = async (userId: string) => {
+    const target = users.find((u) => u.id === userId);
+    if (!target) return;
+
+    const nextState = !target.is_active;
+    try {
+      await dataService.updateUserProfile(userId, { is_active: nextState });
+      showToast(`Account for ${target.full_name} is now ${nextState ? 'ACTIVE' : 'DISABLED'}.`);
+      await loadUsers();
+    } catch (err: any) {
+      alert(err.message || 'Failed to update account status.');
+    }
   };
 
   const handleForceLogout = (userName: string) => {
     showToast(`Active session for ${userName} has been revoked.`);
   };
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFullName || !newEmail || !newPassword) {
       alert('Please complete all required user fields.');
       return;
     }
 
-    const newUser: UserProfile = {
-      id: `usr-${Date.now()}`,
-      user_id: newUserId || newEmail.split('@')[0],
-      full_name: newFullName,
-      email: newEmail.trim().toLowerCase(),
-      role: newRole,
-      branch: newBranch,
-      is_active: true,
-      created_at: new Date().toISOString(),
-    };
+    try {
+      const created = await dataService.createUserProfile({
+        full_name: newFullName,
+        email: newEmail.trim().toLowerCase(),
+        role: newRole,
+        branch: newBranch,
+        is_active: true,
+      });
 
-    const updated = [newUser, ...users];
-    syncUsersToDb(updated);
-    showToast(`New staff account for ${newFullName} created successfully with direct password.`);
+      showToast(`New staff account for ${created.full_name} created successfully.`);
 
-    // Reset Form
-    setNewFullName('');
-    setNewEmail('');
-    setNewUserId('');
-    setNewPassword('');
-    setIsAddUserOpen(false);
+      // Reset Form
+      setNewFullName('');
+      setNewEmail('');
+      setNewUserId('');
+      setNewPassword('');
+      setIsAddUserOpen(false);
+      await loadUsers();
+    } catch (err: any) {
+      alert(err.message || 'Failed to create user profile in database.');
+    }
   };
 
   const handleDirectPasswordChange = (e: React.FormEvent) => {
@@ -164,6 +192,13 @@ export const UserManagement: React.FC = () => {
         <div className="rounded-2xl border border-gold-400 bg-gold-50 p-4 text-xs font-bold text-amber-950 dark:border-gold-800 dark:bg-gold-950/40 dark:text-gold-300 flex items-center gap-2 shadow-sm">
           <CheckCircle className="h-4 w-4 text-gold-600" />
           <span>{notification}</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-2xl border border-rose-400 bg-rose-50 p-4 text-xs font-bold text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300 flex items-center gap-2 shadow-sm">
+          <AlertTriangle className="h-4 w-4 text-rose-600" />
+          <span>{error}</span>
         </div>
       )}
 

@@ -20,6 +20,7 @@ import {
   InventoryMovement,
   ManufacturingJob,
   UserProfile,
+  UserRole,
   AuditLog,
   NotificationItem,
 } from '@/types';
@@ -766,6 +767,133 @@ export const dataService = {
     const { data, error } = await db.from('business_settings').select('*').limit(1).single();
     if (error || !data) return null;
     return data as BusinessSettings;
+  },
+
+  // --------------------------------------------------------------------------
+  // USER PROFILES / USER MANAGEMENT
+  // --------------------------------------------------------------------------
+  async getUsers(): Promise<UserProfile[]> {
+    const db = checkSupabaseClient();
+    const { data, error } = await db
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Failed to fetch user profiles from Supabase:', error.message);
+      throw formatDbError('Database Error', error);
+    }
+    return ((data || []).map((u: any) => ({
+      id: u.id,
+      user_id: u.user_id || u.id,
+      full_name: u.full_name || '',
+      email: u.email || '',
+      phone: u.phone || '',
+      role: (u.role || 'billing_staff') as UserRole,
+      branch: u.branch || 'Trichy - Sandhukadai',
+      avatar_url: u.avatar_url,
+      is_active: u.is_active ?? true,
+      last_login_at: u.last_login_at,
+      created_at: u.created_at,
+    }))) as UserProfile[];
+  },
+
+  async createUserProfile(userData: Partial<UserProfile>): Promise<UserProfile> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(userData.id);
+
+    const dbPayload: Record<string, any> = {
+      id: validId,
+      full_name: userData.full_name || '',
+      email: (userData.email || '').trim().toLowerCase(),
+      phone: userData.phone || '',
+      role: userData.role || 'billing_staff',
+      branch: userData.branch || 'Trichy - Sandhukadai',
+      is_active: userData.is_active ?? true,
+    };
+
+    const { data, error } = await db
+      .from('profiles')
+      .upsert([dbPayload])
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Failed to create user profile in Supabase:', error.message);
+      throw formatDbError('User Profile Creation Failed', error);
+    }
+
+    const created: UserProfile = {
+      id: data.id,
+      user_id: data.user_id || data.id,
+      full_name: data.full_name,
+      email: data.email,
+      phone: data.phone,
+      role: (data.role || 'billing_staff') as UserRole,
+      branch: data.branch || 'Trichy - Sandhukadai',
+      avatar_url: data.avatar_url,
+      is_active: data.is_active ?? true,
+      last_login_at: data.last_login_at,
+      created_at: data.created_at,
+    };
+
+    syncEngine.notifyDataChange('profiles', 'INSERT', created);
+    return created;
+  },
+
+  async updateUserProfile(id: string, updates: Partial<UserProfile>): Promise<UserProfile> {
+    const db = checkSupabaseClient();
+
+    const dbPayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (updates.full_name !== undefined) dbPayload.full_name = updates.full_name;
+    if (updates.email !== undefined) dbPayload.email = updates.email.trim().toLowerCase();
+    if (updates.phone !== undefined) dbPayload.phone = updates.phone;
+    if (updates.role !== undefined) dbPayload.role = updates.role;
+    if (updates.branch !== undefined) dbPayload.branch = updates.branch;
+    if (updates.is_active !== undefined) dbPayload.is_active = updates.is_active;
+
+    const { data, error } = await db
+      .from('profiles')
+      .update(dbPayload)
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Failed to update user profile in Supabase:', error.message);
+      throw formatDbError('User Profile Update Failed', error);
+    }
+
+    const updated: UserProfile = {
+      id: data.id,
+      user_id: data.user_id || data.id,
+      full_name: data.full_name,
+      email: data.email,
+      phone: data.phone,
+      role: (data.role || 'billing_staff') as UserRole,
+      branch: data.branch || 'Trichy - Sandhukadai',
+      avatar_url: data.avatar_url,
+      is_active: data.is_active ?? true,
+      last_login_at: data.last_login_at,
+      created_at: data.created_at,
+    };
+
+    syncEngine.notifyDataChange('profiles', 'UPDATE', updated);
+    return updated;
+  },
+
+  async deleteUserProfile(id: string): Promise<void> {
+    const db = checkSupabaseClient();
+    const { error } = await db.from('profiles').delete().eq('id', id);
+
+    if (error) {
+      console.error('Failed to delete user profile in Supabase:', error.message);
+      throw formatDbError('User Profile Deletion Failed', error);
+    }
+
+    syncEngine.notifyDataChange('profiles', 'DELETE', { id });
   },
 
   // --------------------------------------------------------------------------
