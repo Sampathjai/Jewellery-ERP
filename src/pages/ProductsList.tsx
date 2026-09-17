@@ -184,7 +184,7 @@ export const ProductsList: React.FC = () => {
                   </button>
                 </div>
                 <div className="absolute bottom-2 right-2">
-                  <PurityBadge purity={p.purity} />
+                  <PurityBadge purity={p.purity} actualTouch={p.actual_touch} />
                 </div>
               </div>
 

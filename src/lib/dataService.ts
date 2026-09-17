@@ -16,6 +16,7 @@ import {
   Expense,
   Supplier,
   MetalRate,
+  MetalPurity,
   BusinessSettings,
   InventoryMovement,
   ManufacturingJob,
@@ -57,8 +58,24 @@ export const formatDbError = (context: string, error: any): Error => {
 // ============================================================================
 // CENTRAL DIRECT SUPABASE DATA SERVICE
 // Single source of truth interfacing directly with Supabase PostgreSQL.
-// LocalStorage is NEVER used as a primary, fallback, or startup database.
-// ============================================================================
+export const sanitizeMetalPurity = (purity?: string, touch?: number, metalType?: string): MetalPurity => {
+  if (metalType === 'silver') {
+    if (purity === '999_silver') return '999_silver';
+    return '925_silver';
+  }
+  const validEnums: MetalPurity[] = ['24k', '22k', '18k', '14k', '925_silver', '999_silver', 'other'];
+  if (purity && validEnums.includes(purity as MetalPurity)) {
+    return purity as MetalPurity;
+  }
+  if (touch !== undefined && touch !== null) {
+    const t = Number(touch);
+    if (t >= 99) return '24k';
+    if (t >= 90) return '22k';
+    if (t >= 74) return '18k';
+    if (t >= 55) return '14k';
+  }
+  return 'other';
+};
 
 export const dataService = {
   // --------------------------------------------------------------------------
@@ -200,13 +217,16 @@ export const dataService = {
     return ((data || []).map((p) => ({
       ...p,
       category_name: p.category_name || (p.metal_type === 'silver' ? 'Silverware' : 'Gold Jewellery'),
-      actual_touch: 37,
+      actual_touch: Number(p.actual_touch ?? 37),
+      purity: sanitizeMetalPurity(p.purity, p.actual_touch, p.metal_type),
     }))) as Product[];
   },
 
   async createProduct(productData: Partial<Product>): Promise<Product> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(productData.id);
+    const touchVal = Number(productData.actual_touch ?? 37);
+    const sanitizedPurity = sanitizeMetalPurity(productData.purity, touchVal, productData.metal_type);
 
     const dbPayload: Record<string, any> = {
       id: validId,
@@ -216,7 +236,8 @@ export const dataService = {
       name: productData.name || '',
       category_id: productData.category_id ? ensureValidUUID(productData.category_id) : undefined,
       metal_type: productData.metal_type || 'gold',
-      purity: productData.purity || '22k',
+      purity: sanitizedPurity,
+      actual_touch: touchVal,
       gross_weight_g: Number(productData.gross_weight_g || 0),
       stone_weight_g: Number(productData.stone_weight_g || 0),
       other_weight_g: Number(productData.other_weight_g || 0),
@@ -253,7 +274,8 @@ export const dataService = {
     const result = {
       ...data,
       category_name: productData.category_name || (data.metal_type === 'silver' ? 'Silverware' : 'Gold Jewellery'),
-      actual_touch: (productData as any).actual_touch || 37,
+      actual_touch: Number(data.actual_touch ?? touchVal),
+      purity: data.purity || sanitizedPurity,
     } as Product;
 
     syncEngine.notifyDataChange('products', 'INSERT', result);
@@ -264,7 +286,14 @@ export const dataService = {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(id);
 
-    const { category_name, actual_touch, deduction_weight_g, ...dbUpdates } = updates as any;
+    const { category_name, deduction_weight_g, ...dbUpdates } = updates as any;
+
+    if (dbUpdates.actual_touch !== undefined) {
+      dbUpdates.actual_touch = Number(dbUpdates.actual_touch);
+    }
+    if (dbUpdates.purity || dbUpdates.actual_touch) {
+      dbUpdates.purity = sanitizeMetalPurity(dbUpdates.purity, dbUpdates.actual_touch, dbUpdates.metal_type);
+    }
 
     const { data, error } = await db
       .from('products')
@@ -281,7 +310,7 @@ export const dataService = {
     const result = {
       ...data,
       category_name: category_name || (data.metal_type === 'silver' ? 'Silverware' : 'Gold Jewellery'),
-      actual_touch: actual_touch || 37,
+      actual_touch: Number(data.actual_touch ?? updates.actual_touch ?? 37),
     } as Product;
 
     syncEngine.notifyDataChange('products', 'UPDATE', result);

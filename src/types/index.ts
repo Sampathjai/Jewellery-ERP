@@ -78,7 +78,7 @@ export interface UserProfile {
 }
 
 export type MetalType = 'gold' | 'silver' | 'platinum' | 'other';
-export type MetalPurity = '24k' | '22k' | '18k' | '14k' | '70_touch' | '40_touch' | '37_touch' | '925_silver' | '999_silver' | 'other';
+export type MetalPurity = '24k' | '22k' | '18k' | '14k' | '925_silver' | '999_silver' | 'other';
 
 export type StockStatus =
   | 'in_stock'

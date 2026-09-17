@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PhotoUploader } from '@/components/common/PhotoUploader';
-import { dataService, ensureValidUUID } from '@/lib/dataService';
+import { dataService, ensureValidUUID, sanitizeMetalPurity } from '@/lib/dataService';
 import { Product, MetalType, MetalPurity } from '@/types';
 import { useTranslation } from '@/lib/i18n';
 import { ArrowLeft, Save, Plus, Sparkles, AlertCircle } from 'lucide-react';
@@ -75,24 +75,8 @@ export const AddProduct: React.FC = () => {
       const sku = `SKU-${Math.floor(1000 + Math.random() * 9000)}`;
       const barcode = `${Math.floor(8900000 + Math.random() * 99999)}`;
 
-      let purityFallback: MetalPurity = formData.purity || '22k';
-      if (formData.metal_type === 'silver') {
-        purityFallback = '925_silver';
-      } else if (touch >= 99) {
-        purityFallback = '24k';
-      } else if (touch >= 90) {
-        purityFallback = '22k';
-      } else if (touch >= 74) {
-        purityFallback = '18k';
-      } else if (touch >= 65) {
-        purityFallback = '70_touch';
-      } else if (touch >= 50) {
-        purityFallback = '14k';
-      } else if (touch >= 39) {
-        purityFallback = '40_touch';
-      } else if (touch >= 30) {
-        purityFallback = '37_touch';
-      }
+      const touchVal = Number(formData.actual_touch || 37);
+      const purityFallback: MetalPurity = sanitizeMetalPurity(undefined, touchVal, formData.metal_type);
 
       await dataService.createProduct({
         id: ensureValidUUID(),
