@@ -386,8 +386,15 @@ export const dataService = {
       await db.from('retail_payments').insert(paymentPayload);
     }
 
-    syncEngine.notifyDataChange('retail_invoices', 'INSERT', savedInv);
-    return savedInv as RetailInvoice;
+    const resultInvoice: RetailInvoice = {
+      ...savedInv,
+      customer_name: invoiceData.customer_name || savedInv.customer_name || 'Walk-in Customer',
+      customer_phone: invoiceData.customer_phone || savedInv.customer_phone || '',
+      items: invoiceData.items || [],
+    };
+
+    syncEngine.notifyDataChange('retail_invoices', 'INSERT', resultInvoice);
+    return resultInvoice;
   },
 
   async getRetailPayments(): Promise<RetailPayment[]> {

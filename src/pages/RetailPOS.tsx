@@ -144,52 +144,80 @@ export const RetailPOS: React.FC = () => {
   const taxAmount = gstEnabled ? (taxableSubtotal * manualGstPercent) / 100 : 0;
   const grandTotal = Math.round(taxableSubtotal + taxAmount);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleFinalizeBill = async () => {
-    if (cartItems.length === 0 || !selectedCustomer) return;
+    if (cartItems.length === 0) {
+      alert('Please add at least one product item to the bill before finalizing.');
+      return;
+    }
 
-    const prefix = settings?.invoice_prefix || 'INV-2026-';
-    const nextNum = settings?.next_invoice_number || 1005;
-    const invoiceNo = `${prefix}${nextNum}`;
-    const invoiceId = ensureValidUUID();
+    const activeCustomer = selectedCustomer || {
+      id: ensureValidUUID(),
+      full_name: 'Walk-in / Cash Customer',
+      phone: '9999999999',
+      city: 'Trichy',
+      total_purchases: 0,
+      loyalty_points: 0,
+    };
 
-    const createdInvoice = await dataService.createRetailInvoice(
-      {
-        id: invoiceId,
-        invoice_number: invoiceNo,
-        customer_id: ensureValidUUID(selectedCustomer.id),
-        customer_name: selectedCustomer.full_name,
-        customer_phone: selectedCustomer.phone,
-        invoice_date: new Date().toISOString().split('T')[0],
-        subtotal_metal_value: subtotalMetalValue,
-        total_making_charges: itemMakingCharges + manualMakingCharge + customSetharamAmount,
-        total_labour_charges: 0,
-        total_wastage_value: customWastageAmount,
-        discount_amount: discountAmount,
-        tax_percent: gstEnabled ? manualGstPercent : 0,
-        tax_amount: taxAmount,
-        round_off: 0,
-        total_amount: grandTotal,
-        paid_amount: grandTotal,
-        balance_due: 0,
-        payment_status: 'paid',
-        status: 'finalized',
-        items: cartItems,
-        notes: notes || (gstEnabled ? 'GST Invoice' : 'Bill without GST'),
-        created_at: new Date().toISOString(),
-      },
-      {
-        id: ensureValidUUID(),
-        invoice_id: invoiceId,
-        payment_date: new Date().toISOString().split('T')[0],
-        amount: grandTotal,
-        payment_mode: paymentMode,
-        reference_number: `REF-${Date.now()}`,
+    setIsSubmitting(true);
+
+    try {
+      const prefix = settings?.invoice_prefix || 'INV-2026-';
+      const nextNum = settings?.next_invoice_number || 1005;
+      const invoiceNo = `${prefix}${nextNum}`;
+      const invoiceId = ensureValidUUID();
+
+      const createdInvoice = await dataService.createRetailInvoice(
+        {
+          id: invoiceId,
+          invoice_number: invoiceNo,
+          customer_id: ensureValidUUID(activeCustomer.id),
+          customer_name: activeCustomer.full_name,
+          customer_phone: activeCustomer.phone || '',
+          invoice_date: new Date().toISOString().split('T')[0],
+          subtotal_metal_value: subtotalMetalValue,
+          total_making_charges: itemMakingCharges + manualMakingCharge + customSetharamAmount,
+          total_labour_charges: 0,
+          total_wastage_value: customWastageAmount,
+          discount_amount: discountAmount,
+          tax_percent: gstEnabled ? manualGstPercent : 0,
+          tax_amount: taxAmount,
+          round_off: 0,
+          total_amount: grandTotal,
+          paid_amount: grandTotal,
+          balance_due: 0,
+          payment_status: 'paid',
+          status: 'finalized',
+          items: cartItems,
+          notes: notes || (gstEnabled ? 'GST Invoice' : 'Bill without GST'),
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: ensureValidUUID(),
+          invoice_id: invoiceId,
+          payment_date: new Date().toISOString().split('T')[0],
+          amount: grandTotal,
+          payment_mode: paymentMode,
+          reference_number: `REF-${Date.now()}`,
+        }
+      );
+
+      // Auto PDF Generation & Download
+      try {
+        generateRetailInvoicePDF(createdInvoice, settings || undefined);
+      } catch (pdfErr) {
+        console.error('PDF Generation Error:', pdfErr);
       }
-    );
 
-    // Auto PDF Generation & Download
-    generateRetailInvoicePDF(createdInvoice, settings || undefined);
-    navigate(`/invoices/${createdInvoice.id}`);
+      navigate(`/invoices/${createdInvoice.id}`);
+    } catch (err: any) {
+      console.error('Finalize bill error:', err);
+      alert(`Error Finalizing Bill: ${err?.message || 'Failed to create invoice'}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const filteredProducts = productsList.filter(
@@ -483,10 +511,19 @@ export const RetailPOS: React.FC = () => {
 
               <button
                 onClick={handleFinalizeBill}
-                disabled={cartItems.length === 0}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gold-500 py-3 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50 transition-all"
+                disabled={cartItems.length === 0 || isSubmitting}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gold-500 py-3 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50 transition-all cursor-pointer"
               >
-                <Printer className="h-4 w-4" /> Finalize Bill & Print PDF Invoice
+                {isSubmitting ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-charcoal-950 border-t-transparent" />
+                    <span>Finalizing Invoice & Printing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Printer className="h-4 w-4" /> <span>Finalize Bill & Print PDF Invoice</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

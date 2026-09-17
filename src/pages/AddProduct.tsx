@@ -15,6 +15,7 @@ export const AddProduct: React.FC = () => {
     name: '',
     category_name: 'Nose Rings',
     metal_type: 'gold' as MetalType,
+    purity: '22k' as MetalPurity,
     actual_touch: 37,
     quantity: 10,
     gross_weight_g: 3.680,
@@ -74,15 +75,23 @@ export const AddProduct: React.FC = () => {
       const sku = `SKU-${Math.floor(1000 + Math.random() * 9000)}`;
       const barcode = `${Math.floor(8900000 + Math.random() * 99999)}`;
 
-      let purityFallback: MetalPurity = '22k';
+      let purityFallback: MetalPurity = formData.purity || '22k';
       if (formData.metal_type === 'silver') {
         purityFallback = '925_silver';
       } else if (touch >= 99) {
         purityFallback = '24k';
       } else if (touch >= 90) {
         purityFallback = '22k';
-      } else if (touch >= 70) {
+      } else if (touch >= 74) {
         purityFallback = '18k';
+      } else if (touch >= 65) {
+        purityFallback = '70_touch';
+      } else if (touch >= 50) {
+        purityFallback = '14k';
+      } else if (touch >= 39) {
+        purityFallback = '40_touch';
+      } else if (touch >= 30) {
+        purityFallback = '37_touch';
       }
 
       await dataService.createProduct({

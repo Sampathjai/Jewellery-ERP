@@ -94,16 +94,55 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Purity</label>
               <select
                 value={formData.purity}
-                onChange={(e) => handleChange('purity', e.target.value as MetalPurity)}
+                onChange={(e) => {
+                  const p = e.target.value as MetalPurity;
+                  let t = formData.actual_touch;
+                  if (p === '24k') t = 99.9;
+                  else if (p === '22k') t = 91.6;
+                  else if (p === '18k') t = 75.0;
+                  else if (p === '70_touch') t = 70.0;
+                  else if (p === '14k') t = 58.5;
+                  else if (p === '40_touch') t = 40.0;
+                  else if (p === '37_touch') t = 37.5;
+                  setFormData((prev) => ({ ...prev, purity: p, actual_touch: t }));
+                }}
                 className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-xs font-semibold text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-100"
               >
                 <option value="24k">24K (999 Fine Gold)</option>
                 <option value="22k">22K (916 KDM)</option>
-                <option value="18k">18K</option>
-                <option value="14k">14K</option>
+                <option value="18k">18K (750)</option>
+                <option value="70_touch">70 Touch (70% Purity)</option>
+                <option value="14k">14K (585)</option>
+                <option value="40_touch">40 Touch (40% Purity)</option>
+                <option value="37_touch">37 Touch (37.5% / 9K Purity)</option>
                 <option value="925_silver">925 Sterling Silver</option>
                 <option value="999_silver">999 Fine Silver</option>
+                <option value="other">Other / Custom Touch</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Actual Touch (%)</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="100"
+                value={formData.actual_touch || 91.6}
+                onChange={(e) => {
+                  const t = Number(e.target.value);
+                  let p: MetalPurity = formData.purity;
+                  if (t >= 99) p = '24k';
+                  else if (t >= 90) p = '22k';
+                  else if (t >= 74) p = '18k';
+                  else if (t >= 65) p = '70_touch';
+                  else if (t >= 50) p = '14k';
+                  else if (t >= 39) p = '40_touch';
+                  else if (t >= 30) p = '37_touch';
+                  setFormData((prev) => ({ ...prev, actual_touch: t, purity: p }));
+                }}
+                className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-xs font-mono font-bold text-amber-700 focus:border-gold-500 focus:outline-none dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-amber-400"
+              />
             </div>
 
             <div>
