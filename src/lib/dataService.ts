@@ -783,7 +783,58 @@ export const dataService = {
       console.error('Failed to fetch user profiles from Supabase:', error.message);
       throw formatDbError('Database Error', error);
     }
-    return ((data || []).map((u: any) => ({
+
+    let profilesData = data || [];
+
+    // Auto-seed default staff profiles to Supabase if database table is empty
+    if (profilesData.length === 0) {
+      const defaultProfiles = [
+        {
+          id: ensureValidUUID('11111111-1111-4111-8111-111111111111'),
+          full_name: 'Sampath Kumar',
+          email: 'owner@shankarjewellery.com',
+          phone: '+91 98765 43210',
+          role: 'admin',
+          branch: 'Trichy - Sandhukadai',
+          is_active: true,
+        },
+        {
+          id: ensureValidUUID('22222222-2222-4222-8222-222222222222'),
+          full_name: 'Muralidharan',
+          email: 'manager@shankarjewellery.com',
+          phone: '+91 98765 43211',
+          role: 'manager',
+          branch: 'Trichy - Sandhukadai',
+          is_active: true,
+        },
+        {
+          id: ensureValidUUID('33333333-3333-4333-8333-333333333333'),
+          full_name: 'Senthil',
+          email: 'billing@shankarjewellery.com',
+          phone: '+91 98765 43212',
+          role: 'billing_staff',
+          branch: 'Trichy - Sandhukadai',
+          is_active: true,
+        },
+      ];
+
+      try {
+        const { error: seedError } = await db.from('profiles').upsert(defaultProfiles);
+        if (!seedError) {
+          const { data: reData } = await db
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
+          if (reData && reData.length > 0) {
+            profilesData = reData;
+          }
+        }
+      } catch (seedErr) {
+        console.warn('Auto-seed default user profiles failed:', seedErr);
+      }
+    }
+
+    return (profilesData.map((u: any) => ({
       id: u.id,
       user_id: u.user_id || u.id,
       full_name: u.full_name || '',
