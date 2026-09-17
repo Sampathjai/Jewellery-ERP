@@ -354,7 +354,7 @@ export const WholesaleIssuePage: React.FC = () => {
               </label>
               <input
                 type="number"
-                step="1"
+                step="0.01"
                 required
                 value={goldRatePerGram}
                 onChange={(e) => setGoldRatePerGram(Number(e.target.value))}
@@ -606,6 +606,7 @@ export const WholesaleIssuePage: React.FC = () => {
               <input
                 type="number"
                 min="0"
+                step="0.01"
                 value={cashPaid}
                 onChange={(e) => setCashPaid(Number(e.target.value))}
                 className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-900 dark:text-slate-100 font-mono font-bold"
@@ -633,6 +634,7 @@ export const WholesaleIssuePage: React.FC = () => {
               <input
                 type="number"
                 min="0"
+                step="0.01"
                 value={gold916Rate}
                 onChange={(e) => setGold916Rate(Number(e.target.value))}
                 className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-900 dark:text-slate-100 font-mono font-bold"

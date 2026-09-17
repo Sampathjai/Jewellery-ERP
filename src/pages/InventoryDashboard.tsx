@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb, saveLocalDb, fetchProductsFromSupabase } from '@/lib/supabase';
+import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
 import { Product, InventoryMovement } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
@@ -11,14 +12,17 @@ import { Boxes, History, Plus, AlertTriangle, Layers, Edit3, Check, X } from 'lu
 
 export const InventoryDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const [productsList, setProductsList] = useState<Product[]>([]);
   const [db, setDb] = useState(getLocalDb());
 
   const loadInventory = useCallback(async () => {
     try {
-      await fetchProductsFromSupabase();
+      const liveProds = await dataService.getProducts();
+      setProductsList(liveProds);
       setDb(getLocalDb());
     } catch (e) {
-      console.warn('Error loading live inventory:', e);
+      console.warn('Error loading live inventory from Supabase:', e);
+      setProductsList(getLocalDb().products);
     }
   }, []);
 
@@ -44,14 +48,15 @@ export const InventoryDashboard: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const goldProducts = db.products.filter((p) => p.metal_type === 'gold');
-  const silverProducts = db.products.filter((p) => p.metal_type === 'silver');
+  const prods = productsList.length > 0 ? productsList : db.products;
+  const goldProducts = prods.filter((p) => p.metal_type === 'gold');
+  const silverProducts = prods.filter((p) => p.metal_type === 'silver');
 
-  const totalGoldWeight = goldProducts.reduce((sum, p) => sum + p.net_weight_g * p.quantity, 0);
-  const totalSilverWeight = silverProducts.reduce((sum, p) => sum + p.net_weight_g * p.quantity, 0);
-  const totalStockValue = db.products.reduce((sum, p) => sum + p.retail_price * p.quantity, 0);
+  const totalGoldWeight = goldProducts.reduce((sum, p) => sum + (p.net_weight_g || 0) * (p.quantity || 0), 0);
+  const totalSilverWeight = silverProducts.reduce((sum, p) => sum + (p.net_weight_g || 0) * (p.quantity || 0), 0);
+  const totalStockValue = prods.reduce((sum, p) => sum + (p.retail_price || 0) * (p.quantity || 0), 0);
 
-  const lowStockItems = db.products.filter((p) => p.quantity <= p.minimum_stock);
+  const lowStockItems = prods.filter((p) => (p.quantity || 0) <= (p.minimum_stock || 0));
 
   const handleOpenAdjust = (p: Product) => {
     setAdjustingProduct(p);
@@ -59,7 +64,7 @@ export const InventoryDashboard: React.FC = () => {
     setAdjustReason('Stock Audit Adjustment');
   };
 
-  const handleSaveStockAdjustment = () => {
+  const handleSaveStockAdjustment = async () => {
     if (!adjustingProduct) return;
 
     const diff = adjustQty - adjustingProduct.quantity;
@@ -68,28 +73,26 @@ export const InventoryDashboard: React.FC = () => {
       return;
     }
 
-    const prodIndex = db.products.findIndex((p) => p.id === adjustingProduct.id);
-    if (prodIndex !== -1) {
-      db.products[prodIndex].quantity = Math.max(0, adjustQty);
+    try {
+      const updated = await dataService.updateProduct(adjustingProduct.id, {
+        quantity: Math.max(0, adjustQty),
+        status: adjustQty > 0 ? 'in_stock' : 'sold',
+      });
 
-      const movement: InventoryMovement = {
-        id: 'inv-' + Date.now(),
+      await dataService.createInventoryMovement({
         product_id: adjustingProduct.id,
         product_name: adjustingProduct.name,
         sku: adjustingProduct.sku,
         movement_type: diff > 0 ? 'purchase' : 'stock_adjustment',
         quantity_change: diff,
-        weight_change_g: diff * adjustingProduct.net_weight_g,
+        weight_change_g: diff * (adjustingProduct.net_weight_g || 0),
         notes: adjustReason,
-        created_at: new Date().toISOString(),
-      };
+      });
 
-      if (!db.inventoryMovements) db.inventoryMovements = [];
-      db.inventoryMovements.unshift(movement);
-
-      saveLocalDb(db);
-      setDb({ ...db });
-      showToast(`Stock updated for "${adjustingProduct.name}" to ${adjustQty} Pcs.`);
+      showToast(`Stock updated for "${updated.name}" to ${adjustQty} Pcs.`);
+      loadInventory();
+    } catch (err: any) {
+      showToast(`Failed to update stock: ${err?.message || 'Error'}`);
     }
 
     setAdjustingProduct(null);
@@ -195,7 +198,7 @@ export const InventoryDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
-              {db.products.map((p) => (
+              {prods.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-charcoal-800/50">
                   <td className="p-3 font-mono font-bold text-slate-600 dark:text-slate-400">{p.sku}</td>
                   <td className="p-3 font-bold text-charcoal-900 dark:text-slate-100">{p.name}</td>

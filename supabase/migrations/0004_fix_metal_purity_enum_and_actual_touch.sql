@@ -30,3 +30,4 @@ END $$;
 
 -- 3. Notify schema reload
 NOTIFY pgrst, 'reload schema';
+

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { SyncSettings } from './SyncSettings';
-import { getLocalDb, saveLocalDb, resetLocalDbToDemo, resetToCleanProductionData } from '@/lib/supabase';
+import { getLocalDb, resetLocalDbToDemo, resetToCleanProductionData } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
 import { BusinessSettings } from '@/types';
 import { Settings as SettingsIcon, Save, RefreshCw, Upload, ShieldCheck, AlertOctagon, Trash2, Wifi, Building2, Database } from 'lucide-react';
 
@@ -13,11 +14,29 @@ export const Settings: React.FC = () => {
   const [showDemoModal, setShowDemoModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const fetched = await dataService.getBusinessSettings();
+        if (fetched) {
+          setSettings(fetched);
+        }
+      } catch (err) {
+        console.warn('Could not load settings from Supabase:', err);
+      }
+    }
+    loadSettings();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    db.settings = settings;
-    saveLocalDb(db, 'settings', 'UPDATE', settings);
-    setToastMessage('Shop settings saved successfully!');
+    try {
+      const saved = await dataService.saveBusinessSettings(settings);
+      setSettings(saved);
+      setToastMessage('Shop settings saved successfully to database!');
+    } catch (err: any) {
+      setToastMessage(`Saved locally (${err?.message || 'DB Sync Warning'})`);
+    }
     setTimeout(() => setToastMessage(null), 3500);
   };
 

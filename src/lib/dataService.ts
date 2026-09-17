@@ -7,6 +7,7 @@ import {
   RetailInvoice,
   RetailPayment,
   WholesaleIssue,
+  WholesaleIssueItem,
   WholesaleReturn,
   WholesaleSettlement,
   WholesalePayment,
@@ -278,6 +279,28 @@ export const dataService = {
       purity: data.purity || sanitizedPurity,
     } as Product;
 
+    // Automatically record opening stock movement if quantity > 0
+    if (result.quantity > 0) {
+      try {
+        await this.createInventoryMovement({
+          product_id: result.id,
+          product_name: result.name,
+          sku: result.sku,
+          metal_type: result.metal_type,
+          purity: result.purity,
+          movement_type: 'opening_stock',
+          quantity_change: result.quantity,
+          weight_change_g: (result.net_weight_g || 0) * result.quantity,
+          gross_weight_g: result.gross_weight_g,
+          net_weight_g: result.net_weight_g,
+          quantity: result.quantity,
+          notes: `Initial opening stock for ${result.name} (${result.actual_touch || 40}% touch)`,
+        });
+      } catch (movErr) {
+        console.warn('Could not record initial opening stock movement:', movErr);
+      }
+    }
+
     syncEngine.notifyDataChange('products', 'INSERT', result);
     return result;
   },
@@ -330,6 +353,61 @@ export const dataService = {
 
     syncEngine.notifyDataChange('products', 'DELETE', { id: validId });
     return true;
+  },
+
+  // --------------------------------------------------------------------------
+  // INVENTORY MOVEMENTS & AUDIT LEDGER
+  // --------------------------------------------------------------------------
+  async getInventoryMovements(): Promise<InventoryMovement[]> {
+    const db = checkSupabaseClient();
+    const { data, error } = await db
+      .from('inventory_movements')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('Failed to fetch inventory movements from Supabase:', error.message);
+      const localDb = getLocalDb();
+      return localDb.inventoryMovements || [];
+    }
+    return (data || []) as InventoryMovement[];
+  },
+
+  async createInventoryMovement(movement: Partial<InventoryMovement>): Promise<InventoryMovement> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(movement.id);
+    const dbPayload = {
+      id: validId,
+      product_id: movement.product_id ? ensureValidUUID(movement.product_id) : undefined,
+      movement_type: movement.movement_type || 'opening_stock',
+      quantity_change: Number(movement.quantity_change || 0),
+      weight_change_g: Number(movement.weight_change_g || 0),
+      notes: movement.notes || '',
+      created_at: movement.created_at || new Date().toISOString(),
+    };
+
+    const { data, error } = await db
+      .from('inventory_movements')
+      .insert(dbPayload)
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('Failed to record inventory movement in Supabase:', error.message);
+    }
+
+    const result = {
+      ...movement,
+      ...(data || dbPayload),
+    } as InventoryMovement;
+
+    const localDb = getLocalDb();
+    if (!localDb.inventoryMovements) localDb.inventoryMovements = [];
+    localDb.inventoryMovements.unshift(result);
+    saveLocalDb(localDb);
+
+    syncEngine.notifyDataChange('inventory_movements', 'INSERT', result);
+    return result;
   },
 
   // --------------------------------------------------------------------------
@@ -540,12 +618,13 @@ export const dataService = {
     const db = checkSupabaseClient();
     const { data, error } = await db
       .from('wholesale_issues')
-      .select('*')
+      .select('*, items:wholesale_issue_items(*)')
       .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Failed to fetch wholesale issues from Supabase:', error.message);
-      throw new Error(`Database Error: ${error.message}`);
+      const localDb = getLocalDb();
+      return localDb.wholesaleIssues || [];
     }
     return (data || []) as WholesaleIssue[];
   },
@@ -555,18 +634,34 @@ export const dataService = {
     const validId = ensureValidUUID(issueData.id);
     const validCustomerId = ensureValidUUID(issueData.customer_id);
 
-    const payload: Partial<WholesaleIssue> = {
+    let issueNumber = issueData.issue_number;
+    if (!issueNumber) {
+      issueNumber = `WI-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+
+    const payload: Record<string, any> = {
       id: validId,
-      issue_number: issueData.issue_number || `WI-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      issue_number: issueNumber,
       customer_id: validCustomerId,
+      customer_name: issueData.customer_name || '',
+      customer_shop: issueData.customer_shop || '',
       issue_date: issueData.issue_date || new Date().toISOString().split('T')[0],
       expected_return_date: issueData.expected_return_date || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
       total_items_issued: Number(issueData.total_items_issued || 0),
       total_gross_weight_g: Number(issueData.total_gross_weight_g || 0),
+      total_deduction_weight_g: Number(issueData.total_deduction_weight_g || 0),
       total_net_weight_g: Number(issueData.total_net_weight_g || 0),
+      total_fine_gold_g: Number(issueData.total_fine_gold_g || 0),
+      gold_rate_per_gram: Number(issueData.gold_rate_per_gram || 0),
+      total_cash_value: Number(issueData.total_cash_value || issueData.total_valuation_amount || 0),
       total_valuation_amount: Number(issueData.total_valuation_amount || 0),
       agreed_profit_model: issueData.agreed_profit_model || 'model_a_profit_percent',
       agreed_profit_percent: Number(issueData.agreed_profit_percent || 40),
+      cash_paid: Number(issueData.cash_paid || 0),
+      gold_916_weight_paid_g: Number(issueData.gold_916_weight_paid_g || 0),
+      gold_916_rate: Number(issueData.gold_916_rate || 0),
+      gold_916_value_paid: Number(issueData.gold_916_value_paid || 0),
+      remaining_balance: Number(issueData.remaining_balance || 0),
       notes: issueData.notes || '',
       status: issueData.status || 'active',
       created_at: issueData.created_at || new Date().toISOString(),
@@ -583,8 +678,54 @@ export const dataService = {
       throw new Error(`Wholesale Issue Creation Failed: ${error.message}`);
     }
 
-    syncEngine.notifyDataChange('wholesale_issues', 'INSERT', data);
-    return data as WholesaleIssue;
+    const insertedItems: WholesaleIssueItem[] = [];
+    if (issueData.items && issueData.items.length > 0) {
+      const itemsPayload = issueData.items.map((item) => ({
+        id: ensureValidUUID(item.id),
+        issue_id: validId,
+        product_id: ensureValidUUID(item.product_id),
+        product_name: item.product_name || '',
+        sku: item.sku || '',
+        quantity_issued: Number(item.quantity_issued || 1),
+        gross_weight_g: Number(item.gross_weight_g || 0),
+        deduction_weight_g: Number(item.deduction_weight_g || 0),
+        stone_weight_g: Number(item.stone_weight_g || 0),
+        net_weight_g: Number(item.net_weight_g || 0),
+        actual_touch: Number(item.actual_touch || 0),
+        profit_touch: Number(item.profit_touch || 0),
+        billing_touch: Number(item.billing_touch || 0),
+        fine_gold_g: Number(item.fine_gold_g || 0),
+        unit_cost_valuation: Number(item.unit_cost_valuation || 0),
+        total_issue_value: Number(item.total_issue_value || 0),
+        quantity_sold: Number(item.quantity_sold || 0),
+        quantity_returned: Number(item.quantity_returned || 0),
+        quantity_remaining: Number(item.quantity_remaining || item.quantity_issued || 1),
+      }));
+
+      const { data: itemsData, error: itemsError } = await db
+        .from('wholesale_issue_items')
+        .insert(itemsPayload)
+        .select();
+
+      if (itemsError) {
+        console.warn('Could not insert wholesale_issue_items in Supabase:', itemsError.message);
+      } else if (itemsData) {
+        insertedItems.push(...(itemsData as WholesaleIssueItem[]));
+      }
+    }
+
+    const result = {
+      ...data,
+      items: insertedItems.length > 0 ? insertedItems : (issueData.items || []),
+    } as WholesaleIssue;
+
+    const localDb = getLocalDb();
+    if (!localDb.wholesaleIssues) localDb.wholesaleIssues = [];
+    localDb.wholesaleIssues.unshift(result);
+    saveLocalDb(localDb);
+
+    syncEngine.notifyDataChange('wholesale_issues', 'INSERT', result);
+    return result;
   },
 
   async getWholesaleReturns(): Promise<WholesaleReturn[]> {
@@ -892,10 +1033,49 @@ export const dataService = {
   },
 
   async getBusinessSettings(): Promise<BusinessSettings | null> {
-    const db = checkSupabaseClient();
-    const { data, error } = await db.from('business_settings').select('*').limit(1).single();
-    if (error || !data) return null;
-    return data as BusinessSettings;
+    const localDb = getLocalDb();
+    try {
+      const db = checkSupabaseClient();
+      const { data, error } = await db.from('business_settings').select('*').limit(1).single();
+      if (error || !data) {
+        return localDb.settings || null;
+      }
+      localDb.settings = data as BusinessSettings;
+      saveLocalDb(localDb);
+      return data as BusinessSettings;
+    } catch {
+      return localDb.settings || null;
+    }
+  },
+
+  async saveBusinessSettings(settings: Partial<BusinessSettings>): Promise<BusinessSettings> {
+    const localDb = getLocalDb();
+    const updatedSettings = {
+      ...localDb.settings,
+      ...settings,
+      updated_at: new Date().toISOString(),
+    } as BusinessSettings;
+
+    if (!updatedSettings.id) {
+      updatedSettings.id = ensureValidUUID();
+    }
+
+    try {
+      const db = checkSupabaseClient();
+      const { data, error } = await db.from('business_settings').upsert(updatedSettings).select().single();
+      if (error) {
+        console.warn('Supabase business_settings save error, updated localDb cache:', error.message);
+      } else if (data) {
+        localDb.settings = data as BusinessSettings;
+      }
+    } catch (err: any) {
+      console.warn('Supabase client error saving settings, updated localDb:', err?.message || err);
+    }
+
+    localDb.settings = updatedSettings;
+    saveLocalDb(localDb, 'settings', 'UPDATE', updatedSettings);
+    syncEngine.notifyDataChange('business_settings', 'UPDATE', updatedSettings);
+    return updatedSettings;
   },
 
   // --------------------------------------------------------------------------
