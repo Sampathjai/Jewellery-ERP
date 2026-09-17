@@ -608,7 +608,7 @@ END $$;
 
 -- 13. ENABLE REALTIME REPLICATION FOR CROSS-DEVICE SYNC
 DO $$ BEGIN
-    ALTER PUBLICATION supabase_realtime ADD TABLE customers, products, retail_invoices, wholesale_issues;
+    ALTER PUBLICATION supabase_realtime ADD TABLE profiles, customers, products, retail_invoices, wholesale_issues, metal_rates, expenses, purchases, suppliers;
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- Migration completed!
