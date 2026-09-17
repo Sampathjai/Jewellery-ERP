@@ -40,11 +40,11 @@ export const Login: React.FC = () => {
       return;
     }
 
-    const res = await login(email);
+    const res = await login(email, password);
     if (res.success) {
       navigate('/dashboard', { replace: true });
     } else {
-      setErrorMessage(res.message || 'Invalid login credentials. Please check and try again.');
+      setErrorMessage(res.message || 'Invalid email address or password.');
     }
   };
 

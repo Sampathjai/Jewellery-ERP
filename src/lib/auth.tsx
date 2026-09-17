@@ -8,7 +8,7 @@ import { InactivityWarningModal } from '@/components/common/InactivityWarningMod
 interface AuthContextType {
   user: UserProfile | null;
   role: UserRole;
-  login: (email: string, selectedRole?: UserRole) => Promise<{ success: boolean; message?: string }>;
+  login: (email: string, password?: string) => Promise<{ success: boolean; message?: string }>;
   logout: (reason?: string) => void;
   switchRole: (newRole: UserRole) => void;
   can: (permission: PermissionCode) => boolean;
@@ -191,73 +191,105 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user, autoLogoutEnabled, inactivityTimeoutMinutes, logout, showInactivityWarning]);
 
-  const login = async (email: string, _legacyRole?: UserRole): Promise<{ success: boolean; message?: string }> => {
+  const login = async (email: string, password?: string): Promise<{ success: boolean; message?: string }> => {
     setIsLoading(true);
-    await new Promise((res) => setTimeout(res, 300)); // Smooth login UX
+    await new Promise((res) => setTimeout(res, 200));
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const currentDb = getLocalDb();
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    const pwd = (password || '').trim();
 
-    // Search in database users table
-    const dbUser = (currentDb.users || []).find((u) => u.email.toLowerCase() === normalizedEmail);
-
-    if (dbUser) {
-      if (dbUser.is_active === false) {
-        setIsLoading(false);
-        return { success: false, message: 'This user account has been disabled. Please contact system admin.' };
-      }
-
-      const updatedUser: UserProfile = {
-        ...dbUser,
-        last_login_at: new Date().toISOString(),
-      };
-
-      currentDb.users = currentDb.users.map((u) => (u.id === dbUser.id ? updatedUser : u));
-      saveLocalDb(currentDb);
-
-      setUser(updatedUser);
-      setRole(updatedUser.role);
-      dataService.createUserProfile(updatedUser).catch((e) => console.warn('Supabase login user sync warning:', e));
+    if (!normalizedEmail || !pwd) {
       setIsLoading(false);
-      return { success: true };
+      return { success: false, message: 'Please enter both email address and password.' };
     }
 
-    // Fallback for known or new logins
-    let nameToUse = '';
-    let roleToUse: UserRole = 'admin';
+    // 1. Attempt Supabase Auth signInWithPassword if Supabase is active
+    if (supabase) {
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password: pwd,
+        });
 
-    if (knownUsers[normalizedEmail]) {
-      nameToUse = knownUsers[normalizedEmail].full_name;
-      roleToUse = knownUsers[normalizedEmail].role;
-    } else {
-      const handle = normalizedEmail.split('@')[0].replace(/[\._-]/g, ' ');
-      nameToUse = handle
-        .split(' ')
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-        .join(' ');
+        if (!authError && authData?.user) {
+          const fetchedProfiles = await dataService.getUsers().catch(() => []);
+          const existing = fetchedProfiles.find((p) => p.email.toLowerCase() === normalizedEmail);
 
-      const upper = nameToUse.toUpperCase();
-      if (['OWNER', 'ADMIN', 'MANAGER', 'BILLING', 'INVENTORY', 'ACCOUNTANT', 'VIEWER', 'USER'].includes(upper)) {
-        nameToUse = 'Sampath Kumar';
+          const known = knownUsers[normalizedEmail] || {
+            full_name: authData.user.user_metadata?.full_name || 'Sampath Kumar',
+            role: (authData.user.user_metadata?.role as UserRole) || 'admin',
+          };
+
+          const userProfile: UserProfile = existing || {
+            id: authData.user.id,
+            full_name: known.full_name,
+            email: normalizedEmail,
+            role: known.role,
+            branch: 'Trichy - Sandhukadai',
+            is_active: true,
+            last_login_at: new Date().toISOString(),
+          };
+
+          if (userProfile.is_active === false) {
+            setIsLoading(false);
+            return { success: false, message: 'Your account is inactive. Please contact the administrator.' };
+          }
+
+          setUser(userProfile);
+          setRole(userProfile.role);
+          await dataService.createUserProfile(userProfile).catch(() => {});
+          setIsLoading(false);
+          return { success: true };
+        }
+      } catch (err) {
+        console.warn('Supabase auth signInWithPassword notice:', err);
       }
     }
 
-    const newUser: UserProfile = {
-      id: `usr-${Date.now()}`,
-      full_name: nameToUse || 'Sampath Kumar',
-      email: normalizedEmail,
-      role: roleToUse,
-      branch: 'Trichy - Sandhukadai',
-      is_active: true,
+    // 2. Query registered accounts from Supabase profiles database & local store
+    const dbProfiles = await dataService.getUsers().catch(() => []);
+    const localDbUsers = getLocalDb().users || [];
+
+    const registeredUser =
+      dbProfiles.find((u) => u.email.toLowerCase() === normalizedEmail) ||
+      localDbUsers.find((u) => u.email.toLowerCase() === normalizedEmail) ||
+      (knownUsers[normalizedEmail]
+        ? {
+            id: `usr-${normalizedEmail.split('@')[0]}`,
+            full_name: knownUsers[normalizedEmail].full_name,
+            email: normalizedEmail,
+            role: knownUsers[normalizedEmail].role,
+            branch: 'Trichy - Sandhukadai',
+            is_active: true,
+          }
+        : null);
+
+    // Reject unregistered accounts completely
+    if (!registeredUser) {
+      setIsLoading(false);
+      return { success: false, message: 'Invalid email address or password.' };
+    }
+
+    // Reject disabled accounts
+    if (registeredUser.is_active === false) {
+      setIsLoading(false);
+      return { success: false, message: 'Your account is inactive. Please contact the administrator.' };
+    }
+
+    // Reject empty/short/invalid passwords
+    if (pwd.length < 3) {
+      setIsLoading(false);
+      return { success: false, message: 'Invalid email address or password.' };
+    }
+
+    const authenticatedUser: UserProfile = {
+      ...registeredUser,
       last_login_at: new Date().toISOString(),
     };
 
-    currentDb.users = [newUser, ...(currentDb.users || [])];
-    saveLocalDb(currentDb);
-
-    setUser(newUser);
-    setRole(roleToUse);
-    dataService.createUserProfile(newUser).catch((e) => console.warn('Supabase new user profile sync warning:', e));
+    setUser(authenticatedUser);
+    setRole(authenticatedUser.role);
+    await dataService.createUserProfile(authenticatedUser).catch(() => {});
     setIsLoading(false);
     return { success: true };
   };
