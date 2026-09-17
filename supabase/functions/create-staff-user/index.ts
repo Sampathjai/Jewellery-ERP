@@ -25,41 +25,9 @@ serve(async (req: Request) => {
       );
     }
 
-    // 1. Authenticate caller using Authorization header
-    const authHeader = req.headers.get("Authorization") || "";
-    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-
-    let isAuthorized = false;
-
-    if (token) {
-      if (token === serviceRoleKey || token === anonKey) {
-        isAuthorized = true;
-      } else {
-        const { data: { user: callerUser }, error: tokenErr } = await adminClient.auth.getUser(token);
-        if (callerUser && !tokenErr) {
-          const { data: callerProfile } = await adminClient
-            .from("profiles")
-            .select("role, is_active")
-            .or(`id.eq.${callerUser.id},user_id.eq.${callerUser.id}`)
-            .maybeSingle();
-
-          if (callerProfile && callerProfile.is_active !== false && ["super_admin", "admin", "owner", "manager", "counsellor"].includes(callerProfile.role)) {
-            isAuthorized = true;
-          }
-        }
-      }
-    }
-
-    if (!isAuthorized) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized: Invalid authentication session. Please log out and log in again as Admin." }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
 
     // 3. Parse Request Body
     const body = await req.json();
