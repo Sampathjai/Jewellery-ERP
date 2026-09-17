@@ -232,12 +232,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, password?: string): Promise<{ success: boolean; message?: string }> => {
     setIsLoading(true);
 
-    const normalizedEmail = (email || '').trim().toLowerCase();
+    const rawInput = (email || '').trim().toLowerCase();
+    const normalizedEmail = rawInput.includes('@') ? rawInput : `${rawInput}@shankarjewellery.com`;
     const pwd = (password || '').trim();
 
     if (!normalizedEmail || !pwd) {
       setIsLoading(false);
-      return { success: false, message: 'Please enter both email address and password.' };
+      return { success: false, message: 'Please enter both email address / username and password.' };
     }
 
     if (!supabase) {
@@ -254,7 +255,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (authError || !authData?.user) {
         setIsLoading(false);
-        return { success: false, message: authError?.message || 'Invalid email address or password.' };
+        let msg = authError?.message || 'Invalid email address or password.';
+        if (msg.toLowerCase().includes('email not confirmed')) {
+          msg = 'Email address not confirmed in Supabase Auth. Contact administrator.';
+        }
+        return { success: false, message: msg };
       }
 
       const userProfile = await syncUserProfileFromAuth(authData.user);
