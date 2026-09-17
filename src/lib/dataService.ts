@@ -343,6 +343,8 @@ export const dataService = {
       id: validId,
       invoice_number: invoiceData.invoice_number || `SJ-INV-${Date.now()}`,
       customer_id: validCustomerId,
+      customer_name: invoiceData.customer_name || 'Walk-in Customer',
+      customer_phone: invoiceData.customer_phone || '',
       invoice_date: invoiceData.invoice_date || new Date().toISOString().split('T')[0],
       subtotal_metal_value: Number(invoiceData.subtotal_metal_value || 0),
       total_making_charges: Number(invoiceData.total_making_charges || 0),
