@@ -64,6 +64,43 @@ CREATE TABLE IF NOT EXISTS profiles (
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'billing_staff';
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS branch TEXT DEFAULT 'Trichy - Sandhukadai';
 
+-- Automatic Profile Provisioning Trigger for auth.users
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (
+    id, user_id, full_name, email, role, branch, is_active, created_at, updated_at
+  )
+  VALUES (
+    NEW.id, NEW.id,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', SPLIT_PART(NEW.email, '@', 1)),
+    LOWER(NEW.email),
+    COALESCE(NEW.raw_user_meta_data->>'role', 'billing_staff'),
+    COALESCE(NEW.raw_user_meta_data->>'branch', 'Trichy - Sandhukadai'),
+    true, NOW(), NOW()
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    user_id = EXCLUDED.user_id,
+    full_name = COALESCE(EXCLUDED.full_name, public.profiles.full_name),
+    role = COALESCE(EXCLUDED.role, public.profiles.role),
+    updated_at = NOW();
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'auth' AND table_name = 'users') THEN
+        DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+        CREATE TRIGGER on_auth_user_created
+        AFTER INSERT ON auth.users
+        FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+    END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
 CREATE TABLE IF NOT EXISTS roles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name user_role_type UNIQUE NOT NULL,

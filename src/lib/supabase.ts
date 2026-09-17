@@ -81,6 +81,21 @@ export const getSupabaseClient = () => {
 
 export const supabase = getSupabaseClient();
 
+export const createSecondaryAuthClient = () => {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    return createClient(rawSupabaseUrl, rawSupabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+  } catch (e) {
+    return null;
+  }
+};
+
 // ============================================================================
 // MOCK PERSISTENT DATA STORAGE ENGINE FOR CLIENT/DEMO MODE
 // ============================================================================

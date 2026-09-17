@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured, getLocalDb, saveLocalDb } from './supabase';
+import { supabase, isSupabaseConfigured, getLocalDb, saveLocalDb, createSecondaryAuthClient } from './supabase';
 import { syncEngine } from './syncEngine';
 import {
   Customer,
@@ -784,98 +784,7 @@ export const dataService = {
       throw formatDbError('Database Error', error);
     }
 
-    let profilesData = data || [];
-
-    // Auto-seed default staff profiles to Supabase if database table is empty
-    if (profilesData.length === 0) {
-      const defaultProfiles = [
-        {
-          id: ensureValidUUID('11111111-1111-4111-8111-111111111111'),
-          full_name: 'Sampath Kumar',
-          email: 'owner@shankarjewellery.com',
-          phone: '+91 98765 43210',
-          role: 'admin',
-          branch: 'Trichy - Sandhukadai',
-          is_active: true,
-        },
-        {
-          id: ensureValidUUID('11111111-1111-4111-8111-111111111112'),
-          full_name: 'Sampath Kumar',
-          email: 'sampath@shankarjewellery.com',
-          phone: '+91 98765 43210',
-          role: 'admin',
-          branch: 'Trichy - Sandhukadai',
-          is_active: true,
-        },
-        {
-          id: ensureValidUUID('22222222-2222-4222-8222-222222222222'),
-          full_name: 'Muralidharan',
-          email: 'manager@shankarjewellery.com',
-          phone: '+91 98765 43211',
-          role: 'manager',
-          branch: 'Trichy - Sandhukadai',
-          is_active: true,
-        },
-        {
-          id: ensureValidUUID('33333333-3333-4333-8333-333333333333'),
-          full_name: 'Senthil',
-          email: 'billing@shankarjewellery.com',
-          phone: '+91 98765 43212',
-          role: 'billing_staff',
-          branch: 'Trichy - Sandhukadai',
-          is_active: true,
-        },
-      ];
-
-      try {
-        const { error: seedError } = await db.from('profiles').upsert(defaultProfiles);
-        if (!seedError) {
-          const { data: reData } = await db
-            .from('profiles')
-            .select('*')
-            .order('created_at', { ascending: false });
-          if (reData && reData.length > 0) {
-            profilesData = reData;
-          }
-        }
-      } catch (seedErr) {
-        console.warn('Auto-seed default user profiles failed:', seedErr);
-      }
-    }
-
-    // Ensure the currently logged-in auth user from local session is saved in Supabase profiles
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const authUserStr = localStorage.getItem('sampath_auth_user');
-        if (authUserStr) {
-          const authUser = JSON.parse(authUserStr);
-          if (authUser && authUser.email) {
-            const exists = profilesData.some((p: any) => p.email.toLowerCase() === authUser.email.toLowerCase());
-            if (!exists) {
-              const validId = ensureValidUUID(authUser.id);
-              const newProfile = {
-                id: validId,
-                full_name: authUser.full_name || 'Sampath Kumar',
-                email: authUser.email.trim().toLowerCase(),
-                phone: authUser.phone || '',
-                role: authUser.role || 'admin',
-                branch: authUser.branch || 'Trichy - Sandhukadai',
-                is_active: authUser.is_active ?? true,
-              };
-              await db.from('profiles').upsert([newProfile]);
-              const { data: refreshed } = await db.from('profiles').select('*').order('created_at', { ascending: false });
-              if (refreshed && refreshed.length > 0) {
-                profilesData = refreshed;
-              } else {
-                profilesData = [newProfile, ...profilesData];
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Error verifying logged-in admin profile in getUsers:', e);
-    }
+    const profilesData = data || [];
 
     return (profilesData.map((u: any) => ({
       id: u.id,
@@ -892,12 +801,97 @@ export const dataService = {
     }))) as UserProfile[];
   },
 
+  async createStaffAccount(params: {
+    full_name: string;
+    email: string;
+    password?: string;
+    role: UserRole;
+    branch?: string;
+    phone?: string;
+  }): Promise<UserProfile> {
+    const db = checkSupabaseClient();
+    const emailNorm = params.email.trim().toLowerCase();
+
+    if (!emailNorm || !params.full_name) {
+      throw new Error('Full Name and Email Address are required.');
+    }
+
+    const secondaryClient = createSecondaryAuthClient();
+    let authUserId: string | null = null;
+
+    if (params.password && params.password.length >= 6 && secondaryClient) {
+      const { data: authRes, error: authErr } = await secondaryClient.auth.signUp({
+        email: emailNorm,
+        password: params.password,
+        options: {
+          data: {
+            full_name: params.full_name,
+            role: params.role,
+            branch: params.branch || 'Trichy - Sandhukadai',
+          },
+        },
+      });
+
+      if (authErr) {
+        throw new Error(`Auth Registration Failed: ${authErr.message}`);
+      }
+
+      if (authRes?.user) {
+        authUserId = authRes.user.id;
+      }
+    }
+
+    const targetId = authUserId || ensureValidUUID();
+
+    const dbPayload: Record<string, any> = {
+      id: targetId,
+      user_id: targetId,
+      full_name: params.full_name,
+      email: emailNorm,
+      phone: params.phone || '',
+      role: params.role,
+      branch: params.branch || 'Trichy - Sandhukadai',
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await db
+      .from('profiles')
+      .upsert([dbPayload])
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Failed to insert staff profile in Supabase:', error.message);
+      throw formatDbError('User Profile Creation Failed', error);
+    }
+
+    const created: UserProfile = {
+      id: data.id,
+      user_id: data.user_id || data.id,
+      full_name: data.full_name,
+      email: data.email,
+      phone: data.phone,
+      role: (data.role || 'billing_staff') as UserRole,
+      branch: data.branch || 'Trichy - Sandhukadai',
+      avatar_url: data.avatar_url,
+      is_active: data.is_active ?? true,
+      last_login_at: data.last_login_at,
+      created_at: data.created_at,
+    };
+
+    syncEngine.notifyDataChange('profiles', 'INSERT', created);
+    return created;
+  },
+
   async createUserProfile(userData: Partial<UserProfile>): Promise<UserProfile> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(userData.id);
 
     const dbPayload: Record<string, any> = {
       id: validId,
+      user_id: validId,
       full_name: userData.full_name || '',
       email: (userData.email || '').trim().toLowerCase(),
       phone: userData.phone || '',

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserProfile, UserRole, PermissionCode } from '@/types';
-import { getLocalDb, saveLocalDb, supabase } from './supabase';
+import { getLocalDb, supabase } from './supabase';
 import { dataService } from './dataService';
 import { hasPermission } from './utils';
 import { InactivityWarningModal } from '@/components/common/InactivityWarningModal';
@@ -18,35 +18,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const knownUsers: Record<string, { full_name: string; role: UserRole }> = {
-  'owner@shankarjewellery.com': { full_name: 'Sampath Kumar', role: 'admin' },
-  'admin@shankarjewellery.com': { full_name: 'Sampath Kumar', role: 'admin' },
-  'sampath@shankarjewellery.com': { full_name: 'Sampath Kumar', role: 'admin' },
-  'manager@shankarjewellery.com': { full_name: 'Muralidharan', role: 'manager' },
-  'murali@shankarjewellery.com': { full_name: 'Muralidharan', role: 'manager' },
-  'billing@shankarjewellery.com': { full_name: 'Senthil', role: 'billing_staff' },
-  'inventory@shankarjewellery.com': { full_name: 'Karthik', role: 'inventory_staff' },
-  'accountant@shankarjewellery.com': { full_name: 'Ramesh', role: 'accountant' },
-};
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(() => {
+    if (typeof localStorage === 'undefined') return null;
     const stored = localStorage.getItem('sampath_auth_user');
     if (stored) {
       try {
-        const parsed: UserProfile = JSON.parse(stored);
-        if (parsed && parsed.full_name) {
-          let clean = parsed.full_name.replace(/\s*\([^)]*\)/g, '').trim();
-          const upper = clean.toUpperCase();
-          if (['OWNER', 'ADMIN', 'MANAGER', 'BILLING', 'BILLING STAFF', 'INVENTORY', 'INVENTORY STAFF', 'ACCOUNTANT', 'VIEWER', 'USER'].includes(upper)) {
-            parsed.full_name = 'Sampath Kumar';
-          } else {
-            parsed.full_name = clean;
-          }
-          return parsed;
-        }
+        return JSON.parse(stored);
       } catch (e) {
-        console.error(e);
+        return null;
       }
     }
     return null;
@@ -60,6 +40,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const autoLogoutEnabled = db.settings.inactivity_logout_enabled ?? true;
   const inactivityTimeoutMinutes = db.settings.inactivity_timeout_minutes ?? 15;
 
+  const syncUserProfileFromAuth = async (sessionUser: any): Promise<UserProfile | null> => {
+    if (!sessionUser || !sessionUser.email) return null;
+    const emailNorm = sessionUser.email.trim().toLowerCase();
+    const userId = sessionUser.id;
+
+    try {
+      if (supabase) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .or(`id.eq.${userId},email.eq.${emailNorm}`)
+          .maybeSingle();
+
+        if (profile) {
+          const userObj: UserProfile = {
+            id: profile.id,
+            user_id: profile.user_id || profile.id,
+            full_name: profile.full_name || sessionUser.user_metadata?.full_name || 'Sampath Kumar',
+            email: profile.email || emailNorm,
+            phone: profile.phone || '',
+            role: (profile.role || 'admin') as UserRole,
+            branch: profile.branch || 'Trichy - Sandhukadai',
+            avatar_url: profile.avatar_url,
+            is_active: profile.is_active ?? true,
+            last_login_at: new Date().toISOString(),
+          };
+          return userObj;
+        }
+      }
+    } catch (e) {
+      console.warn('Error fetching user profile from database:', e);
+    }
+
+    // Provision default profile record in profiles table if not found
+    const defaultProfile: UserProfile = {
+      id: userId,
+      user_id: userId,
+      full_name: sessionUser.user_metadata?.full_name || 'Sampath Kumar',
+      email: emailNorm,
+      phone: '',
+      role: (sessionUser.user_metadata?.role as UserRole) || 'admin',
+      branch: 'Trichy - Sandhukadai',
+      is_active: true,
+      last_login_at: new Date().toISOString(),
+    };
+
+    dataService.createUserProfile(defaultProfile).catch(() => {});
+    return defaultProfile;
+  };
+
   useEffect(() => {
     let isMounted = true;
 
@@ -68,32 +98,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (supabase) {
           const { data } = await supabase.auth.getSession();
           const session = data?.session;
-          if (isMounted && session?.user) {
-            const userEmail = session.user.email || '';
-            const currentDb = getLocalDb();
-            const dbUser = (currentDb.users || []).find((u) => u.email.toLowerCase() === userEmail.toLowerCase());
-
-            if (dbUser) {
-              setUser(dbUser);
-              setRole(dbUser.role);
-              dataService.createUserProfile(dbUser).catch((e) => console.warn('Supabase dbUser sync warning:', e));
+          if (isMounted) {
+            if (session?.user) {
+              const profile = await syncUserProfileFromAuth(session.user);
+              if (profile && profile.is_active !== false) {
+                setUser(profile);
+                setRole(profile.role);
+                localStorage.setItem('sampath_auth_user', JSON.stringify(profile));
+              } else {
+                setUser(null);
+                localStorage.removeItem('sampath_auth_user');
+              }
             } else {
-              const known = knownUsers[userEmail.toLowerCase()] || {
-                full_name: session.user.user_metadata?.full_name || 'Sampath Kumar',
-                role: (session.user.user_metadata?.role as UserRole) || 'admin',
-              };
-              const profile: UserProfile = {
-                id: session.user.id,
-                full_name: known.full_name,
-                email: userEmail,
-                role: known.role,
-                branch: 'Trichy - Sandhukadai',
-                is_active: true,
-                last_login_at: new Date().toISOString(),
-              };
-              setUser(profile);
-              setRole(profile.role);
-              dataService.createUserProfile(profile).catch((e) => console.warn('Supabase profile sync warning:', e));
+              setUser(null);
+              localStorage.removeItem('sampath_auth_user');
             }
           }
         }
@@ -108,21 +126,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     resolveInitialSession();
 
+    let authSubscription: any = null;
+    if (supabase) {
+      const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_OUT' || !session) {
+          setUser(null);
+          localStorage.removeItem('sampath_auth_user');
+        } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+          const profile = await syncUserProfileFromAuth(session.user);
+          if (profile && profile.is_active !== false) {
+            setUser(profile);
+            setRole(profile.role);
+            localStorage.setItem('sampath_auth_user', JSON.stringify(profile));
+          }
+        }
+      });
+      authSubscription = sub?.subscription;
+    }
+
     return () => {
       isMounted = false;
+      if (authSubscription) authSubscription.unsubscribe();
     };
   }, []);
 
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem('sampath_auth_user', JSON.stringify(user));
-      setRole(user.role);
-    } else {
-      localStorage.removeItem('sampath_auth_user');
-    }
-  }, [user]);
-
-  // Logout Handler
   const logout = useCallback((reason?: string) => {
     if (supabase) {
       try {
@@ -193,7 +220,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password?: string): Promise<{ success: boolean; message?: string }> => {
     setIsLoading(true);
-    await new Promise((res) => setTimeout(res, 200));
 
     const normalizedEmail = (email || '').trim().toLowerCase();
     const pwd = (password || '').trim();
@@ -203,95 +229,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: 'Please enter both email address and password.' };
     }
 
-    // 1. Attempt Supabase Auth signInWithPassword if Supabase is active
-    if (supabase) {
-      try {
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: normalizedEmail,
-          password: pwd,
-        });
+    if (!supabase) {
+      setIsLoading(false);
+      return { success: false, message: 'Supabase client is not configured.' };
+    }
 
-        if (!authError && authData?.user) {
-          const fetchedProfiles = await dataService.getUsers().catch(() => []);
-          const existing = fetchedProfiles.find((p) => p.email.toLowerCase() === normalizedEmail);
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: pwd,
+      });
 
-          const known = knownUsers[normalizedEmail] || {
-            full_name: authData.user.user_metadata?.full_name || 'Sampath Kumar',
-            role: (authData.user.user_metadata?.role as UserRole) || 'admin',
-          };
-
-          const userProfile: UserProfile = existing || {
-            id: authData.user.id,
-            full_name: known.full_name,
-            email: normalizedEmail,
-            role: known.role,
-            branch: 'Trichy - Sandhukadai',
-            is_active: true,
-            last_login_at: new Date().toISOString(),
-          };
-
-          if (userProfile.is_active === false) {
-            setIsLoading(false);
-            return { success: false, message: 'Your account is inactive. Please contact the administrator.' };
-          }
-
-          setUser(userProfile);
-          setRole(userProfile.role);
-          await dataService.createUserProfile(userProfile).catch(() => {});
-          setIsLoading(false);
-          return { success: true };
-        }
-      } catch (err) {
-        console.warn('Supabase auth signInWithPassword notice:', err);
+      if (authError || !authData?.user) {
+        setIsLoading(false);
+        return { success: false, message: authError?.message || 'Invalid email address or password.' };
       }
-    }
 
-    // 2. Query registered accounts from Supabase profiles database & local store
-    const dbProfiles = await dataService.getUsers().catch(() => []);
-    const localDbUsers = getLocalDb().users || [];
+      const userProfile = await syncUserProfileFromAuth(authData.user);
 
-    const registeredUser =
-      dbProfiles.find((u) => u.email.toLowerCase() === normalizedEmail) ||
-      localDbUsers.find((u) => u.email.toLowerCase() === normalizedEmail) ||
-      (knownUsers[normalizedEmail]
-        ? {
-            id: `usr-${normalizedEmail.split('@')[0]}`,
-            full_name: knownUsers[normalizedEmail].full_name,
-            email: normalizedEmail,
-            role: knownUsers[normalizedEmail].role,
-            branch: 'Trichy - Sandhukadai',
-            is_active: true,
-          }
-        : null);
+      if (!userProfile) {
+        setIsLoading(false);
+        return { success: false, message: 'Failed to retrieve user profile.' };
+      }
 
-    // Reject unregistered accounts completely
-    if (!registeredUser) {
+      if (userProfile.is_active === false) {
+        await supabase.auth.signOut();
+        setIsLoading(false);
+        return { success: false, message: 'Your account is inactive. Please contact the administrator.' };
+      }
+
+      setUser(userProfile);
+      setRole(userProfile.role);
+      localStorage.setItem('sampath_auth_user', JSON.stringify(userProfile));
       setIsLoading(false);
-      return { success: false, message: 'Invalid email address or password.' };
-    }
-
-    // Reject disabled accounts
-    if (registeredUser.is_active === false) {
+      return { success: true };
+    } catch (err: any) {
+      console.error('Login authentication error:', err);
       setIsLoading(false);
-      return { success: false, message: 'Your account is inactive. Please contact the administrator.' };
+      return { success: false, message: err?.message || 'Authentication error. Please try again.' };
     }
-
-    // Reject empty/short/invalid passwords
-    if (pwd.length < 3) {
-      setIsLoading(false);
-      return { success: false, message: 'Invalid email address or password.' };
-    }
-
-    const authenticatedUser: UserProfile = {
-      ...registeredUser,
-      last_login_at: new Date().toISOString(),
-    };
-
-    setUser(authenticatedUser);
-    setRole(authenticatedUser.role);
-    await dataService.createUserProfile(authenticatedUser).catch(() => {});
-    setIsLoading(false);
-    return { success: true };
   };
 
   const switchRole = (newRole: UserRole) => {

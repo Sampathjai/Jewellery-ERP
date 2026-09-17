@@ -147,16 +147,21 @@ export const UserManagement: React.FC = () => {
       return;
     }
 
+    if (newPassword.length < 6) {
+      alert('Password must be at least 6 characters long.');
+      return;
+    }
+
     try {
-      const created = await dataService.createUserProfile({
+      const created = await dataService.createStaffAccount({
         full_name: newFullName,
         email: newEmail.trim().toLowerCase(),
+        password: newPassword,
         role: newRole,
         branch: newBranch,
-        is_active: true,
       });
 
-      showToast(`New staff account for ${created.full_name} created successfully.`);
+      showToast(`New staff account for ${created.full_name} (${created.email}) created successfully.`);
 
       // Reset Form
       setNewFullName('');
@@ -166,7 +171,7 @@ export const UserManagement: React.FC = () => {
       setIsAddUserOpen(false);
       await loadUsers();
     } catch (err: any) {
-      alert(err.message || 'Failed to create user profile in database.');
+      alert(err.message || 'Failed to create user account in database.');
     }
   };
 
