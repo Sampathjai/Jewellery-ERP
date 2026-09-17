@@ -151,3 +151,4 @@ INSERT INTO public.profiles (
   true, NOW(), NOW()
 ) ON CONFLICT (id) DO UPDATE SET
   email = EXCLUDED.email, full_name = EXCLUDED.full_name, role = 'admin', is_active = true, updated_at = NOW();
+
