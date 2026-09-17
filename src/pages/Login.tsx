@@ -5,8 +5,8 @@ import { Sparkles, Lock, Mail, Eye, EyeOff, AlertTriangle, ShieldCheck } from 'l
 import { BrandLogo } from '@/components/common/BrandLogo';
 
 export const Login: React.FC = () => {
-  const [email, setEmail] = useState('owner@shankarjewellery.com');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -26,10 +26,10 @@ export const Login: React.FC = () => {
 
   useEffect(() => {
     // If user is already logged in, redirect to dashboard
-    if (user) {
-      navigate('/dashboard');
+    if (user && !isLoading) {
+      navigate('/dashboard', { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, isLoading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,7 +42,7 @@ export const Login: React.FC = () => {
 
     const res = await login(email);
     if (res.success) {
-      navigate('/dashboard');
+      navigate('/dashboard', { replace: true });
     } else {
       setErrorMessage(res.message || 'Invalid login credentials. Please check and try again.');
     }
@@ -91,14 +91,15 @@ export const Login: React.FC = () => {
           <div>
             <label className="block text-xs font-bold text-slate-300">Email Address / Username</label>
             <div className="relative mt-1">
-              <Mail className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+              <Mail className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
               <input
                 type="email"
                 required
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="owner@shankarjewellery.com"
-                className="w-full rounded-xl border border-charcoal-700 bg-charcoal-800 py-2.5 pl-10 pr-3 text-xs text-slate-100 focus:border-gold-500 focus:outline-none placeholder:text-slate-500"
+                placeholder="Enter email address"
+                className="w-full min-h-[42px] rounded-xl border border-charcoal-700 bg-charcoal-800 py-2.5 pl-10 pr-3 text-xs text-slate-100 focus:border-gold-500 focus:outline-none placeholder:text-slate-500"
               />
             </div>
           </div>
@@ -106,14 +107,15 @@ export const Login: React.FC = () => {
           <div>
             <label className="block text-xs font-bold text-slate-300">Password</label>
             <div className="relative mt-1">
-              <Lock className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+              <Lock className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full rounded-xl border border-charcoal-700 bg-charcoal-800 py-2.5 pl-10 pr-10 text-xs text-slate-100 focus:border-gold-500 focus:outline-none placeholder:text-slate-500"
+                placeholder="Enter password"
+                className="w-full min-h-[42px] rounded-xl border border-charcoal-700 bg-charcoal-800 py-2.5 pl-10 pr-10 text-xs text-slate-100 focus:border-gold-500 focus:outline-none placeholder:text-slate-500"
               />
               <button
                 type="button"

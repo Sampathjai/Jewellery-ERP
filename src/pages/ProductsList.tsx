@@ -130,12 +130,12 @@ export const ProductsList: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
           {['all', 'gold', 'silver'].map((metal) => (
             <button
               key={metal}
               onClick={() => setMetalFilter(metal)}
-              className={`rounded-xl px-3 py-1.5 text-xs font-semibold capitalize transition-all ${
+              className={`rounded-xl px-3.5 py-2 min-h-[36px] shrink-0 text-xs font-semibold capitalize transition-all ${
                 metalFilter === metal
                   ? 'bg-gold-500 text-charcoal-950 shadow-gold'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-charcoal-800 dark:text-slate-300'
