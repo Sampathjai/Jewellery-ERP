@@ -45,6 +45,14 @@ const checkSupabaseClient = () => {
   return supabase;
 };
 
+export const formatDbError = (context: string, error: any): Error => {
+  const msg = error?.message || String(error);
+  if (msg.includes('schema cache') || msg.includes('PGRST205') || msg.includes('not find the table')) {
+    return new Error(`${context}: Could not find table in Supabase schema. Please run the SQL file 'supabase/schema_full.sql' in your Supabase SQL Editor.`);
+  }
+  return new Error(`${context}: ${msg}`);
+};
+
 // ============================================================================
 // CENTRAL DIRECT SUPABASE DATA SERVICE
 // Single source of truth interfacing directly with Supabase PostgreSQL.
@@ -64,7 +72,7 @@ export const dataService = {
 
     if (error) {
       console.error('Failed to fetch customers from Supabase:', error.message);
-      throw new Error(`Database Error: ${error.message}`);
+      throw formatDbError('Database Error', error);
     }
     return ((data || []).map((c) => ({
       ...c,
@@ -116,7 +124,7 @@ export const dataService = {
 
     if (error) {
       console.error('Failed to create customer in Supabase:', error.message);
-      throw new Error(`Customer Save Failed: ${error.message}`);
+      throw formatDbError('Customer Save Failed', error);
     }
 
     const result = {
@@ -186,7 +194,7 @@ export const dataService = {
 
     if (error) {
       console.error('Failed to fetch products from Supabase:', error.message);
-      throw new Error(`Database Error: ${error.message}`);
+      throw formatDbError('Database Error', error);
     }
     return ((data || []).map((p) => ({
       ...p,
@@ -238,7 +246,7 @@ export const dataService = {
 
     if (error) {
       console.error('Failed to create product in Supabase:', error.message);
-      throw new Error(`Product Save Failed: ${error.message}`);
+      throw formatDbError('Product Save Failed', error);
     }
 
     const result = {
