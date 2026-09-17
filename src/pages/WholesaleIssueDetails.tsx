@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { getLocalDb } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
+import { WholesaleIssue, Customer, BusinessSettings } from '@/types';
 import { formatCurrency, formatWeight, formatDate } from '@/lib/utils';
 import {
   generateCustomerWholesaleIssuePDF,
@@ -19,6 +21,7 @@ import {
   Sparkles,
   Printer,
   ShieldAlert,
+  Loader2,
 } from 'lucide-react';
 
 import { useAuth } from '@/lib/auth';
@@ -27,35 +30,132 @@ import { BrandLogo } from '@/components/common/BrandLogo';
 export const WholesaleIssueDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const db = getLocalDb();
   const { role } = useAuth();
 
+  const [issue, setIssue] = useState<WholesaleIssue | null>(null);
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [settings, setSettings] = useState<BusinessSettings | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'customer' | 'internal'>('customer');
 
   const isAdmin = role === 'admin' || role === 'manager';
 
-  const issue = db.wholesaleIssues.find((w) => w.id === id);
-  const customer = issue ? db.customers.find((c) => c.id === issue.customer_id) : undefined;
+  useEffect(() => {
+    async function loadIssueAndCustomer() {
+      if (!id) {
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const fetchedIssue = await dataService.getWholesaleIssueById(id);
+        const fetchedSettings = await dataService.getBusinessSettings();
+        setSettings(fetchedSettings);
 
-  if (!issue || !customer) {
+        if (fetchedIssue) {
+          setIssue(fetchedIssue);
+          let cust: Customer | null = null;
+          if (fetchedIssue.customer_id) {
+            cust = await dataService.getCustomerById(fetchedIssue.customer_id);
+          }
+          if (!cust) {
+            cust = {
+              id: fetchedIssue.customer_id || 'cust-fallback',
+              customer_code: 'CUST-WS',
+              full_name: fetchedIssue.customer_name || 'Wholesale Partner',
+              shop_name: fetchedIssue.customer_shop || 'Dealer Store',
+              customer_type: 'wholesale',
+              phone: '',
+              whatsapp_number: '',
+              email: '',
+              address: 'Trichy, Tamil Nadu',
+              city: 'Trichy',
+              state: 'Tamil Nadu',
+              pin_code: '620008',
+              credit_limit: 0,
+              agreed_profit_percent: fetchedIssue.agreed_profit_percent || 40,
+              profit_sharing_model: fetchedIssue.agreed_profit_model || 'model_a_profit_percent',
+              default_actual_touch: 40,
+              default_profit_touch: 10,
+              default_billing_touch: 50,
+              payment_terms: '30 Days',
+              is_active: true,
+            };
+          }
+          setCustomer(cust);
+        }
+      } catch (err) {
+        console.warn('Error loading wholesale issue details:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadIssueAndCustomer();
+  }, [id]);
+
+  if (isLoading) {
     return (
-      <div className="p-6 text-center text-slate-500 font-medium">
-        Wholesale Invoice Voucher or Customer Profile not found.
+      <div className="flex flex-col items-center justify-center p-12 text-slate-500 gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-gold-500" />
+        <p className="text-xs font-bold">Loading Wholesale Invoice Voucher...</p>
       </div>
     );
   }
 
+  if (!issue) {
+    return (
+      <div className="p-8 text-center space-y-4 max-w-md mx-auto">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 dark:border-amber-900/40 dark:bg-amber-950/30 text-amber-900 dark:text-gold-300">
+          <ShieldAlert className="h-10 w-10 mx-auto mb-3 text-gold-600" />
+          <h3 className="font-serif text-base font-bold">Wholesale Invoice Voucher Not Found</h3>
+          <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+            The requested wholesale issue voucher could not be found or may have been updated.
+          </p>
+          <button
+            onClick={() => navigate('/wholesale-issues')}
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-gold-500 px-5 py-2 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600"
+          >
+            <ArrowLeft className="h-4 w-4" /> Return to Wholesale Issues
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const effectiveCustomer: Customer = customer || {
+    id: issue.customer_id || 'cust-fallback',
+    customer_code: 'CUST-WS',
+    full_name: issue.customer_name || 'Wholesale Partner',
+    shop_name: issue.customer_shop || 'Dealer Store',
+    customer_type: 'wholesale',
+    phone: '',
+    whatsapp_number: '',
+    email: '',
+    address: 'Trichy, Tamil Nadu',
+    city: 'Trichy',
+    state: 'Tamil Nadu',
+    pin_code: '620008',
+    credit_limit: 0,
+    agreed_profit_percent: issue.agreed_profit_percent || 40,
+    profit_sharing_model: issue.agreed_profit_model || 'model_a_profit_percent',
+    default_actual_touch: 40,
+    default_profit_touch: 10,
+    default_billing_touch: 50,
+    payment_terms: '30 Days',
+    is_active: true,
+  };
+
   const handleDownloadCustomerPDF = () => {
-    generateCustomerWholesaleIssuePDF(issue, customer, db.settings);
+    generateCustomerWholesaleIssuePDF(issue, effectiveCustomer, settings || undefined);
   };
 
   const handleDownloadInternalPDF = () => {
-    generateInternalWholesaleIssuePDF(issue, customer, db.settings);
+    generateInternalWholesaleIssuePDF(issue, effectiveCustomer, settings || undefined);
   };
 
   const handleWhatsApp = () => {
-    const msg = buildWhatsAppWholesaleIssueMessage(issue, db.settings);
-    openWhatsAppClickToChat(customer.whatsapp_number || customer.phone, msg);
+    const msg = buildWhatsAppWholesaleIssueMessage(issue, settings || undefined);
+    openWhatsAppClickToChat(effectiveCustomer.whatsapp_number || effectiveCustomer.phone, msg);
   };
 
   const cashPaid = issue.cash_paid || 0;
@@ -166,10 +266,10 @@ export const WholesaleIssueDetails: React.FC = () => {
               Jewellery Billing & Wholesale Invoice
             </p>
             <p className="text-xs text-slate-500 mt-1">
-              {db.settings.address}, {db.settings.city}, {db.settings.state} - {db.settings.pin_code}
+              {settings?.address || 'No.4 sandhukadai, bigbazzar street'}, {settings?.city || 'Trichy'}, {settings?.state || 'Tamil Nadu'} - {settings?.pin_code || '620008'}
             </p>
             <p className="text-xs text-slate-500">
-              Phone: {db.settings.phone}{db.settings.gstin && db.settings.gstin.trim() ? ` | GSTIN: ${db.settings.gstin}` : ''}
+              Phone: {settings?.phone || '+91 98765 43210'}{settings?.gstin && settings.gstin.trim() ? ` | GSTIN: ${settings.gstin}` : ''}
             </p>
           </div>
 
@@ -191,16 +291,16 @@ export const WholesaleIssueDetails: React.FC = () => {
           <div className="space-y-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">BILLED TO CUSTOMER:</span>
             <div className="flex items-center gap-2">
-              {customer?.photo_url ? (
-                <img src={customer.photo_url} alt={customer.full_name} className="h-8 w-8 rounded-full object-cover border border-gold-400" />
+              {effectiveCustomer.photo_url ? (
+                <img src={effectiveCustomer.photo_url} alt={effectiveCustomer.full_name} className="h-8 w-8 rounded-full object-cover border border-gold-400" />
               ) : null}
-              <h3 className="font-bold text-charcoal-900 dark:text-slate-100 text-sm">{customer?.full_name}</h3>
+              <h3 className="font-bold text-charcoal-900 dark:text-slate-100 text-sm">{effectiveCustomer.full_name}</h3>
             </div>
             <p className="text-slate-600 dark:text-slate-300 flex items-center gap-1">
-              <Building className="h-3.5 w-3.5 text-slate-400" /> Shop: <strong>{customer?.shop_name || 'Dealer'}</strong>
+              <Building className="h-3.5 w-3.5 text-slate-400" /> Shop: <strong>{effectiveCustomer.shop_name || 'Dealer'}</strong>
             </p>
             <p className="text-slate-600 dark:text-slate-300">
-              Phone: <strong>{customer?.phone}</strong> • City: <strong>{customer?.city || 'Tamil Nadu'}</strong>
+              Phone: <strong>{effectiveCustomer.phone || '—'}</strong> • City: <strong>{effectiveCustomer.city || 'Tamil Nadu'}</strong>
             </p>
           </div>
 
@@ -214,7 +314,7 @@ export const WholesaleIssueDetails: React.FC = () => {
 
             {viewMode === 'internal' && (
               <div className="text-[11px] font-mono bg-gold-50 p-2 rounded-lg border border-gold-200 dark:bg-gold-950/40 dark:border-gold-800">
-                <span>Default Customer Touch: <strong>{customer?.default_actual_touch || 37}% + {customer?.default_profit_touch || 10}% = {customer?.default_billing_touch || 47}%</strong></span>
+                <span>Default Customer Touch: <strong>{effectiveCustomer.default_actual_touch || 37}% + {effectiveCustomer.default_profit_touch || 10}% = {effectiveCustomer.default_billing_touch || 47}%</strong></span>
               </div>
             )}
           </div>

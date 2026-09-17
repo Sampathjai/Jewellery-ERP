@@ -99,6 +99,29 @@ export const dataService = {
     }))) as Customer[];
   },
 
+  async getCustomerById(id: string): Promise<Customer | null> {
+    const validId = ensureValidUUID(id);
+    const localDb = getLocalDb();
+    try {
+      const db = checkSupabaseClient();
+      const { data, error } = await db
+        .from('customers')
+        .select('*')
+        .eq('id', validId)
+        .maybeSingle();
+
+      if (error || !data) {
+        return localDb.customers.find((c) => c.id === id || c.id === validId) || null;
+      }
+      return {
+        ...data,
+        agreed_customer_touch: data.default_actual_touch ?? data.agreed_profit_percent ?? 40,
+      } as Customer;
+    } catch {
+      return localDb.customers.find((c) => c.id === id || c.id === validId) || null;
+    }
+  },
+
   async createCustomer(customerData: Partial<Customer>): Promise<Customer> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(customerData.id);
@@ -629,6 +652,26 @@ export const dataService = {
     return (data || []) as WholesaleIssue[];
   },
 
+  async getWholesaleIssueById(id: string): Promise<WholesaleIssue | null> {
+    const validId = ensureValidUUID(id);
+    const localDb = getLocalDb();
+    try {
+      const db = checkSupabaseClient();
+      const { data, error } = await db
+        .from('wholesale_issues')
+        .select('*, items:wholesale_issue_items(*)')
+        .eq('id', validId)
+        .maybeSingle();
+
+      if (error || !data) {
+        return localDb.wholesaleIssues.find((w) => w.id === id || w.id === validId) || null;
+      }
+      return data as WholesaleIssue;
+    } catch {
+      return localDb.wholesaleIssues.find((w) => w.id === id || w.id === validId) || null;
+    }
+  },
+
   async createWholesaleIssue(issueData: Partial<WholesaleIssue>): Promise<WholesaleIssue> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(issueData.id);
@@ -808,7 +851,10 @@ export const dataService = {
   async getWholesalePayments(): Promise<WholesalePayment[]> {
     const db = checkSupabaseClient();
     const { data, error } = await db.from('wholesale_payments').select('*').order('created_at', { ascending: false });
-    if (error) return [];
+    if (error) {
+      const localDb = getLocalDb();
+      return localDb.wholesalePayments || [];
+    }
     return (data || []) as WholesalePayment[];
   },
 
@@ -829,10 +875,67 @@ export const dataService = {
     };
 
     const { data, error } = await db.from('wholesale_payments').insert(payload).select().single();
-    if (error) throw new Error(`Wholesale Payment Save Failed: ${error.message}`);
+    if (error) {
+      console.warn('Failed to insert wholesale payment in Supabase:', error.message);
+    }
 
-    syncEngine.notifyDataChange('wholesale_payments', 'INSERT', data);
-    return data as WholesalePayment;
+    const result = (data || payload) as WholesalePayment;
+    const localDb = getLocalDb();
+    if (!localDb.wholesalePayments) localDb.wholesalePayments = [];
+    localDb.wholesalePayments.unshift(result);
+    saveLocalDb(localDb);
+
+    syncEngine.notifyDataChange('wholesale_payments', 'INSERT', result);
+    return result;
+  },
+
+  async getWholesaleSales(): Promise<WholesaleSale[]> {
+    const db = checkSupabaseClient();
+    const { data, error } = await db.from('wholesale_sales').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.warn('Failed to fetch wholesale sales from Supabase:', error.message);
+      const localDb = getLocalDb();
+      return localDb.wholesaleSales || [];
+    }
+    return (data || []) as WholesaleSale[];
+  },
+
+  async createWholesaleSale(saleData: Partial<WholesaleSale>): Promise<WholesaleSale> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(saleData.id);
+    const payload: WholesaleSale = {
+      id: validId,
+      sale_number: saleData.sale_number || `WS-${Date.now().toString().slice(-6)}`,
+      issue_id: saleData.issue_id ? ensureValidUUID(saleData.issue_id) : undefined,
+      customer_id: ensureValidUUID(saleData.customer_id),
+      customer_name: saleData.customer_name || '',
+      sale_date: saleData.sale_date || new Date().toISOString().split('T')[0],
+      buyer_shop_name: saleData.buyer_shop_name || '',
+      buyer_location: saleData.buyer_location || '',
+      total_quantity_sold: Number(saleData.total_quantity_sold || 0),
+      total_weight_sold_g: Number(saleData.total_weight_sold_g || 0),
+      total_sale_value: Number(saleData.total_sale_value || 0),
+      total_cost_valuation: Number(saleData.total_cost_valuation || 0),
+      gross_profit: Number(saleData.gross_profit || 0),
+      customer_profit_share: Number(saleData.customer_profit_share || 0),
+      shop_profit_share: Number(saleData.shop_profit_share || 0),
+      notes: saleData.notes || '',
+      created_at: saleData.created_at || new Date().toISOString(),
+    };
+
+    const { data, error } = await db.from('wholesale_sales').insert(payload).select().single();
+    if (error) {
+      console.warn('Failed to insert wholesale sale in Supabase:', error.message);
+    }
+
+    const result = (data || payload) as WholesaleSale;
+    const localDb = getLocalDb();
+    if (!localDb.wholesaleSales) localDb.wholesaleSales = [];
+    localDb.wholesaleSales.unshift(result);
+    saveLocalDb(localDb);
+
+    syncEngine.notifyDataChange('wholesale_sales', 'INSERT', result);
+    return result;
   },
 
   // --------------------------------------------------------------------------

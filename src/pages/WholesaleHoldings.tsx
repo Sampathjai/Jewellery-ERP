@@ -1,6 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { getLocalDb } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
+import { WholesaleIssue, Customer } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import {
   PackageCheck,
@@ -20,10 +22,26 @@ import {
 export const WholesaleHoldings: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [metalFilter, setMetalFilter] = useState<'all' | 'gold' | 'silver'>('all');
+  const [wholesaleIssues, setWholesaleIssues] = useState<WholesaleIssue[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
 
-  const db = getLocalDb();
-  const wholesaleIssues = db.wholesaleIssues || [];
-  const customers = db.customers || [];
+  useEffect(() => {
+    async function loadHoldingsData() {
+      try {
+        const [wIssues, custs] = await Promise.all([
+          dataService.getWholesaleIssues(),
+          dataService.getCustomers(),
+        ]);
+        setWholesaleIssues(wIssues.length > 0 ? wIssues : getLocalDb().wholesaleIssues);
+        setCustomers(custs.length > 0 ? custs : getLocalDb().customers);
+      } catch (err) {
+        console.warn('Error loading holdings data from Supabase:', err);
+        setWholesaleIssues(getLocalDb().wholesaleIssues);
+        setCustomers(getLocalDb().customers);
+      }
+    }
+    loadHoldingsData();
+  }, []);
 
   // Filter active consignment issues (where status is active or remaining items > 0)
   const activeHoldings = useMemo(() => {

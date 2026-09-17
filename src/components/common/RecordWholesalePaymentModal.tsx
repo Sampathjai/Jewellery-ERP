@@ -51,9 +51,8 @@ export const RecordWholesalePaymentModal: React.FC<RecordWholesalePaymentModalPr
   const currentDue = issue ? issue.remaining_balance || issue.total_valuation_amount : 24550;
   const newRemainingBalance = Math.max(0, currentDue - totalPaymentValue);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const db = getLocalDb();
 
     const newPayment: WholesalePayment = {
       id: `wpay-${Date.now()}`,
@@ -73,23 +72,13 @@ export const RecordWholesalePaymentModal: React.FC<RecordWholesalePaymentModalPr
       created_at: new Date().toISOString(),
     };
 
-    db.wholesalePayments.unshift(newPayment);
-
-    // Update issue if associated
-    if (issue) {
-      const match = db.wholesaleIssues.find((w) => w.id === issue.id);
-      if (match) {
-        match.cash_paid = (match.cash_paid || 0) + (paymentMethod === 'gold_916' ? 0 : cashAmount);
-        match.gold_916_weight_paid_g = (match.gold_916_weight_paid_g || 0) + (paymentMethod === 'cash' ? 0 : goldWeightG);
-        match.gold_916_value_paid = (match.gold_916_value_paid || 0) + (paymentMethod === 'cash' ? 0 : goldValue);
-        match.remaining_balance = newRemainingBalance;
-        if (newRemainingBalance === 0) match.status = 'settled';
+    try {
+      const saved = await dataService.createWholesalePayment(newPayment);
+      if (onPaymentRecorded) {
+        onPaymentRecorded(saved);
       }
-    }
-
-    saveLocalDb(db);
-    if (onPaymentRecorded) {
-      onPaymentRecorded(newPayment);
+    } catch (err) {
+      console.warn('Could not save wholesale payment to Supabase:', err);
     }
     onClose();
   };

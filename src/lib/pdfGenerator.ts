@@ -593,7 +593,7 @@ export function generateWholesaleCustomerStatementPDF(
   customer: Customer,
   payments: WholesalePayment[],
   issues: WholesaleIssue[],
-  settings: BusinessSettings
+  settings?: BusinessSettings
 ) {
   const doc = new jsPDF();
   loadPdfFont(doc);
