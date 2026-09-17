@@ -868,7 +868,10 @@ export const dataService = {
     } catch (fnErr: any) {
       console.warn('Edge Function create-staff-user invocation error, trying fallback:', fnErr);
       const edgeFnMsg = fnErr?.message || '';
-      if (edgeFnMsg.includes('already exists') || edgeFnMsg.includes('Too many requests') || edgeFnMsg.includes('Unauthorized') || edgeFnMsg.includes('Password must be')) {
+      if (edgeFnMsg.includes('Unauthorized')) {
+        throw new Error('Your authentication session has expired. Please log out and log in again as Admin.');
+      }
+      if (edgeFnMsg.includes('already exists') || edgeFnMsg.includes('Too many requests') || edgeFnMsg.includes('Password must be')) {
         throw fnErr;
       }
     }

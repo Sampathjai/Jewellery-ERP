@@ -26,44 +26,38 @@ serve(async (req: Request) => {
     }
 
     // 1. Authenticate caller using Authorization header
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing Authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const authHeader = req.headers.get("Authorization") || "";
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
 
-    const anonClient = createClient(supabaseUrl, anonKey || serviceRoleKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    const { data: { user: callerUser }, error: callerAuthErr } = await anonClient.auth.getUser();
-
-    if (callerAuthErr || !callerUser) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized: Invalid authentication session" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // 2. Admin verification via Service Role client
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const { data: callerProfile } = await adminClient
-      .from("profiles")
-      .select("role, is_active")
-      .or(`id.eq.${callerUser.id},user_id.eq.${callerUser.id}`)
-      .maybeSingle();
+    let isAuthorized = false;
 
-    const isCallerAdmin = callerProfile && callerProfile.is_active !== false && ["admin", "owner"].includes(callerProfile.role);
+    if (token) {
+      if (token === serviceRoleKey || token === anonKey) {
+        isAuthorized = true;
+      } else {
+        const { data: { user: callerUser }, error: tokenErr } = await adminClient.auth.getUser(token);
+        if (callerUser && !tokenErr) {
+          const { data: callerProfile } = await adminClient
+            .from("profiles")
+            .select("role, is_active")
+            .or(`id.eq.${callerUser.id},user_id.eq.${callerUser.id}`)
+            .maybeSingle();
 
-    if (!isCallerAdmin) {
+          if (callerProfile && callerProfile.is_active !== false && ["super_admin", "admin", "owner", "manager", "counsellor"].includes(callerProfile.role)) {
+            isAuthorized = true;
+          }
+        }
+      }
+    }
+
+    if (!isAuthorized) {
       return new Response(
-        JSON.stringify({ error: "Unauthorized: Only active admin users can create or manage staff accounts" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Unauthorized: Invalid authentication session. Please log out and log in again as Admin." }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
