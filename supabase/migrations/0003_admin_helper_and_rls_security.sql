@@ -56,3 +56,4 @@ USING (true);
 
 -- 5. Reload PostgREST API schema cache
 NOTIFY pgrst, 'reload schema';
+

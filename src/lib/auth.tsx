@@ -54,9 +54,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .maybeSingle();
 
         if (profile) {
+          // If profile user_id doesn't match authenticated session UUID, update profile to link to real Auth user ID
+          if (profile.user_id !== userId || profile.id !== userId) {
+            supabase
+              .from('profiles')
+              .update({ user_id: userId, updated_at: new Date().toISOString() })
+              .or(`id.eq.${profile.id},email.eq.${emailNorm}`)
+              .then(() => {})
+              .then(null, (e: any) => console.warn('Could not auto-link profile user_id:', e));
+          }
+
           const userObj: UserProfile = {
-            id: profile.id,
-            user_id: profile.user_id || profile.id,
+            id: userId,
+            user_id: userId,
             full_name: profile.full_name || sessionUser.user_metadata?.full_name || emailNorm.split('@')[0],
             email: profile.email || emailNorm,
             phone: profile.phone || '',

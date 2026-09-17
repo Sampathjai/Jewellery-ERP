@@ -816,6 +816,9 @@ export const dataService = {
       throw new Error('Full Name and Email Address are required.');
     }
 
+    let authUserId: string | null = null;
+    let edgeFnError: string | null = null;
+
     // 1. Try invoking Supabase Edge Function 'create-staff-user' for secure server-side Admin Auth creation
     try {
       const { data: fnData, error: fnError } = await db.functions.invoke('create-staff-user', {
@@ -863,18 +866,53 @@ export const dataService = {
         return created;
       }
     } catch (fnErr: any) {
-      console.warn('Edge Function create-staff-user invocation error:', fnErr);
-      const msg = fnErr.message || '';
-      if (msg.includes('already exists') || msg.includes('Too many requests') || msg.includes('Unauthorized') || msg.includes('Password must be')) {
+      console.warn('Edge Function create-staff-user invocation error, trying fallback:', fnErr);
+      const edgeFnMsg = fnErr?.message || '';
+      if (edgeFnMsg.includes('already exists') || edgeFnMsg.includes('Too many requests') || edgeFnMsg.includes('Unauthorized') || edgeFnMsg.includes('Password must be')) {
         throw fnErr;
       }
     }
 
-    // Direct Supabase database fallback if Edge Function is not yet deployed
-    const targetId = ensureValidUUID();
+    // 2. Fallback: If Edge Function is not deployed/reachable, create Auth user via isolated secondary auth client
+    if (params.password && params.password.length >= 6) {
+      const secondaryClient = createSecondaryAuthClient();
+      if (secondaryClient) {
+        const { data: authRes, error: authErr } = await secondaryClient.auth.signUp({
+          email: emailNorm,
+          password: params.password,
+          options: {
+            data: {
+              full_name: params.full_name,
+              role: params.role,
+              branch: params.branch || 'Trichy - Sandhukadai',
+            },
+          },
+        });
+
+        if (authErr) {
+          let msg = authErr.message;
+          if (msg.toLowerCase().includes('rate limit')) {
+            msg = "Auth email rate limit exceeded. Deploy the 'create-staff-user' Edge Function for unlimited admin staff creation.";
+          } else if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already exists')) {
+            msg = 'A user with this email address already exists.';
+          }
+          throw new Error(`Auth Registration Failed: ${msg}`);
+        }
+
+        if (authRes?.user) {
+          authUserId = authRes.user.id;
+        }
+      }
+    }
+
+    if (!authUserId) {
+      throw new Error('Failed to create staff Auth user in Supabase Auth. Please verify email/password or deploy Edge Function.');
+    }
+
+    // 3. Create Profile row linked to the REAL Auth User ID
     const dbPayload: Record<string, any> = {
-      id: targetId,
-      user_id: targetId,
+      id: authUserId,
+      user_id: authUserId,
       full_name: params.full_name,
       email: emailNorm,
       phone: params.phone || '',
@@ -887,7 +925,7 @@ export const dataService = {
 
     const { data, error } = await db
       .from('profiles')
-      .upsert([dbPayload])
+      .upsert([dbPayload], { onConflict: 'user_id' })
       .select('*')
       .single();
 
@@ -916,27 +954,38 @@ export const dataService = {
 
   async adminChangeUserPassword(userId: string, newPassword: string): Promise<void> {
     const db = checkSupabaseClient();
-    const { data: fnData, error: fnError } = await db.functions.invoke('create-staff-user', {
-      body: {
-        action: 'update_password',
-        user_id: userId,
-        password: newPassword,
-      },
-    });
+    try {
+      const { data: fnData, error: fnError } = await db.functions.invoke('create-staff-user', {
+        body: {
+          action: 'update_password',
+          user_id: userId,
+          password: newPassword,
+        },
+      });
 
-    if (fnError) {
-      let errMsg = fnError.message || 'Failed to update password';
-      try {
-        if (typeof fnError === 'object' && (fnError as any).context && typeof (fnError as any).context.json === 'function') {
-          const bodyErr = await (fnError as any).context.json();
-          if (bodyErr?.error) errMsg = bodyErr.error;
+      if (fnError) {
+        let errMsg = fnError.message || 'Failed to update password';
+        try {
+          if (typeof fnError === 'object' && (fnError as any).context && typeof (fnError as any).context.json === 'function') {
+            const bodyErr = await (fnError as any).context.json();
+            if (bodyErr?.error) errMsg = bodyErr.error;
+          }
+        } catch (e) {}
+
+        if (errMsg.includes('Failed to send a request') || errMsg.includes('FunctionsFetchError')) {
+          throw new Error("Admin direct password change requires the 'create-staff-user' Edge Function to be deployed on Supabase. Run 'supabase functions deploy create-staff-user' to enable.");
         }
-      } catch (e) {}
-      throw new Error(errMsg);
-    }
+        throw new Error(errMsg);
+      }
 
-    if (fnData?.error) {
-      throw new Error(fnData.error);
+      if (fnData?.error) {
+        throw new Error(fnData.error);
+      }
+    } catch (err: any) {
+      if (err.message && (err.message.includes('Failed to send a request') || err.message.includes('FunctionsFetchError'))) {
+        throw new Error("Admin direct password change requires the 'create-staff-user' Edge Function to be deployed on Supabase. Run 'supabase functions deploy create-staff-user' to enable.");
+      }
+      throw err;
     }
   },
 
