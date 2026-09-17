@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   ShieldX,
 } from 'lucide-react';
+import { BrandLogo } from '@/components/common/BrandLogo';
 
 export type ErrorType = '404' | '500' | '401' | '403' | 'network';
 
@@ -80,18 +81,8 @@ export const ErrorPage: React.FC<ErrorPageProps> = ({
         <div className="absolute -bottom-24 -right-24 h-48 w-48 rounded-full bg-amber-500/10 blur-2xl pointer-events-none" />
 
         {/* Branding Header */}
-        <div className="flex items-center justify-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gold-500 font-serif font-bold text-base text-charcoal-950 shadow-gold border-2 border-gold-300">
-            SJ
-          </div>
-          <div className="text-left">
-            <h1 className="font-serif text-base font-bold text-charcoal-900 dark:text-slate-100 leading-tight">
-              Shankar Jewellery
-            </h1>
-            <p className="text-[10px] text-amber-700 font-bold uppercase tracking-wider dark:text-gold-400">
-              Gold & Silver Jewellery ERP
-            </p>
-          </div>
+        <div className="flex justify-center">
+          <BrandLogo variant="compact" size="md" />
         </div>
 
         {/* Error Badge & Icon */}

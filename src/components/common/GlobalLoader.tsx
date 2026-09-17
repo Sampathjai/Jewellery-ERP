@@ -1,4 +1,5 @@
 import React from 'react';
+import { BrandLogo } from '@/components/common/BrandLogo';
 
 interface GlobalLoaderProps {
   message?: string;
@@ -11,14 +12,14 @@ export const GlobalLoader: React.FC<GlobalLoaderProps> = ({
     <div className="flex h-full w-full min-h-[60vh] flex-col items-center justify-center p-6 text-center bg-slate-50 dark:bg-charcoal-950">
       <div className="relative flex items-center justify-center mb-6">
         {/* Outer Pulsing Glow Ring */}
-        <div className="absolute h-24 w-24 rounded-3xl bg-gold-500/20 animate-ping pointer-events-none" />
+        <div className="absolute h-24 w-24 rounded-full bg-gold-500/20 animate-ping pointer-events-none" />
         
         {/* Animated Gold Spinner Border */}
-        <div className="h-20 w-20 rounded-3xl border-4 border-amber-200 border-t-gold-500 animate-spin dark:border-charcoal-800 dark:border-t-gold-400 shadow-lg" />
+        <div className="h-20 w-20 rounded-full border-4 border-amber-200 border-t-gold-500 animate-spin dark:border-charcoal-800 dark:border-t-gold-400 shadow-lg" />
         
         {/* Centered SJ Logo Badge */}
-        <div className="absolute flex h-14 w-14 items-center justify-center rounded-2xl bg-gold-500 font-serif font-bold text-2xl text-charcoal-950 shadow-gold border-2 border-gold-300">
-          SJ
+        <div className="absolute">
+          <BrandLogo variant="icon" size="lg" />
         </div>
       </div>
 

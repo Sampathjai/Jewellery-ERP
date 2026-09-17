@@ -3,8 +3,8 @@
   "name": "Shankar Jewellery ERP & Wholesale Management",
   "icons": [
     {
-      "src": "/gold-logo.svg",
-      "type": "image/svg+xml",
+      "src": "/brand/shankar-jewellery-logo.png",
+      "type": "image/png",
       "sizes": "192x192 512x512"
     }
   ],

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 
 import { useAuth } from '@/lib/auth';
+import { BrandLogo } from '@/components/common/BrandLogo';
 
 export const WholesaleIssueDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -160,14 +161,7 @@ export const WholesaleIssueDetails: React.FC = () => {
         {/* PREMIUM SHANKAR JEWELLERY HEADER */}
         <div className="flex flex-col md:flex-row justify-between border-b-2 border-slate-100 pb-6 dark:border-charcoal-800 gap-4">
           <div>
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gold-500 font-serif font-bold text-charcoal-950 shadow-gold">
-                SJ
-              </div>
-              <h1 className="font-serif text-2xl font-bold tracking-tight text-charcoal-950 dark:text-slate-100">
-                Shankar Jewellery
-              </h1>
-            </div>
+            <BrandLogo variant="compact" size="md" />
             <p className="text-xs font-semibold text-gold-600 dark:text-gold-400 uppercase tracking-widest mt-1">
               Jewellery Billing & Wholesale Invoice
             </p>

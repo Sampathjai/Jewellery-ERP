@@ -1,5 +1,6 @@
 import React from 'react';
 import { Database, AlertTriangle, ShieldCheck, RefreshCw, Layers } from 'lucide-react';
+import { BrandLogo } from '@/components/common/BrandLogo';
 
 interface ConfigErrorPageProps {
   onContinueDemo?: () => void;
@@ -14,18 +15,8 @@ export const ConfigErrorPage: React.FC<ConfigErrorPageProps> = ({ onContinueDemo
         <div className="absolute -bottom-32 -right-32 h-64 w-64 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
 
         {/* Branding Header */}
-        <div className="flex items-center justify-center gap-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gold-500 font-serif font-bold text-xl text-charcoal-950 shadow-gold border-2 border-gold-300">
-            SJ
-          </div>
-          <div className="text-left">
-            <h1 className="font-serif text-lg font-bold text-slate-100 leading-tight">
-              Shankar Jewellery
-            </h1>
-            <p className="text-xs text-gold-400 font-semibold uppercase tracking-wider">
-              Gold & Silver Jewellery ERP
-            </p>
-          </div>
+        <div className="flex justify-center">
+          <BrandLogo variant="compact" size="md" />
         </div>
 
         {/* Warning Badge & Icon */}

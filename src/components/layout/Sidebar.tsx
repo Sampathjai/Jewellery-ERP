@@ -32,6 +32,8 @@ import {
   Database,
 } from 'lucide-react';
 
+import { BrandLogo } from '@/components/common/BrandLogo';
+
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
@@ -127,24 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       >
         {/* Brand Header */}
         <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-4 dark:border-charcoal-800">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gold-500 text-charcoal-950 font-serif font-bold text-sm shadow-gold">
-              SJ
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <h1 className="font-serif text-sm font-bold tracking-tight text-charcoal-900 dark:text-slate-100 truncate">
-                  {t('shop_title')}
-                </h1>
-                <span className="shrink-0 rounded bg-gold-500/20 px-1 py-0.5 text-[9px] font-bold text-amber-900 dark:text-gold-300 uppercase">
-                  ERP
-                </span>
-              </div>
-              <p className="text-[9px] text-amber-700 font-semibold uppercase tracking-wider dark:text-gold-400 truncate">
-                {t('gold_and_silver')}
-              </p>
-            </div>
-          </div>
+          <BrandLogo variant="compact" size="md" />
         </div>
 
         {/* Scrollable Nav Area */}

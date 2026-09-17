@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 
 import { SyncStatusBadge } from '@/components/common/SyncStatusBadge';
+import { BrandLogo } from '@/components/common/BrandLogo';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -77,14 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Menu className="h-5 w-5" />
         </button>
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gold-500 text-charcoal-950 font-serif font-bold text-sm shadow-gold">
-            SJ
-          </div>
-          <span className="font-serif text-xs font-bold tracking-tight text-charcoal-900 dark:text-slate-100 sm:text-sm">
-            {language === 'ta' ? 'சங்கர் ஜுவல்லரி' : 'Shankar Jewellery'}
-          </span>
-        </div>
+        <BrandLogo variant="compact" size="sm" />
       </div>
 
       {/* Center: Today's Metal Rates Ticker (Responsive) */}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { Sparkles, Lock, Mail, Eye, EyeOff, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { BrandLogo } from '@/components/common/BrandLogo';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('owner@shankarjewellery.com');
@@ -55,16 +56,16 @@ export const Login: React.FC = () => {
 
       <div className="w-full max-w-md space-y-6 rounded-3xl border border-gold-400/40 bg-charcoal-900/95 p-8 shadow-2xl backdrop-blur relative z-10">
         {/* Header Branding */}
-        <div className="text-center space-y-2">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gold-500 font-serif font-bold text-3xl text-charcoal-950 shadow-gold border-2 border-gold-300">
-            SJ
+        <div className="text-center space-y-3">
+          <BrandLogo variant="icon" size="xl" className="mx-auto shadow-2xl border-2 border-gold-400" />
+          <div>
+            <h2 className="font-serif text-2xl font-bold tracking-tight text-slate-100">
+              Shankar Jewellery
+            </h2>
+            <p className="text-xs text-gold-400 font-semibold uppercase tracking-wider mt-1">
+              Sign in to manage your jewellery business
+            </p>
           </div>
-          <h2 className="font-serif text-2xl font-bold tracking-tight text-slate-100">
-            Shankar Jewellery
-          </h2>
-          <p className="text-xs text-gold-400 font-semibold uppercase tracking-wider">
-            Sign in to manage your jewellery business
-          </p>
         </div>
 
         {/* Inactivity Session Expiry Banner */}
