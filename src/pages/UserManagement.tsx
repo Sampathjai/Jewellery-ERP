@@ -4,6 +4,7 @@ import { UserProfile, UserRole } from '@/types';
 import { formatDateTime } from '@/lib/utils';
 import { dataService } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
+import { useAuth } from '@/lib/auth';
 import {
   UserCheck,
   UserPlus,
@@ -25,6 +26,7 @@ import {
 } from 'lucide-react';
 
 export const UserManagement: React.FC = () => {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,15 +60,27 @@ export const UserManagement: React.FC = () => {
     try {
       setIsLoading(true);
       setError(null);
-      const fetched = await dataService.getUsers();
+      let fetched = await dataService.getUsers();
+
+      // Guarantee the currently authenticated admin user is present in the list
+      if (currentUser && currentUser.email) {
+        const exists = fetched.some((u) => u.email.toLowerCase() === currentUser.email.toLowerCase());
+        if (!exists) {
+          fetched = [currentUser, ...fetched];
+        }
+      }
+
       setUsers(fetched);
     } catch (err: any) {
       console.error('Error loading users:', err);
       setError(err.message || 'Failed to fetch user profiles from database.');
+      if (currentUser) {
+        setUsers([currentUser]);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     loadUsers();

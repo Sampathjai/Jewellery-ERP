@@ -866,6 +866,8 @@ export const dataService = {
               const { data: refreshed } = await db.from('profiles').select('*').order('created_at', { ascending: false });
               if (refreshed && refreshed.length > 0) {
                 profilesData = refreshed;
+              } else {
+                profilesData = [newProfile, ...profilesData];
               }
             }
           }
