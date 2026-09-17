@@ -24,6 +24,7 @@ export const AddProduct: React.FC = () => {
     description: '',
   });
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   // Metal Rate calculation based on metal type
@@ -66,62 +67,72 @@ export const AddProduct: React.FC = () => {
   const handleSave = async (addAnother: boolean = false) => {
     if (!validate()) return;
 
-    const sku = `SKU-${Math.floor(1000 + Math.random() * 9000)}`;
-    const barcode = `${Math.floor(8900000 + Math.random() * 99999)}`;
+    setIsSubmitting(true);
+    setErrorMsg('');
 
-    let purityFallback: MetalPurity = '22k';
-    if (formData.metal_type === 'silver') {
-      purityFallback = '925_silver';
-    } else if (touch >= 99) {
-      purityFallback = '24k';
-    } else if (touch >= 90) {
-      purityFallback = '22k';
-    } else if (touch >= 70) {
-      purityFallback = '18k';
-    }
+    try {
+      const sku = `SKU-${Math.floor(1000 + Math.random() * 9000)}`;
+      const barcode = `${Math.floor(8900000 + Math.random() * 99999)}`;
 
-    await dataService.createProduct({
-      id: ensureValidUUID(),
-      sku,
-      barcode,
-      qr_code: `QR-${barcode}`,
-      name: formData.name,
-      category_name: formData.category_name,
-      metal_type: formData.metal_type,
-      purity: purityFallback,
-      actual_touch: touch,
-      gross_weight_g: grossWt,
-      deduction_weight_g: deductionWt,
-      stone_weight_g: formData.stone_weight_g,
-      other_weight_g: 0,
-      net_weight_g: netWt,
-      unit: 'grams',
-      quantity: formData.quantity || 1,
-      making_charge_type: 'per_piece',
-      making_charge_rate: 150,
-      labour_charge: 50,
-      wastage_percent: 2.5,
-      wastage_weight_g: 0,
-      purchase_cost: autoWholesaleValuationPerPiece,
-      manufacturing_cost: autoWholesaleValuationPerPiece,
-      retail_price: autoRetailPricePerPiece,
-      wholesale_valuation: autoWholesaleValuationPerPiece,
-      minimum_stock: 2,
-      description: formData.description,
-      primary_photo_url: formData.primary_photo_url,
-      status: 'in_stock',
-      created_at: new Date().toISOString(),
-    });
+      let purityFallback: MetalPurity = '22k';
+      if (formData.metal_type === 'silver') {
+        purityFallback = '925_silver';
+      } else if (touch >= 99) {
+        purityFallback = '24k';
+      } else if (touch >= 90) {
+        purityFallback = '22k';
+      } else if (touch >= 70) {
+        purityFallback = '18k';
+      }
 
-    if (addAnother) {
-      setFormData((prev) => ({
-        ...prev,
-        name: '',
-        gross_weight_g: 3.68,
-        description: '',
-      }));
-    } else {
-      navigate('/products');
+      await dataService.createProduct({
+        id: ensureValidUUID(),
+        sku,
+        barcode,
+        qr_code: `QR-${barcode}`,
+        name: formData.name,
+        category_name: formData.category_name,
+        metal_type: formData.metal_type,
+        purity: purityFallback,
+        actual_touch: touch,
+        gross_weight_g: grossWt,
+        deduction_weight_g: deductionWt,
+        stone_weight_g: formData.stone_weight_g,
+        other_weight_g: 0,
+        net_weight_g: netWt,
+        unit: 'grams',
+        quantity: formData.quantity || 1,
+        making_charge_type: 'per_piece',
+        making_charge_rate: 150,
+        labour_charge: 50,
+        wastage_percent: 2.5,
+        wastage_weight_g: 0,
+        purchase_cost: autoWholesaleValuationPerPiece,
+        manufacturing_cost: autoWholesaleValuationPerPiece,
+        retail_price: autoRetailPricePerPiece,
+        wholesale_valuation: autoWholesaleValuationPerPiece,
+        minimum_stock: 2,
+        description: formData.description,
+        primary_photo_url: formData.primary_photo_url,
+        status: 'in_stock',
+        created_at: new Date().toISOString(),
+      });
+
+      if (addAnother) {
+        setFormData((prev) => ({
+          ...prev,
+          name: '',
+          gross_weight_g: 3.68,
+          description: '',
+        }));
+      } else {
+        navigate('/products');
+      }
+    } catch (err: any) {
+      console.error('Add Product Error:', err);
+      setErrorMsg(err?.message || 'Failed to save product in Supabase.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -356,18 +367,20 @@ export const AddProduct: React.FC = () => {
         <div className="flex flex-col sm:flex-row items-center justify-end gap-3 border-t border-slate-100 pt-4 dark:border-charcoal-800">
           <button
             type="button"
+            disabled={isSubmitting}
             onClick={() => handleSave(true)}
-            className="w-full sm:w-auto flex items-center justify-center gap-1.5 rounded-xl border border-gold-400 bg-gold-50 px-5 py-2.5 text-xs font-bold text-amber-950 hover:bg-gold-100 dark:bg-gold-950/40 dark:text-gold-300"
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 rounded-xl border border-gold-400 bg-gold-50 px-5 py-2.5 text-xs font-bold text-amber-950 hover:bg-gold-100 dark:bg-gold-950/40 dark:text-gold-300 disabled:opacity-50"
           >
-            <Plus className="h-4 w-4" /> Save & Add Another
+            <Plus className="h-4 w-4" /> {isSubmitting ? 'Saving...' : 'Save & Add Another'}
           </button>
 
           <button
             type="button"
+            disabled={isSubmitting}
             onClick={() => handleSave(false)}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-gold-500 px-6 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-gold-500 px-6 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50"
           >
-            <Save className="h-4 w-4" /> Save Stock Item
+            <Save className="h-4 w-4" /> {isSubmitting ? 'Saving Product...' : 'Save Stock Item'}
           </button>
         </div>
       </div>

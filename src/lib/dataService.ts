@@ -66,14 +66,21 @@ export const dataService = {
       console.error('Failed to fetch customers from Supabase:', error.message);
       throw new Error(`Database Error: ${error.message}`);
     }
-    return (data || []) as Customer[];
+    return ((data || []).map((c) => ({
+      ...c,
+      agreed_customer_touch: c.default_actual_touch ?? c.agreed_profit_percent ?? 40,
+    }))) as Customer[];
   },
 
   async createCustomer(customerData: Partial<Customer>): Promise<Customer> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(customerData.id);
 
-    const payload: Customer = {
+    const actualTouch = customerData.default_actual_touch ?? customerData.agreed_customer_touch ?? 37;
+    const profitTouch = customerData.default_profit_touch ?? 10;
+    const billingTouch = customerData.default_billing_touch ?? (actualTouch + profitTouch);
+
+    const dbPayload: Record<string, any> = {
       id: validId,
       customer_code: customerData.customer_code || `CUST-${Math.floor(100 + Math.random() * 900)}`,
       full_name: customerData.full_name || '',
@@ -88,10 +95,12 @@ export const dataService = {
       pin_code: customerData.pin_code || '',
       gstin: customerData.gstin || '',
       pan: customerData.pan || '',
-      agreed_customer_touch: customerData.agreed_customer_touch ?? 40,
-      credit_limit: customerData.credit_limit ?? 0,
-      agreed_profit_percent: customerData.agreed_profit_percent ?? 40,
+      credit_limit: Number(customerData.credit_limit || 0),
+      agreed_profit_percent: Number(customerData.agreed_profit_percent ?? 40),
       profit_sharing_model: customerData.profit_sharing_model || 'model_a_profit_percent',
+      default_actual_touch: Number(actualTouch),
+      default_profit_touch: Number(profitTouch),
+      default_billing_touch: Number(billingTouch),
       payment_terms: customerData.payment_terms || '30 Days',
       photo_url: customerData.photo_url || '',
       notes: customerData.notes || '',
@@ -101,7 +110,7 @@ export const dataService = {
 
     const { data, error } = await db
       .from('customers')
-      .insert(payload)
+      .insert(dbPayload)
       .select()
       .single();
 
@@ -110,17 +119,28 @@ export const dataService = {
       throw new Error(`Customer Save Failed: ${error.message}`);
     }
 
-    syncEngine.notifyDataChange('customers', 'INSERT', data);
-    return data as Customer;
+    const result = {
+      ...data,
+      agreed_customer_touch: data.default_actual_touch ?? data.agreed_profit_percent ?? 40,
+    } as Customer;
+
+    syncEngine.notifyDataChange('customers', 'INSERT', result);
+    return result;
   },
 
   async updateCustomer(id: string, updates: Partial<Customer>): Promise<Customer> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(id);
 
+    const { agreed_customer_touch, ...dbUpdates } = updates as any;
+    if (agreed_customer_touch !== undefined) {
+      dbUpdates.default_actual_touch = agreed_customer_touch;
+      dbUpdates.agreed_profit_percent = agreed_customer_touch;
+    }
+
     const { data, error } = await db
       .from('customers')
-      .update(updates)
+      .update(dbUpdates)
       .eq('id', validId)
       .select()
       .single();
@@ -130,8 +150,13 @@ export const dataService = {
       throw new Error(`Customer Update Failed: ${error.message}`);
     }
 
-    syncEngine.notifyDataChange('customers', 'UPDATE', data);
-    return data as Customer;
+    const result = {
+      ...data,
+      agreed_customer_touch: data.default_actual_touch ?? data.agreed_profit_percent ?? 40,
+    } as Customer;
+
+    syncEngine.notifyDataChange('customers', 'UPDATE', result);
+    return result;
   },
 
   async deleteCustomer(id: string): Promise<boolean> {
@@ -163,21 +188,24 @@ export const dataService = {
       console.error('Failed to fetch products from Supabase:', error.message);
       throw new Error(`Database Error: ${error.message}`);
     }
-    return (data || []) as Product[];
+    return ((data || []).map((p) => ({
+      ...p,
+      category_name: p.category_name || (p.metal_type === 'silver' ? 'Silverware' : 'Gold Jewellery'),
+      actual_touch: 37,
+    }))) as Product[];
   },
 
   async createProduct(productData: Partial<Product>): Promise<Product> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(productData.id);
 
-    const payload: Product = {
+    const dbPayload: Record<string, any> = {
       id: validId,
       sku: productData.sku || `SKU-${Date.now()}`,
       barcode: productData.barcode || `${Math.floor(100000 + Math.random() * 900000)}`,
       qr_code: productData.qr_code || `QR-${Date.now()}`,
       name: productData.name || '',
       category_id: productData.category_id ? ensureValidUUID(productData.category_id) : undefined,
-      category_name: productData.category_name || '',
       metal_type: productData.metal_type || 'gold',
       purity: productData.purity || '22k',
       gross_weight_g: Number(productData.gross_weight_g || 0),
@@ -186,7 +214,7 @@ export const dataService = {
       net_weight_g: Number(productData.net_weight_g || 0),
       unit: productData.unit || 'grams',
       quantity: Number(productData.quantity || 1),
-      making_charge_type: productData.making_charge_type || 'per_gram',
+      making_charge_type: productData.making_charge_type || 'per_piece',
       making_charge_rate: Number(productData.making_charge_rate || 0),
       labour_charge: Number(productData.labour_charge || 0),
       wastage_percent: Number(productData.wastage_percent || 0),
@@ -204,7 +232,7 @@ export const dataService = {
 
     const { data, error } = await db
       .from('products')
-      .insert(payload)
+      .insert(dbPayload)
       .select()
       .single();
 
@@ -213,17 +241,25 @@ export const dataService = {
       throw new Error(`Product Save Failed: ${error.message}`);
     }
 
-    syncEngine.notifyDataChange('products', 'INSERT', data);
-    return data as Product;
+    const result = {
+      ...data,
+      category_name: productData.category_name || (data.metal_type === 'silver' ? 'Silverware' : 'Gold Jewellery'),
+      actual_touch: (productData as any).actual_touch || 37,
+    } as Product;
+
+    syncEngine.notifyDataChange('products', 'INSERT', result);
+    return result;
   },
 
   async updateProduct(id: string, updates: Partial<Product>): Promise<Product> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(id);
 
+    const { category_name, actual_touch, deduction_weight_g, ...dbUpdates } = updates as any;
+
     const { data, error } = await db
       .from('products')
-      .update(updates)
+      .update(dbUpdates)
       .eq('id', validId)
       .select()
       .single();
@@ -233,8 +269,14 @@ export const dataService = {
       throw new Error(`Product Update Failed: ${error.message}`);
     }
 
-    syncEngine.notifyDataChange('products', 'UPDATE', data);
-    return data as Product;
+    const result = {
+      ...data,
+      category_name: category_name || (data.metal_type === 'silver' ? 'Silverware' : 'Gold Jewellery'),
+      actual_touch: actual_touch || 37,
+    } as Product;
+
+    syncEngine.notifyDataChange('products', 'UPDATE', result);
+    return result;
   },
 
   async deleteProduct(id: string): Promise<boolean> {

@@ -41,36 +41,52 @@ export const AddCustomer: React.FC = () => {
     }
   }, [initialType]);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.full_name || !formData.phone) return;
-
-    const savedCustomer = await dataService.createCustomer({
-      ...formData,
-      id: ensureValidUUID(),
-    });
-
-    // If type is supplier, also sync a Supplier record in db.suppliers
-    if (savedCustomer.customer_type === 'supplier') {
-      const displayName = savedCustomer.shop_name || savedCustomer.full_name;
-      await dataService.createSupplier({
-        id: ensureValidUUID(),
-        supplier_code: `SUP-${Math.floor(100 + Math.random() * 900)}`,
-        supplier_name: displayName,
-        contact_person: savedCustomer.full_name,
-        phone: savedCustomer.phone,
-        email: savedCustomer.email,
-        address: `${savedCustomer.address || ''} ${savedCustomer.city || ''}`.trim(),
-        gstin: savedCustomer.gstin,
-        notes: savedCustomer.notes,
-        primary_metal: 'gold',
-      });
+    if (!formData.full_name || !formData.phone) {
+      setErrorMsg('Full Name and Phone Number are required.');
+      return;
     }
 
-    if (savedCustomer.customer_type === 'supplier') {
-      navigate('/purchases');
-    } else {
-      navigate('/customers');
+    setIsSubmitting(true);
+    setErrorMsg('');
+
+    try {
+      const savedCustomer = await dataService.createCustomer({
+        ...formData,
+        id: ensureValidUUID(),
+      });
+
+      // If type is supplier, also sync a Supplier record
+      if (savedCustomer.customer_type === 'supplier') {
+        const displayName = savedCustomer.shop_name || savedCustomer.full_name;
+        await dataService.createSupplier({
+          id: ensureValidUUID(),
+          supplier_code: `SUP-${Math.floor(100 + Math.random() * 900)}`,
+          supplier_name: displayName,
+          contact_person: savedCustomer.full_name,
+          phone: savedCustomer.phone,
+          email: savedCustomer.email,
+          address: `${savedCustomer.address || ''} ${savedCustomer.city || ''}`.trim(),
+          gstin: savedCustomer.gstin,
+          notes: savedCustomer.notes,
+          primary_metal: 'gold',
+        });
+      }
+
+      if (savedCustomer.customer_type === 'supplier') {
+        navigate('/purchases');
+      } else {
+        navigate('/customers');
+      }
+    } catch (err: any) {
+      console.error('Customer Add Error:', err);
+      setErrorMsg(err?.message || 'Failed to save customer record into Supabase PostgreSQL.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -91,6 +107,12 @@ export const AddCustomer: React.FC = () => {
       />
 
       <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm space-y-6 max-w-4xl">
+        {errorMsg && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+            {errorMsg}
+          </div>
+        )}
+
         {/* Customer Category & Basic Info */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
@@ -233,9 +255,10 @@ export const AddCustomer: React.FC = () => {
         <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 dark:border-charcoal-800">
           <button
             type="submit"
-            className="flex items-center gap-2 rounded-xl bg-gold-500 px-6 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600"
+            disabled={isSubmitting}
+            className="flex items-center gap-2 rounded-xl bg-gold-500 px-6 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50 transition-all"
           >
-            <Save className="h-4 w-4" /> Save Customer Record
+            <Save className="h-4 w-4" /> {isSubmitting ? 'Saving Customer...' : 'Save Customer Record'}
           </button>
         </div>
       </form>

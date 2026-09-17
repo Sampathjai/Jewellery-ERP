@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Modal } from './Modal';
 import { PhotoUploader } from './PhotoUploader';
-import { getLocalDb, saveLocalDb, saveCustomerRecord } from '@/lib/supabase';
+import { dataService, ensureValidUUID } from '@/lib/dataService';
 import { Customer, WholesaleProfitModel } from '@/types';
 import { useLanguage } from '@/lib/i18n';
 import { Save, UserPlus, Sparkles } from 'lucide-react';
@@ -18,6 +18,8 @@ export const AddWholesaleCustomerModal: React.FC<AddWholesaleCustomerModalProps>
   onCustomerAdded,
 }) => {
   const { t, language } = useLanguage();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const [formData, setFormData] = useState<Partial<Customer>>({
     customer_code: `CUST-${Math.floor(100 + Math.random() * 900)}`,
@@ -45,37 +47,50 @@ export const AddWholesaleCustomerModal: React.FC<AddWholesaleCustomerModalProps>
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.full_name || !formData.phone) return;
+    if (!formData.full_name || !formData.phone) {
+      setErrorMsg('Full Name and Phone are required.');
+      return;
+    }
 
-    const newCustomer: Customer = {
-      id: `cust-${Date.now()}`,
-      customer_code: formData.customer_code || `CUST-${Date.now()}`,
-      full_name: formData.full_name,
-      shop_name: formData.shop_name,
-      customer_type: 'wholesale',
-      phone: formData.phone,
-      whatsapp_number: formData.whatsapp_number || formData.phone,
-      email: formData.email,
-      address: formData.address,
-      city: formData.city,
-      state: formData.state,
-      pin_code: formData.pin_code,
-      gstin: formData.gstin,
-      pan: formData.pan,
-      photo_url: formData.photo_url,
-      agreed_customer_touch: formData.agreed_customer_touch ?? 40,
-      credit_limit: formData.credit_limit || 0,
-      agreed_profit_percent: formData.agreed_profit_percent || 40,
-      profit_sharing_model: (formData.profit_sharing_model as WholesaleProfitModel) || 'model_a_profit_percent',
-      payment_terms: formData.payment_terms || '30 Days',
-      is_active: true,
-      notes: formData.notes,
-      created_at: new Date().toISOString(),
-    };
+    setIsSubmitting(true);
+    setErrorMsg('');
 
-    await saveCustomerRecord(newCustomer);
-    onCustomerAdded(newCustomer);
-    onClose();
+    try {
+      const newCustomer: Customer = {
+        id: ensureValidUUID(),
+        customer_code: formData.customer_code || `CUST-${Math.floor(100 + Math.random() * 900)}`,
+        full_name: formData.full_name,
+        shop_name: formData.shop_name,
+        customer_type: 'wholesale',
+        phone: formData.phone,
+        whatsapp_number: formData.whatsapp_number || formData.phone,
+        email: formData.email,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        pin_code: formData.pin_code,
+        gstin: formData.gstin,
+        pan: formData.pan,
+        photo_url: formData.photo_url,
+        agreed_customer_touch: formData.agreed_customer_touch ?? 40,
+        credit_limit: formData.credit_limit || 0,
+        agreed_profit_percent: formData.agreed_profit_percent || 40,
+        profit_sharing_model: (formData.profit_sharing_model as WholesaleProfitModel) || 'model_a_profit_percent',
+        payment_terms: formData.payment_terms || '30 Days',
+        is_active: true,
+        notes: formData.notes,
+        created_at: new Date().toISOString(),
+      };
+
+      const savedCustomer = await dataService.createCustomer(newCustomer);
+      onCustomerAdded(savedCustomer);
+      onClose();
+    } catch (err: any) {
+      console.error('Add Wholesale Customer Error:', err);
+      setErrorMsg(err?.message || 'Failed to save wholesale customer in Supabase.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -87,6 +102,11 @@ export const AddWholesaleCustomerModal: React.FC<AddWholesaleCustomerModalProps>
       maxWidth="2xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {errorMsg && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+            {errorMsg}
+          </div>
+        )}
         {/* Customer Photo Top Upload */}
         <div className="flex justify-center border-b border-slate-100 pb-4 dark:border-charcoal-800">
           <PhotoUploader
@@ -209,9 +229,10 @@ export const AddWholesaleCustomerModal: React.FC<AddWholesaleCustomerModalProps>
           </button>
           <button
             type="submit"
-            className="flex items-center gap-2 rounded-xl bg-gold-500 px-6 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600"
+            disabled={isSubmitting}
+            className="flex items-center gap-2 rounded-xl bg-gold-500 px-6 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50 transition-all"
           >
-            <Save className="h-4 w-4" /> Save & Select Wholesale Customer
+            <Save className="h-4 w-4" /> {isSubmitting ? 'Saving...' : 'Save & Select Wholesale Customer'}
           </button>
         </div>
       </form>
