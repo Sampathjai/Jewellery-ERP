@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserProfile, UserRole, PermissionCode } from '@/types';
 import { getLocalDb, saveLocalDb, supabase } from './supabase';
+import { dataService } from './dataService';
 import { hasPermission } from './utils';
 import { InactivityWarningModal } from '@/components/common/InactivityWarningModal';
 
@@ -75,6 +76,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (dbUser) {
               setUser(dbUser);
               setRole(dbUser.role);
+              dataService.createUserProfile(dbUser).catch((e) => console.warn('Supabase dbUser sync warning:', e));
             } else {
               const known = knownUsers[userEmail.toLowerCase()] || {
                 full_name: session.user.user_metadata?.full_name || 'Sampath Kumar',
@@ -85,11 +87,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 full_name: known.full_name,
                 email: userEmail,
                 role: known.role,
+                branch: 'Trichy - Sandhukadai',
                 is_active: true,
                 last_login_at: new Date().toISOString(),
               };
               setUser(profile);
               setRole(profile.role);
+              dataService.createUserProfile(profile).catch((e) => console.warn('Supabase profile sync warning:', e));
             }
           }
         }
@@ -213,6 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser(updatedUser);
       setRole(updatedUser.role);
+      dataService.createUserProfile(updatedUser).catch((e) => console.warn('Supabase login user sync warning:', e));
       setIsLoading(false);
       return { success: true };
     }
@@ -242,6 +247,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       full_name: nameToUse || 'Sampath Kumar',
       email: normalizedEmail,
       role: roleToUse,
+      branch: 'Trichy - Sandhukadai',
       is_active: true,
       last_login_at: new Date().toISOString(),
     };
@@ -251,6 +257,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setUser(newUser);
     setRole(roleToUse);
+    dataService.createUserProfile(newUser).catch((e) => console.warn('Supabase new user profile sync warning:', e));
     setIsLoading(false);
     return { success: true };
   };

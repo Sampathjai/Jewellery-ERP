@@ -799,6 +799,15 @@ export const dataService = {
           is_active: true,
         },
         {
+          id: ensureValidUUID('11111111-1111-4111-8111-111111111112'),
+          full_name: 'Sampath Kumar',
+          email: 'sampath@shankarjewellery.com',
+          phone: '+91 98765 43210',
+          role: 'admin',
+          branch: 'Trichy - Sandhukadai',
+          is_active: true,
+        },
+        {
           id: ensureValidUUID('22222222-2222-4222-8222-222222222222'),
           full_name: 'Muralidharan',
           email: 'manager@shankarjewellery.com',
@@ -832,6 +841,38 @@ export const dataService = {
       } catch (seedErr) {
         console.warn('Auto-seed default user profiles failed:', seedErr);
       }
+    }
+
+    // Ensure the currently logged-in auth user from local session is saved in Supabase profiles
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const authUserStr = localStorage.getItem('sampath_auth_user');
+        if (authUserStr) {
+          const authUser = JSON.parse(authUserStr);
+          if (authUser && authUser.email) {
+            const exists = profilesData.some((p: any) => p.email.toLowerCase() === authUser.email.toLowerCase());
+            if (!exists) {
+              const validId = ensureValidUUID(authUser.id);
+              const newProfile = {
+                id: validId,
+                full_name: authUser.full_name || 'Sampath Kumar',
+                email: authUser.email.trim().toLowerCase(),
+                phone: authUser.phone || '',
+                role: authUser.role || 'admin',
+                branch: authUser.branch || 'Trichy - Sandhukadai',
+                is_active: authUser.is_active ?? true,
+              };
+              await db.from('profiles').upsert([newProfile]);
+              const { data: refreshed } = await db.from('profiles').select('*').order('created_at', { ascending: false });
+              if (refreshed && refreshed.length > 0) {
+                profilesData = refreshed;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Error verifying logged-in admin profile in getUsers:', e);
     }
 
     return (profilesData.map((u: any) => ({
