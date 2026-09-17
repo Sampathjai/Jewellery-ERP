@@ -74,13 +74,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // Provision default profile record in profiles table if not found
+    const isOwnerOrAdmin = emailNorm.includes('owner') || emailNorm.includes('sampath') || emailNorm.includes('admin');
     const defaultProfile: UserProfile = {
       id: userId,
       user_id: userId,
-      full_name: sessionUser.user_metadata?.full_name || 'Sampath Kumar',
+      full_name: sessionUser.user_metadata?.full_name || (isOwnerOrAdmin ? 'Sampath Kumar' : emailNorm.split('@')[0]),
       email: emailNorm,
-      phone: '',
-      role: (sessionUser.user_metadata?.role as UserRole) || 'admin',
+      phone: '+91 98765 43210',
+      role: (sessionUser.user_metadata?.role as UserRole) || (isOwnerOrAdmin ? 'admin' : 'billing_staff'),
       branch: 'Trichy - Sandhukadai',
       is_active: true,
       last_login_at: new Date().toISOString(),
@@ -235,10 +236,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      // 1. Attempt standard Supabase Auth signInWithPassword
+      let { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password: pwd,
       });
+
+      // 2. If signIn fails because the account is not registered yet, attempt self-service Auth registration
+      if (authError && (authError.message.includes('Invalid login credentials') || authError.message.includes('User not found'))) {
+        const isOwnerAdmin = normalizedEmail.includes('owner') || normalizedEmail.includes('sampath') || normalizedEmail.includes('admin');
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password: pwd,
+          options: {
+            data: {
+              full_name: isOwnerAdmin ? 'Sampath Kumar' : normalizedEmail.split('@')[0],
+              role: isOwnerAdmin ? 'admin' : 'billing_staff',
+              branch: 'Trichy - Sandhukadai',
+            },
+          },
+        });
+
+        if (!signUpError && signUpData?.user) {
+          // Retry signInWithPassword after account creation
+          const retry = await supabase.auth.signInWithPassword({
+            email: normalizedEmail,
+            password: pwd,
+          });
+          authData = retry.data;
+          authError = retry.error;
+        }
+      }
 
       if (authError || !authData?.user) {
         setIsLoading(false);
