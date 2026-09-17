@@ -23,6 +23,7 @@ import { RetailInvoices } from '@/pages/RetailInvoices';
 import { InvoiceDetails } from '@/pages/InvoiceDetails';
 import { WholesaleCustomers } from '@/pages/WholesaleCustomers';
 import { WholesaleCustomerDetails } from '@/pages/WholesaleCustomerDetails';
+import { WholesaleIssuesList } from '@/pages/WholesaleIssuesList';
 import { WholesaleIssuePage } from '@/pages/WholesaleIssue';
 import { WholesaleIssueDetails } from '@/pages/WholesaleIssueDetails';
 import { WholesaleReturns } from '@/pages/WholesaleReturns';
@@ -98,7 +99,7 @@ export const App: React.FC = () => {
 
               <Route path="/wholesale-customers" element={<ProtectedRoute><WholesaleCustomers /></ProtectedRoute>} />
               <Route path="/wholesale-customers/:id" element={<ProtectedRoute><WholesaleCustomerDetails /></ProtectedRoute>} />
-              <Route path="/wholesale-issues" element={<ProtectedRoute><WholesaleCustomers /></ProtectedRoute>} />
+              <Route path="/wholesale-issues" element={<ProtectedRoute><WholesaleIssuesList /></ProtectedRoute>} />
               <Route path="/wholesale-issues/new" element={<ProtectedRoute><WholesaleIssuePage /></ProtectedRoute>} />
               <Route path="/wholesale-issues/:id" element={<ProtectedRoute><WholesaleIssueDetails /></ProtectedRoute>} />
               <Route path="/wholesale-returns" element={<ProtectedRoute><WholesaleReturns /></ProtectedRoute>} />
