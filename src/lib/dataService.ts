@@ -816,33 +816,62 @@ export const dataService = {
       throw new Error('Full Name and Email Address are required.');
     }
 
-    const secondaryClient = createSecondaryAuthClient();
-    let authUserId: string | null = null;
-
-    if (params.password && params.password.length >= 6 && secondaryClient) {
-      const { data: authRes, error: authErr } = await secondaryClient.auth.signUp({
-        email: emailNorm,
-        password: params.password,
-        options: {
-          data: {
-            full_name: params.full_name,
-            role: params.role,
-            branch: params.branch || 'Trichy - Sandhukadai',
-          },
+    // 1. Try invoking Supabase Edge Function 'create-staff-user' for secure server-side Admin Auth creation
+    try {
+      const { data: fnData, error: fnError } = await db.functions.invoke('create-staff-user', {
+        body: {
+          action: 'create',
+          full_name: params.full_name,
+          email: emailNorm,
+          password: params.password,
+          role: params.role,
+          branch: params.branch || 'Trichy - Sandhukadai',
+          phone: params.phone || '',
         },
       });
 
-      if (authErr) {
-        throw new Error(`Auth Registration Failed: ${authErr.message}`);
+      if (fnError) {
+        let errMsg = fnError.message || 'Edge function invocation failed';
+        try {
+          if (typeof fnError === 'object' && (fnError as any).context && typeof (fnError as any).context.json === 'function') {
+            const bodyErr = await (fnError as any).context.json();
+            if (bodyErr?.error) errMsg = bodyErr.error;
+          }
+        } catch (e) {
+          // Fallthrough
+        }
+        throw new Error(errMsg);
       }
 
-      if (authRes?.user) {
-        authUserId = authRes.user.id;
+      if (fnData?.error) {
+        throw new Error(fnData.error);
+      }
+
+      if (fnData?.user) {
+        const created: UserProfile = {
+          id: fnData.user.id,
+          user_id: fnData.user.user_id || fnData.user.id,
+          full_name: fnData.user.full_name,
+          email: fnData.user.email,
+          phone: fnData.user.phone || '',
+          role: (fnData.user.role || params.role) as UserRole,
+          branch: fnData.user.branch || params.branch || 'Trichy - Sandhukadai',
+          is_active: fnData.user.is_active ?? true,
+          created_at: fnData.user.created_at || new Date().toISOString(),
+        };
+        syncEngine.notifyDataChange('profiles', 'INSERT', created);
+        return created;
+      }
+    } catch (fnErr: any) {
+      console.warn('Edge Function create-staff-user invocation error:', fnErr);
+      const msg = fnErr.message || '';
+      if (msg.includes('already exists') || msg.includes('Too many requests') || msg.includes('Unauthorized') || msg.includes('Password must be')) {
+        throw fnErr;
       }
     }
 
-    const targetId = authUserId || ensureValidUUID();
-
+    // Direct Supabase database fallback if Edge Function is not yet deployed
+    const targetId = ensureValidUUID();
     const dbPayload: Record<string, any> = {
       id: targetId,
       user_id: targetId,
@@ -883,6 +912,32 @@ export const dataService = {
 
     syncEngine.notifyDataChange('profiles', 'INSERT', created);
     return created;
+  },
+
+  async adminChangeUserPassword(userId: string, newPassword: string): Promise<void> {
+    const db = checkSupabaseClient();
+    const { data: fnData, error: fnError } = await db.functions.invoke('create-staff-user', {
+      body: {
+        action: 'update_password',
+        user_id: userId,
+        password: newPassword,
+      },
+    });
+
+    if (fnError) {
+      let errMsg = fnError.message || 'Failed to update password';
+      try {
+        if (typeof fnError === 'object' && (fnError as any).context && typeof (fnError as any).context.json === 'function') {
+          const bodyErr = await (fnError as any).context.json();
+          if (bodyErr?.error) errMsg = bodyErr.error;
+        }
+      } catch (e) {}
+      throw new Error(errMsg);
+    }
+
+    if (fnData?.error) {
+      throw new Error(fnData.error);
+    }
   },
 
   async createUserProfile(userData: Partial<UserProfile>): Promise<UserProfile> {
@@ -974,7 +1029,19 @@ export const dataService = {
 
   async deleteUserProfile(id: string): Promise<void> {
     const db = checkSupabaseClient();
-    const { error } = await db.from('profiles').delete().eq('id', id);
+
+    try {
+      await db.functions.invoke('create-staff-user', {
+        body: {
+          action: 'delete_user',
+          user_id: id,
+        },
+      });
+    } catch (e) {
+      console.warn('Edge function delete_user warning, deleting profile row directly:', e);
+    }
+
+    const { error } = await db.from('profiles').delete().or(`id.eq.${id},user_id.eq.${id}`);
 
     if (error) {
       console.error('Failed to delete user profile in Supabase:', error.message);

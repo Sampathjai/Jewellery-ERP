@@ -51,6 +51,9 @@ export const UserManagement: React.FC = () => {
 
   const [selectedUserForDelete, setSelectedUserForDelete] = useState<UserProfile | null>(null);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+
   const showToast = (msg: string) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 4000);
@@ -103,12 +106,15 @@ export const UserManagement: React.FC = () => {
     }
 
     try {
+      setIsSubmitting(true);
       await dataService.deleteUserProfile(userToDelete.id);
       showToast(`User login for ${userToDelete.full_name} (${userToDelete.email}) permanently deleted.`);
       setSelectedUserForDelete(null);
       await loadUsers();
     } catch (err: any) {
       alert(err.message || 'Failed to delete user account.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -142,17 +148,20 @@ export const UserManagement: React.FC = () => {
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    setModalError(null);
+
     if (!newFullName || !newEmail || !newPassword) {
-      alert('Please complete all required user fields.');
+      setModalError('Please complete all required user fields.');
       return;
     }
 
     if (newPassword.length < 6) {
-      alert('Password must be at least 6 characters long.');
+      setModalError('Password must be at least 6 characters long.');
       return;
     }
 
     try {
+      setIsSubmitting(true);
       const created = await dataService.createStaffAccount({
         full_name: newFullName,
         email: newEmail.trim().toLowerCase(),
@@ -168,26 +177,47 @@ export const UserManagement: React.FC = () => {
       setNewEmail('');
       setNewUserId('');
       setNewPassword('');
+      setModalError(null);
       setIsAddUserOpen(false);
       await loadUsers();
     } catch (err: any) {
-      alert(err.message || 'Failed to create user account in database.');
+      console.error('Create user error:', err);
+      setModalError(err.message || 'Failed to create user account in database.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleDirectPasswordChange = (e: React.FormEvent) => {
+  const handleDirectPasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
+    setModalError(null);
+
     if (!selectedUserForPassword) return;
 
     if (!changePasswordVal || changePasswordVal !== confirmPasswordVal) {
-      alert('Passwords do not match or are empty.');
+      setModalError('Passwords do not match or are empty.');
       return;
     }
 
-    showToast(`Password for ${selectedUserForPassword.full_name} has been updated directly by Admin.`);
-    setSelectedUserForPassword(null);
-    setChangePasswordVal('');
-    setConfirmPasswordVal('');
+    if (changePasswordVal.length < 6) {
+      setModalError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await dataService.adminChangeUserPassword(selectedUserForPassword.id, changePasswordVal);
+      showToast(`Password for ${selectedUserForPassword.full_name} has been updated directly by Admin.`);
+      setSelectedUserForPassword(null);
+      setChangePasswordVal('');
+      setConfirmPasswordVal('');
+      setModalError(null);
+    } catch (err: any) {
+      console.error('Password change error:', err);
+      setModalError(err.message || 'Failed to update password.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -432,6 +462,13 @@ export const UserManagement: React.FC = () => {
               </button>
             </div>
 
+            {modalError && (
+              <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-xs font-bold text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+                <span>{modalError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Staff Full Name *</label>
@@ -440,10 +477,11 @@ export const UserManagement: React.FC = () => {
                   <input
                     type="text"
                     required
+                    disabled={isSubmitting}
                     value={newFullName}
                     onChange={(e) => setNewFullName(e.target.value)}
                     placeholder="e.g. Ramesh Kumar"
-                    className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -453,10 +491,11 @@ export const UserManagement: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">User ID / Username</label>
                   <input
                     type="text"
+                    disabled={isSubmitting}
                     value={newUserId}
                     onChange={(e) => setNewUserId(e.target.value)}
                     placeholder="ramesh_counter"
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 disabled:opacity-50"
                   />
                 </div>
                 <div>
@@ -464,10 +503,11 @@ export const UserManagement: React.FC = () => {
                   <input
                     type="email"
                     required
+                    disabled={isSubmitting}
                     value={newEmail}
                     onChange={(e) => setNewEmail(e.target.value)}
                     placeholder="ramesh@shankarjewellery.com"
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -481,10 +521,11 @@ export const UserManagement: React.FC = () => {
                   <input
                     type="text"
                     required
+                    disabled={isSubmitting}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Set initial password directly"
-                    className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 font-mono"
+                    className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 font-mono disabled:opacity-50"
                   />
                 </div>
                 <p className="mt-1 text-[11px] text-slate-500">
@@ -496,9 +537,10 @@ export const UserManagement: React.FC = () => {
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Access Role</label>
                   <select
+                    disabled={isSubmitting}
                     value={newRole}
                     onChange={(e) => setNewRole(e.target.value as UserRole)}
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs font-bold text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs font-bold text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 disabled:opacity-50"
                   >
                     <option value="admin">Owner / Admin</option>
                     <option value="manager">Shop Manager</option>
@@ -513,10 +555,11 @@ export const UserManagement: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Branch Location</label>
                   <input
                     type="text"
+                    disabled={isSubmitting}
                     value={newBranch}
                     onChange={(e) => setNewBranch(e.target.value)}
                     placeholder="Trichy - Sandhukadai"
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -524,16 +567,25 @@ export const UserManagement: React.FC = () => {
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setIsAddUserOpen(false)}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-charcoal-700 dark:text-slate-300"
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-charcoal-700 dark:text-slate-300 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-gold-500 px-5 py-2 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600"
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 rounded-xl bg-gold-500 px-5 py-2 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50"
                 >
-                  Create User Account
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      <span>Creating Account...</span>
+                    </>
+                  ) : (
+                    <span>Create User Account</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -563,6 +615,13 @@ export const UserManagement: React.FC = () => {
               <p className="text-[11px]">{selectedUserForPassword.email}</p>
             </div>
 
+            {modalError && (
+              <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-xs font-bold text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+                <span>{modalError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleDirectPasswordChange} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">New Password *</label>
@@ -571,10 +630,11 @@ export const UserManagement: React.FC = () => {
                   <input
                     type={showPasswordText ? 'text' : 'password'}
                     required
+                    disabled={isSubmitting}
                     value={changePasswordVal}
                     onChange={(e) => setChangePasswordVal(e.target.value)}
                     placeholder="Enter new password"
-                    className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-10 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-10 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 disabled:opacity-50"
                   />
                   <button
                     type="button"
@@ -591,26 +651,36 @@ export const UserManagement: React.FC = () => {
                 <input
                   type={showPasswordText ? 'text' : 'password'}
                   required
+                  disabled={isSubmitting}
                   value={confirmPasswordVal}
                   onChange={(e) => setConfirmPasswordVal(e.target.value)}
                   placeholder="Re-enter new password"
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 disabled:opacity-50"
                 />
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setSelectedUserForPassword(null)}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-charcoal-700 dark:text-slate-300"
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-charcoal-700 dark:text-slate-300 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-gold-500 px-5 py-2 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600"
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 rounded-xl bg-gold-500 px-5 py-2 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50"
                 >
-                  Update Password Direct
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      <span>Updating...</span>
+                    </>
+                  ) : (
+                    <span>Update Password Direct</span>
+                  )}
                 </button>
               </div>
             </form>

@@ -665,6 +665,21 @@ BEGIN
     END LOOP;
 END $$;
 
+-- 12. SECURITY HELPER FUNCTION
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE (user_id = auth.uid() OR id = auth.uid())
+      AND role IN ('admin', 'owner')
+      AND is_active = true
+  );
+$$;
+
 -- 13. ENABLE REALTIME REPLICATION FOR CROSS-DEVICE SYNC
 DO $$ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE profiles, customers, products, retail_invoices, wholesale_issues, metal_rates, expenses, purchases, suppliers;

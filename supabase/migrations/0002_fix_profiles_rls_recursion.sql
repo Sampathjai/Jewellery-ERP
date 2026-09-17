@@ -122,3 +122,4 @@ ON CONFLICT (user_id) DO UPDATE SET
 
 -- 6. Reload PostgREST API schema cache
 NOTIFY pgrst, 'reload schema';
+
