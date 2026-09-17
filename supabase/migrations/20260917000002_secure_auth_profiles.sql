@@ -1,19 +1,18 @@
 -- ============================================================================
--- SHANKAR JEWELLERY ERP - SECURE AUTH & PROFILES MIGRATION
+-- SHANKAR JEWELLERY ERP - PRODUCTION PROFILES MIGRATION & TRIGGER
 -- Migration Version: 20260917000002
--- Idempotent schema definition linking auth.users to public.profiles
+-- Idempotent schema definition linking auth.users(id) to public.profiles(user_id)
 -- ============================================================================
 
 -- 1. Ensure required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- 2. Ensure public.profiles table structure
+-- 2. Ensure public.profiles table structure exists
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID UNIQUE,
+    user_id UUID NOT NULL UNIQUE,
     full_name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
+    email TEXT NOT NULL UNIQUE,
     phone TEXT,
     avatar_url TEXT,
     role TEXT DEFAULT 'billing_staff',
@@ -37,7 +36,7 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
--- Ensure primary key & unique constraints exist explicitly to prevent 42P10 ON CONFLICT errors
+-- Ensure primary key & unique constraints exist explicitly
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -60,7 +59,18 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
--- Add foreign key constraint to auth.users if available
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE table_schema = 'public' AND table_name = 'profiles' AND constraint_name = 'profiles_email_key'
+    ) THEN
+        ALTER TABLE public.profiles ADD CONSTRAINT profiles_email_key UNIQUE (email);
+    END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- 3. Add foreign key constraint to auth.users if available
 DO $$
 BEGIN
     IF EXISTS (
@@ -81,7 +91,39 @@ EXCEPTION
         RAISE NOTICE 'Foreign key linking auth.users skipped: %', SQLERRM;
 END $$;
 
--- 3. Automatic Profile Provisioning Trigger
+-- 4. Seed / Update Actual Production Admin Profile for sampath@shankarjewellery.com
+-- Auth User ID: ca66662e-5376-40bc-be21-54525be82019
+INSERT INTO public.profiles (
+  id,
+  user_id,
+  full_name,
+  email,
+  phone,
+  role,
+  branch,
+  is_active,
+  created_at,
+  updated_at
+) VALUES (
+  'ca66662e-5376-40bc-be21-54525be82019',
+  'ca66662e-5376-40bc-be21-54525be82019',
+  'Sampath Kumar',
+  'sampath@shankarjewellery.com',
+  '+91 98765 43210',
+  'admin',
+  'Trichy - Sandhukadai',
+  true,
+  NOW(),
+  NOW()
+)
+ON CONFLICT (user_id) DO UPDATE SET
+  email = 'sampath@shankarjewellery.com',
+  full_name = 'Sampath Kumar',
+  role = 'admin',
+  is_active = true,
+  updated_at = NOW();
+
+-- 5. Automatic Profile Provisioning Trigger for new Auth sign-ups
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -107,9 +149,8 @@ BEGIN
     NOW(),
     NOW()
   )
-  ON CONFLICT (id) DO UPDATE SET
+  ON CONFLICT (user_id) DO UPDATE SET
     email = EXCLUDED.email,
-    user_id = EXCLUDED.user_id,
     full_name = COALESCE(EXCLUDED.full_name, public.profiles.full_name),
     role = COALESCE(EXCLUDED.role, public.profiles.role),
     updated_at = NOW();
@@ -135,10 +176,9 @@ EXCEPTION
         RAISE NOTICE 'Trigger on auth.users skipped: %', SQLERRM;
 END $$;
 
--- 4. Enable Row Level Security (RLS) on public.profiles
+-- 6. Enable Row Level Security (RLS) on public.profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
--- Permissive authenticated & anon read/write policies for ERP application operation
 DROP POLICY IF EXISTS "Enable read access for all authenticated users" ON public.profiles;
 CREATE POLICY "Enable read access for all authenticated users"
 ON public.profiles FOR SELECT
@@ -159,7 +199,7 @@ CREATE POLICY "Enable delete access for all users"
 ON public.profiles FOR DELETE
 USING (true);
 
--- 5. Realtime Publication Setup
+-- 7. Realtime Publication Setup
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
@@ -169,3 +209,5 @@ EXCEPTION
     WHEN OTHERS THEN NULL;
 END $$;
 
+-- 8. Reload PostgREST API schema cache
+NOTIFY pgrst, 'reload schema';

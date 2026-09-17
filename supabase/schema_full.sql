@@ -64,6 +64,29 @@ CREATE TABLE IF NOT EXISTS profiles (
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'billing_staff';
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS branch TEXT DEFAULT 'Trichy - Sandhukadai';
 
+-- Ensure primary key & unique constraints exist explicitly
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE table_schema = 'public' AND table_name = 'profiles' AND constraint_type = 'PRIMARY KEY'
+    ) THEN
+        ALTER TABLE public.profiles ADD PRIMARY KEY (id);
+    END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE table_schema = 'public' AND table_name = 'profiles' AND constraint_name = 'profiles_user_id_key'
+    ) THEN
+        ALTER TABLE public.profiles ADD CONSTRAINT profiles_user_id_key UNIQUE (user_id);
+    END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
 -- Automatic Profile Provisioning Trigger for auth.users
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
@@ -79,9 +102,8 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data->>'branch', 'Trichy - Sandhukadai'),
     true, NOW(), NOW()
   )
-  ON CONFLICT (id) DO UPDATE SET
+  ON CONFLICT (user_id) DO UPDATE SET
     email = EXCLUDED.email,
-    user_id = EXCLUDED.user_id,
     full_name = COALESCE(EXCLUDED.full_name, public.profiles.full_name),
     role = COALESCE(EXCLUDED.role, public.profiles.role),
     updated_at = NOW();
