@@ -116,6 +116,7 @@ export const App: React.FC = () => {
               <Route path="/whatsapp-messages" element={<ProtectedRoute><WhatsAppMessages /></ProtectedRoute>} />
               <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
               <Route path="/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
+              <Route path="/settings/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
               <Route path="/admin/user-login-settings" element={<ProtectedRoute><UserLoginSettings /></ProtectedRoute>} />
               <Route path="/roles-permissions" element={<ProtectedRoute><RolesPermissions /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />

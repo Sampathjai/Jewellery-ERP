@@ -3,25 +3,65 @@
 // Core TypeScript Interfaces & Domain Definitions
 // ============================================================================
 
-export type UserRole = 'admin' | 'manager' | 'billing_staff' | 'inventory_staff' | 'accountant' | 'viewer';
+export type UserRole =
+  | 'super_admin'
+  | 'admin'
+  | 'counsellor'
+  | 'trainer'
+  | 'accountant'
+  | 'receptionist'
+  | 'manager'
+  | 'billing_staff'
+  | 'inventory_staff'
+  | 'viewer';
 
 export type PermissionCode =
   | 'view_dashboard'
   | 'manage_users'
+  | 'users.view'
+  | 'users.create'
+  | 'users.edit'
+  | 'users.delete'
+  | 'users.enable_disable'
+  | 'users.set_password'
+  | 'users.reset_password'
   | 'manage_customers'
+  | 'customers.view'
+  | 'customers.create'
+  | 'customers.edit'
+  | 'customers.delete'
   | 'manage_products'
   | 'manage_inventory'
+  | 'stock.view'
+  | 'stock.create'
+  | 'stock.edit'
+  | 'stock.delete'
   | 'create_retail_invoice'
   | 'edit_retail_invoice'
   | 'cancel_retail_invoice'
+  | 'billing.view'
+  | 'billing.create'
+  | 'billing.edit'
+  | 'billing.delete'
+  | 'billing.print'
   | 'create_wholesale_issue'
   | 'manage_wholesale_returns'
   | 'view_wholesale_profit'
+  | 'wholesale.view'
+  | 'wholesale.create'
+  | 'wholesale.edit'
+  | 'wholesale.delete'
   | 'manage_payments'
   | 'manage_expenses'
   | 'view_reports'
+  | 'reports.view'
+  | 'reports.export'
   | 'export_data'
-  | 'manage_settings';
+  | 'manage_settings'
+  | 'settings.view'
+  | 'settings.edit'
+  | 'branches.view'
+  | 'branches.manage';
 
 export interface UserProfile {
   id: string;

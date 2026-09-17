@@ -43,7 +43,18 @@ export const RolesPermissions: React.FC = () => {
 
   const [notification, setNotification] = useState<string | null>(null);
 
-  const roles: UserRole[] = ['admin', 'manager', 'billing_staff', 'inventory_staff', 'accountant', 'viewer'];
+  const roles: UserRole[] = [
+    'super_admin',
+    'admin',
+    'counsellor',
+    'trainer',
+    'accountant',
+    'receptionist',
+    'manager',
+    'billing_staff',
+    'inventory_staff',
+    'viewer'
+  ];
   const permissions: { code: PermissionCode; label: string }[] = [
     { code: 'view_dashboard', label: 'View Dashboard Metrics' },
     { code: 'manage_users', label: 'Manage System Users & Credentials' },

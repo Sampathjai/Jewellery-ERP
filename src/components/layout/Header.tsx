@@ -73,11 +73,15 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const roleLabels: Record<UserRole, string> = {
+    super_admin: 'Super Admin (System Owner)',
     admin: 'Owner / Admin (Full Access)',
+    counsellor: 'Counsellor',
+    trainer: 'Trainer',
+    accountant: 'Accountant (P&L)',
+    receptionist: 'Receptionist',
     manager: 'Manager',
     billing_staff: 'Billing Staff (POS)',
     inventory_staff: 'Inventory Staff',
-    accountant: 'Accountant (P&L)',
     viewer: 'Viewer (Read-only)',
   };
 
