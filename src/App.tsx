@@ -8,6 +8,7 @@ import { ForgotPassword } from '@/pages/ForgotPassword';
 import { Dashboard } from '@/pages/Dashboard';
 import { CustomersList } from '@/pages/CustomersList';
 import { AddCustomer } from '@/pages/AddCustomer';
+import { EditCustomer } from '@/pages/EditCustomer';
 import { CustomerDetails } from '@/pages/CustomerDetails';
 import { ProductsList } from '@/pages/ProductsList';
 import { AddProduct } from '@/pages/AddProduct';
@@ -77,6 +78,7 @@ export const App: React.FC = () => {
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/customers" element={<ProtectedRoute><CustomersList /></ProtectedRoute>} />
               <Route path="/customers/add" element={<ProtectedRoute><AddCustomer /></ProtectedRoute>} />
+              <Route path="/customers/edit/:id" element={<ProtectedRoute><EditCustomer /></ProtectedRoute>} />
               <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetails /></ProtectedRoute>} />
 
               <Route path="/products" element={<ProtectedRoute><ProductsList /></ProtectedRoute>} />

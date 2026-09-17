@@ -6,7 +6,7 @@ import { syncEngine } from '@/lib/syncEngine';
 import { Customer, CustomerType } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 import { openWhatsAppClickToChat, buildWhatsAppPaymentReminder } from '@/lib/whatsapp';
-import { Plus, Search, MessageSquare, Phone, MapPin, Eye, Building } from 'lucide-react';
+import { Plus, Search, MessageSquare, Phone, MapPin, Eye, Building, Edit } from 'lucide-react';
 
 export const CustomersList: React.FC = () => {
   const navigate = useNavigate();
@@ -179,22 +179,32 @@ export const CustomersList: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-3 dark:border-charcoal-800">
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-charcoal-800">
               <Link
                 to={`/customers/${c.id}`}
                 className="flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-gold-600 dark:text-slate-300"
               >
-                <Eye className="h-4 w-4" />
+                <Eye className="h-4 w-4 text-gold-500" />
                 View Profile & Ledger
               </Link>
 
-              <button
-                onClick={() => handleWhatsAppReminder(c)}
-                className="flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700"
-              >
-                <MessageSquare className="h-3.5 w-3.5" />
-                WhatsApp
-              </button>
+              <div className="flex items-center gap-2">
+                <Link
+                  to={`/customers/edit/${c.id}`}
+                  className="flex items-center gap-1 rounded-xl border border-gold-400 bg-gold-50 px-2.5 py-1 text-xs font-bold text-amber-950 hover:bg-gold-100 dark:bg-gold-950/40 dark:text-gold-300"
+                >
+                  <Edit className="h-3.5 w-3.5" />
+                  Edit
+                </Link>
+
+                <button
+                  onClick={() => handleWhatsAppReminder(c)}
+                  className="flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-700"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  WhatsApp
+                </button>
+              </div>
             </div>
           </div>
         ))}

@@ -373,6 +373,12 @@ export const CustomerDetails: React.FC = () => {
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
             <button
+              onClick={() => navigate(`/customers/edit/${customer.id}`)}
+              className="flex items-center gap-1 rounded-xl border border-gold-400 bg-gold-50 px-3 py-2 text-xs font-bold text-amber-950 hover:bg-gold-100 dark:bg-gold-950/40 dark:text-gold-300"
+            >
+              <Edit className="h-4 w-4 text-gold-600" /> Edit Profile
+            </button>
+            <button
               onClick={handlePrintLedger}
               className="flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300"
             >

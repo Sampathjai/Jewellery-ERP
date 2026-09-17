@@ -155,7 +155,7 @@ export const dataService = {
 
     if (error) {
       console.error('Failed to update customer in Supabase:', error.message);
-      throw new Error(`Customer Update Failed: ${error.message}`);
+      throw formatDbError('Customer Update Failed', error);
     }
 
     const result = {
