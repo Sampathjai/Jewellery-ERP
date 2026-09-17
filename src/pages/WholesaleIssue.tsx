@@ -37,8 +37,6 @@ export const WholesaleIssuePage: React.FC = () => {
   const [issueQty, setIssueQty] = useState<number>(10);
   const [itemGrossWeight, setItemGrossWeight] = useState<number>(3.680);
   const [itemDeductionWeight, setItemDeductionWeight] = useState<number>(1.000);
-  const [itemActualTouch, setItemActualTouch] = useState<number>(37);
-  const [itemProfitTouch, setItemProfitTouch] = useState<number>(10);
 
   // Payment Settlement initial inputs
   const [cashPaid, setCashPaid] = useState<number>(0);
@@ -77,32 +75,67 @@ export const WholesaleIssuePage: React.FC = () => {
     loadData();
   }, []);
 
+  // Wholesale Touch States
+  const [agreedCustomerTouch, setAgreedCustomerTouch] = useState<number>(50);
+  const [itemActualTouch, setItemActualTouch] = useState<number>(40);
+  const [itemProfitTouch, setItemProfitTouch] = useState<number>(10);
+  const [itemBillingTouch, setItemBillingTouch] = useState<number>(50);
+
   const selectedCustomer: Customer | undefined = wholesaleCustomers.find((c) => c.id === customerId) || wholesaleCustomers[0];
 
   // Update touch defaults when selected customer changes
   useEffect(() => {
     if (selectedCustomer) {
-      setItemActualTouch(selectedCustomer.default_actual_touch ?? 37);
-      setItemProfitTouch(selectedCustomer.default_profit_touch ?? 10);
-      setAgreedProfitPercent(selectedCustomer.agreed_customer_touch ?? selectedCustomer.agreed_profit_percent ?? 40);
+      const custTouch = selectedCustomer.agreed_customer_touch ?? selectedCustomer.agreed_profit_percent ?? 50;
+      setAgreedCustomerTouch(custTouch);
+
+      const prod = productsList.find((p) => p.id === selectedProductId);
+      const actTouch = prod?.actual_touch ?? selectedCustomer.default_actual_touch ?? 40;
+      setItemActualTouch(actTouch);
+
+      const profit = Number((custTouch - actTouch).toFixed(2));
+      setItemProfitTouch(profit);
+      setItemBillingTouch(Number((actTouch + profit).toFixed(2)));
     }
   }, [customerId, selectedCustomer]);
 
-  // Update item gross weight default when selected product or qty changes
+  // Update item gross weight & actual touch default when selected product or qty changes
   useEffect(() => {
     const prod = productsList.find((p) => p.id === selectedProductId);
     if (prod) {
       setItemGrossWeight(Number((prod.gross_weight_g * issueQty).toFixed(3)));
       setItemDeductionWeight(Number(((prod.deduction_weight_g || 0) * issueQty).toFixed(3)));
-      if (prod.actual_touch) {
-        setItemActualTouch(prod.actual_touch);
-      }
+      const actTouch = prod.actual_touch ?? 40;
+      setItemActualTouch(actTouch);
+
+      const profit = Number((agreedCustomerTouch - actTouch).toFixed(2));
+      setItemProfitTouch(profit);
+      setItemBillingTouch(Number((actTouch + profit).toFixed(2)));
     }
-  }, [selectedProductId, issueQty, productsList]);
+  }, [selectedProductId, issueQty, productsList, agreedCustomerTouch]);
+
+  // Touch Handlers with Real-time Sync & Manual Override
+  const handleActualTouchChange = (actVal: number) => {
+    setItemActualTouch(actVal);
+    const profit = Number((agreedCustomerTouch - actVal).toFixed(2));
+    setItemProfitTouch(profit);
+    setItemBillingTouch(Number((actVal + profit).toFixed(2)));
+  };
+
+  const handleProfitTouchChange = (profitVal: number) => {
+    setItemProfitTouch(profitVal);
+    setItemBillingTouch(Number((itemActualTouch + profitVal).toFixed(2)));
+  };
+
+  const handleBillingTouchChange = (billingVal: number) => {
+    setItemBillingTouch(billingVal);
+    const profit = Number((billingVal - itemActualTouch).toFixed(2));
+    setItemProfitTouch(profit);
+  };
 
   // Calculations for current item form
   const itemNetWeight = Math.max(0, Number((itemGrossWeight - itemDeductionWeight).toFixed(3)));
-  const itemFinalTouch = Number((itemActualTouch + itemProfitTouch).toFixed(2));
+  const itemFinalTouch = itemBillingTouch;
   const itemFineGold = Number(((itemNetWeight * itemFinalTouch) / 100).toFixed(3));
   const itemValuation = Number((itemFineGold * goldRatePerGram).toFixed(2));
 
@@ -266,21 +299,27 @@ export const WholesaleIssuePage: React.FC = () => {
             {selectedCustomer && (
               <div className="flex items-center gap-2 rounded-xl bg-gold-50/80 p-3 border border-gold-200 text-xs dark:bg-gold-950/40 dark:border-gold-800/40">
                 <div className="text-center px-2">
-                  <span className="block text-[10px] text-slate-500 uppercase font-bold">Actual Touch</span>
+                  <span className="block text-[10px] text-slate-500 uppercase font-bold">Agreed Touch</span>
                   <span className="font-mono font-bold text-amber-900 dark:text-gold-300 text-sm">
-                    {selectedCustomer.default_actual_touch ?? 37}%
+                    {agreedCustomerTouch}%
+                  </span>
+                </div>
+                <div className="text-center px-2 border-l border-gold-200 dark:border-gold-800">
+                  <span className="block text-[10px] text-slate-500 uppercase font-bold">Actual Touch</span>
+                  <span className="font-mono font-bold text-slate-700 dark:text-slate-300 text-sm">
+                    {itemActualTouch}%
                   </span>
                 </div>
                 <div className="text-center px-2 border-l border-gold-200 dark:border-gold-800">
                   <span className="block text-[10px] text-slate-500 uppercase font-bold">Profit Touch</span>
                   <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 text-sm">
-                    +{selectedCustomer.default_profit_touch ?? 10}%
+                    +{itemProfitTouch}%
                   </span>
                 </div>
                 <div className="text-center px-2 border-l border-gold-200 dark:border-gold-800">
                   <span className="block text-[10px] text-slate-500 uppercase font-bold">Billing Touch</span>
                   <span className="font-mono font-bold text-gold-600 text-sm">
-                    {selectedCustomer.default_billing_touch ?? (selectedCustomer.default_actual_touch ?? 37) + (selectedCustomer.default_profit_touch ?? 10)}%
+                    {itemBillingTouch}%
                   </span>
                 </div>
               </div>
@@ -332,7 +371,7 @@ export const WholesaleIssuePage: React.FC = () => {
               <Scale className="h-4 w-4 text-gold-600" /> Item Touch & Weight Calculation Input
             </h4>
             <span className="text-[11px] font-mono text-slate-500">
-              Fine Gold = Net Wt × (Actual Touch + Profit Touch) / 100
+              Fine Gold = Net Wt × Billing Touch / 100
             </span>
           </div>
 
@@ -346,7 +385,7 @@ export const WholesaleIssuePage: React.FC = () => {
               >
                 {productsList.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} ({p.sku}) • Gross: {formatWeight(p.gross_weight_g)}
+                    {p.name} ({p.sku}) • Actual Touch: {p.actual_touch || 40}% • Gross: {formatWeight(p.gross_weight_g)}
                   </option>
                 ))}
               </select>
@@ -405,7 +444,7 @@ export const WholesaleIssuePage: React.FC = () => {
                 type="number"
                 step="0.1"
                 value={itemActualTouch}
-                onChange={(e) => setItemActualTouch(Number(e.target.value))}
+                onChange={(e) => handleActualTouchChange(Number(e.target.value))}
                 className="mt-1 w-full rounded-xl border border-slate-200 p-2 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 font-mono font-bold"
               />
             </div>
@@ -418,8 +457,21 @@ export const WholesaleIssuePage: React.FC = () => {
                 type="number"
                 step="0.1"
                 value={itemProfitTouch}
-                onChange={(e) => setItemProfitTouch(Number(e.target.value))}
+                onChange={(e) => handleProfitTouchChange(Number(e.target.value))}
                 className="mt-1 w-full rounded-xl border border-slate-200 p-2 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 font-mono font-bold text-emerald-600 dark:text-emerald-400"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                Billing Touch (%) [Override]
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                value={itemBillingTouch}
+                onChange={(e) => handleBillingTouchChange(Number(e.target.value))}
+                className="mt-1 w-full rounded-xl border border-gold-400 p-2 text-xs text-amber-950 bg-gold-50/50 focus:border-gold-600 focus:outline-none dark:border-gold-600 dark:bg-gold-950/40 dark:text-gold-300 font-mono font-bold"
               />
             </div>
           </div>
@@ -428,8 +480,8 @@ export const WholesaleIssuePage: React.FC = () => {
           <div className="flex flex-wrap items-center justify-between rounded-xl bg-white p-3 border border-gold-300 dark:bg-charcoal-900 dark:border-gold-800 text-xs gap-3">
             <div>
               <span className="text-slate-500">Billing Touch: </span>
-              <strong className="font-mono text-sm text-gold-600 dark:text-gold-400">{itemFinalTouch}%</strong>
-              <span className="text-[10px] text-slate-400 ml-1">({itemActualTouch} + {itemProfitTouch})</span>
+              <strong className="font-mono text-sm text-gold-600 dark:text-gold-400">{itemBillingTouch}%</strong>
+              <span className="text-[10px] text-slate-400 ml-1">({itemActualTouch}% Actual + {itemProfitTouch}% Profit)</span>
             </div>
 
             <div>

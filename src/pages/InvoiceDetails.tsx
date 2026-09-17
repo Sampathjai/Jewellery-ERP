@@ -24,12 +24,28 @@ export const InvoiceDetails: React.FC = () => {
         setSettings(s);
 
         if (id && isSupabaseConfigured() && supabase) {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('retail_invoices')
             .select('*')
             .or(`id.eq.${id},invoice_number.eq.${id}`)
             .maybeSingle();
-          if (data) setInvoice(data as RetailInvoice);
+
+          if (data) {
+            let items: any[] = data.items || [];
+            if (!items || items.length === 0) {
+              const { data: itemsData } = await supabase
+                .from('retail_invoice_items')
+                .select('*')
+                .eq('invoice_id', data.id);
+              if (itemsData && itemsData.length > 0) {
+                items = itemsData;
+              }
+            }
+            setInvoice({
+              ...data,
+              items: items || [],
+            } as RetailInvoice);
+          }
         }
       } catch (e) {
         console.error('Error fetching invoice details:', e);
@@ -71,6 +87,8 @@ export const InvoiceDetails: React.FC = () => {
       </div>
     );
   }
+
+  const invoiceItems = invoice.items || [];
 
   return (
     <div className="space-y-6">
@@ -150,23 +168,31 @@ export const InvoiceDetails: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
-              {invoice.items.map((item, idx) => (
-                <tr key={item.id}>
-                  <td className="p-3">{idx + 1}</td>
-                  <td className="p-3 font-bold text-charcoal-900 dark:text-slate-100">
-                    {item.product_name_snapshot}
-                    <span className="block font-mono text-[10px] text-slate-400">SKU: {item.sku_snapshot}</span>
-                  </td>
-                  <td className="p-3 font-bold uppercase">{item.metal_type} ({item.purity})</td>
-                  <td className="p-3 text-right font-mono">{formatWeight(item.net_weight_g)}</td>
-                  <td className="p-3 text-right font-mono">{formatCurrency(item.metal_rate_snapshot)}</td>
-                  <td className="p-3 text-right font-mono">{formatCurrency(item.metal_value)}</td>
-                  <td className="p-3 text-right font-mono">{formatCurrency(item.making_charge + item.labour_charge + item.wastage_value)}</td>
-                  <td className="p-3 text-right font-serif font-bold text-amber-900 dark:text-gold-300">
-                    {formatCurrency(item.line_total)}
+              {invoiceItems.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-4 text-center text-slate-500 font-medium italic">
+                    No item breakdown lines recorded for this invoice.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                invoiceItems.map((item, idx) => (
+                  <tr key={item.id || idx}>
+                    <td className="p-3">{idx + 1}</td>
+                    <td className="p-3 font-bold text-charcoal-900 dark:text-slate-100">
+                      {item.product_name_snapshot}
+                      {item.sku_snapshot && <span className="block font-mono text-[10px] text-slate-400">SKU: {item.sku_snapshot}</span>}
+                    </td>
+                    <td className="p-3 font-bold uppercase">{item.metal_type} ({item.purity})</td>
+                    <td className="p-3 text-right font-mono">{formatWeight(item.net_weight_g)}</td>
+                    <td className="p-3 text-right font-mono">{formatCurrency(item.metal_rate_snapshot)}</td>
+                    <td className="p-3 text-right font-mono">{formatCurrency(item.metal_value)}</td>
+                    <td className="p-3 text-right font-mono">{formatCurrency((item.making_charge || 0) + (item.labour_charge || 0) + (item.wastage_value || 0))}</td>
+                    <td className="p-3 text-right font-serif font-bold text-amber-900 dark:text-gold-300">
+                      {formatCurrency(item.line_total)}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

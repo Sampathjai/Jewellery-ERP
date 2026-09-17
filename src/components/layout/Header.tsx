@@ -98,46 +98,139 @@ export const Header: React.FC<HeaderProps> = ({
   const displayName = getUserDisplayName();
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-3 backdrop-blur dark:border-charcoal-800 dark:bg-charcoal-900/95 sm:px-6 z-30">
-      {/* Mobile-only toggle sidebar & branding */}
-      <div className="flex items-center gap-2 lg:hidden shrink-0">
-        <button
-          onClick={onToggleSidebar}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-        <BrandLogo variant="compact" size="sm" />
+    <header className="flex flex-col sm:flex-row sm:h-16 shrink-0 justify-between gap-2 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur dark:border-charcoal-800 dark:bg-charcoal-900/95 sm:px-6 sm:py-0 z-30">
+      {/* Top Bar on Mobile / Left Section on Desktop */}
+      <div className="flex items-center justify-between gap-2 sm:justify-start">
+        {/* Mobile-only toggle sidebar & branding */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={onToggleSidebar}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300 lg:hidden"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <div className="lg:hidden">
+            <BrandLogo variant="compact" size="sm" />
+          </div>
+        </div>
+
+        {/* Center/Left: Metal Rates Ticker for Desktop */}
+        <div className="hidden sm:flex items-center gap-2 rounded-full border border-amber-200/80 bg-amber-50/80 px-3 py-1.5 text-xs text-amber-900 dark:border-gold-800/40 dark:bg-gold-950/40 dark:text-gold-300 shrink min-w-0 overflow-x-auto whitespace-nowrap shadow-sm scrollbar-none">
+          <TrendingUp className="h-3.5 w-3.5 shrink-0 text-gold-600" />
+          <span className="font-bold shrink-0">{t('today_rates')}:</span>
+          {metalRate ? (
+            <>
+              <span className="whitespace-nowrap">
+                {t('gold_24k')}: <strong className="font-bold text-amber-950 dark:text-gold-300">{formatCurrency(metalRate.gold_24k_per_gram)}/g</strong>
+              </span>
+              <span className="text-amber-300 dark:text-gold-700">|</span>
+              <span className="whitespace-nowrap">
+                22K (916): <strong className="font-bold text-amber-950 dark:text-gold-300">{formatCurrency(metalRate.gold_22k_per_gram)}/g</strong>
+              </span>
+              <span className="text-amber-300 dark:text-gold-700">|</span>
+              <span className="whitespace-nowrap">
+                {t('silver_925')}: <strong className="font-bold text-amber-950 dark:text-gold-300">{formatCurrency(metalRate.silver_per_gram)}/g</strong>
+              </span>
+              <span className="rounded bg-gold-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-900 dark:text-gold-300 border border-gold-300/40 ml-0.5 shrink-0">
+                {metalRate.source === 'manual' ? 'Shop Rate' : 'Live Market'}
+              </span>
+            </>
+          ) : (
+            <span className="text-slate-400 italic">Gold Rate: Loading...</span>
+          )}
+        </div>
+
+        {/* Controls Row on Mobile right side */}
+        <div className="flex sm:hidden items-center gap-1.5 shrink-0">
+          <button
+            onClick={toggleLanguage}
+            className="flex h-8 items-center gap-1 rounded-lg border border-gold-400 bg-gold-50 px-2 text-[11px] font-bold text-charcoal-950 dark:border-gold-700 dark:bg-gold-950/60 dark:text-gold-200"
+            title="Switch Language"
+          >
+            <Globe className="h-3 w-3 text-gold-600" />
+            <span>{language === 'en' ? 'தமிழ்' : 'ENG'}</span>
+          </button>
+
+          <button
+            onClick={toggleDarkMode}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 dark:border-charcoal-800 dark:text-slate-300"
+          >
+            {darkMode ? <Sun className="h-3.5 w-3.5 text-amber-400" /> : <Moon className="h-3.5 w-3.5" />}
+          </button>
+
+          <button
+            onClick={onToggleNotifications}
+            className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 dark:border-charcoal-800 dark:text-slate-300"
+          >
+            <Bell className="h-3.5 w-3.5" />
+            {unreadCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+
+          <div className="relative">
+            <button
+              onClick={() => setShowRoleMenu(!showRoleMenu)}
+              className="flex h-8 items-center gap-1 rounded-lg border border-gold-400/40 bg-gold-50/50 px-2 text-xs font-bold text-charcoal-900 dark:border-gold-800/40 dark:bg-gold-950/40 dark:text-gold-200"
+            >
+              <UserCheck className="h-3.5 w-3.5 text-gold-600" />
+              <span className="rounded bg-gold-500 px-1 py-0.5 text-[9px] font-extrabold text-charcoal-950 uppercase">
+                {role}
+              </span>
+            </button>
+
+            {showRoleMenu && (
+              <div className="absolute right-0 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-charcoal-800 dark:bg-charcoal-900 z-50">
+                <div className="border-b border-slate-100 pb-2 mb-2 dark:border-charcoal-800">
+                  <p className="text-xs font-bold text-charcoal-900 dark:text-slate-100">{displayName}</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">{user?.email}</p>
+                  <div className="mt-1.5 inline-block rounded bg-gold-100 dark:bg-gold-950/80 px-2 py-0.5 text-[10px] font-bold text-amber-900 dark:text-gold-300">
+                    {roleLabels[role] || role}
+                  </div>
+                </div>
+
+                <div className="pt-1">
+                  <button
+                    onClick={() => logout()}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    {t('sign_out')}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Center/Left: Today's Metal Rates Ticker (Single Row, Shrinkable) */}
-      <div className="flex items-center gap-2 rounded-full border border-amber-200/80 bg-amber-50/80 px-3 py-1.5 text-xs text-amber-900 dark:border-gold-800/40 dark:bg-gold-950/40 dark:text-gold-300 shrink min-w-0 overflow-x-auto whitespace-nowrap shadow-sm scrollbar-none">
-        <TrendingUp className="h-3.5 w-3.5 shrink-0 text-gold-600" />
+      {/* Mobile Second Row: Metal Rates Ticker */}
+      <div className="flex sm:hidden items-center gap-1.5 rounded-lg border border-amber-200/80 bg-amber-50/90 px-2.5 py-1 text-[11px] text-amber-900 dark:border-gold-800/40 dark:bg-gold-950/50 dark:text-gold-300 w-full overflow-x-auto whitespace-nowrap scrollbar-none">
+        <TrendingUp className="h-3 w-3 shrink-0 text-gold-600" />
         <span className="font-bold shrink-0">{t('today_rates')}:</span>
         {metalRate ? (
           <>
             <span className="whitespace-nowrap">
-              {t('gold_24k')}: <strong className="font-bold text-amber-950 dark:text-gold-300">{formatCurrency(metalRate.gold_24k_per_gram)}/g</strong>
+              24K: <strong className="font-bold">{formatCurrency(metalRate.gold_24k_per_gram)}</strong>
             </span>
             <span className="text-amber-300 dark:text-gold-700">|</span>
             <span className="whitespace-nowrap">
-              22K (916): <strong className="font-bold text-amber-950 dark:text-gold-300">{formatCurrency(metalRate.gold_22k_per_gram)}/g</strong>
+              22K: <strong className="font-bold">{formatCurrency(metalRate.gold_22k_per_gram)}</strong>
             </span>
             <span className="text-amber-300 dark:text-gold-700">|</span>
             <span className="whitespace-nowrap">
-              {t('silver_925')}: <strong className="font-bold text-amber-950 dark:text-gold-300">{formatCurrency(metalRate.silver_per_gram)}/g</strong>
-            </span>
-            <span className="rounded bg-gold-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-900 dark:text-gold-300 border border-gold-300/40 ml-0.5 shrink-0">
-              {metalRate.source === 'manual' ? 'Shop Rate' : 'Live Market'}
+              Sil: <strong className="font-bold">{formatCurrency(metalRate.silver_per_gram)}</strong>
             </span>
           </>
         ) : (
-          <span className="text-slate-400 italic">Gold Rate: Loading...</span>
+          <span className="text-slate-400 italic">Rates Loading...</span>
         )}
       </div>
 
-      {/* Right Controls Section: Single Row, Vertically Centered */}
-      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+      {/* Right Controls Section: Desktop Only */}
+      <div className="hidden sm:flex items-center gap-2 sm:gap-2.5 shrink-0">
         {/* Dynamic Welcome Back Banner */}
         <div className="hidden lg:flex items-center gap-1 text-xs font-semibold text-charcoal-900 dark:text-slate-100 whitespace-nowrap">
           <span>Welcome back, <strong className="font-bold text-amber-900 dark:text-gold-300">{displayName}</strong> 👋</span>

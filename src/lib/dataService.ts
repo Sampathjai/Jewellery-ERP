@@ -334,17 +334,44 @@ export const dataService = {
     return (data || []) as RetailInvoice[];
   },
 
+  async generateUniqueInvoiceNumber(prefix: string = 'INV-2026-'): Promise<string> {
+    const db = checkSupabaseClient();
+    try {
+      const { data } = await db
+        .from('retail_invoices')
+        .select('invoice_number')
+        .like('invoice_number', `${prefix}%`)
+        .order('created_at', { ascending: false })
+        .limit(30);
+
+      let maxNum = 1000;
+      if (data && data.length > 0) {
+        for (const row of data) {
+          const match = row.invoice_number?.match(/\d+$/);
+          if (match) {
+            const num = parseInt(match[0], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        }
+      }
+      return `${prefix}${maxNum + 1}`;
+    } catch (e) {
+      return `${prefix}${Math.floor(10000 + Math.random() * 90000)}`;
+    }
+  },
+
   async createRetailInvoice(invoiceData: Partial<RetailInvoice>, paymentData?: Partial<RetailPayment>): Promise<RetailInvoice> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(invoiceData.id);
     const validCustomerId = invoiceData.customer_id ? ensureValidUUID(invoiceData.customer_id) : undefined;
+    const custName = (invoiceData.customer_name || '').trim() || 'Walk-in Customer';
+    const custPhone = (invoiceData.customer_phone || '').trim();
 
-    const payload: Partial<RetailInvoice> = {
+    const basePayload: Partial<RetailInvoice> = {
       id: validId,
-      invoice_number: invoiceData.invoice_number || `SJ-INV-${Date.now()}`,
       customer_id: validCustomerId,
-      customer_name: invoiceData.customer_name || 'Walk-in Customer',
-      customer_phone: invoiceData.customer_phone || '',
+      customer_name: custName,
+      customer_phone: custPhone,
       invoice_date: invoiceData.invoice_date || new Date().toISOString().split('T')[0],
       subtotal_metal_value: Number(invoiceData.subtotal_metal_value || 0),
       total_making_charges: Number(invoiceData.total_making_charges || 0),
@@ -363,15 +390,44 @@ export const dataService = {
       created_at: invoiceData.created_at || new Date().toISOString(),
     };
 
-    const { data: savedInv, error: invError } = await db
-      .from('retail_invoices')
-      .insert(payload)
-      .select()
-      .single();
+    let attempt = 0;
+    let savedInv: any = null;
+    let lastErr: any = null;
 
-    if (invError) {
-      console.error('Failed to insert retail invoice into Supabase:', invError.message);
-      throw new Error(`Invoice Creation Failed: ${invError.message}`);
+    while (attempt < 3 && !savedInv) {
+      attempt++;
+      let currentInvNumber = invoiceData.invoice_number;
+      if (attempt > 1 || !currentInvNumber) {
+        currentInvNumber = await this.generateUniqueInvoiceNumber('INV-2026-');
+      }
+
+      const payload = {
+        ...basePayload,
+        invoice_number: currentInvNumber,
+      };
+
+      const { data, error } = await db
+        .from('retail_invoices')
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) {
+        lastErr = error;
+        if (error.code === '23505' || error.message.includes('unique constraint') || error.message.includes('already exists')) {
+          console.warn(`Invoice number collision detected on attempt ${attempt} (${currentInvNumber}), retrying with fresh sequence...`);
+          await new Promise((res) => setTimeout(res, 150 * attempt));
+          continue;
+        } else {
+          console.error('Failed to insert retail invoice into Supabase:', error.message);
+          throw new Error(`Invoice Creation Failed: ${error.message}`);
+        }
+      }
+      savedInv = data;
+    }
+
+    if (!savedInv) {
+      throw new Error(`Invoice Creation Failed: ${lastErr?.message || 'Unique invoice number collision limit exceeded'}`);
     }
 
     if (paymentData) {
@@ -379,19 +435,54 @@ export const dataService = {
         id: ensureValidUUID(paymentData.id),
         invoice_id: validId,
         payment_date: paymentData.payment_date || new Date().toISOString().split('T')[0],
-        amount: Number(paymentData.amount || payload.paid_amount),
+        amount: Number(paymentData.amount || basePayload.paid_amount),
         payment_mode: paymentData.payment_mode || 'cash',
         reference_number: paymentData.reference_number || '',
         notes: paymentData.notes || '',
         created_at: new Date().toISOString(),
       };
-      await db.from('retail_payments').insert(paymentPayload);
+      try {
+        await db.from('retail_payments').insert(paymentPayload);
+      } catch (e) {
+        console.warn('Payment insert warning:', e);
+      }
+    }
+
+    if (invoiceData.items && invoiceData.items.length > 0) {
+      const itemsPayload = invoiceData.items.map((item) => ({
+        id: ensureValidUUID(item.id),
+        invoice_id: validId,
+        product_id: item.product_id ? ensureValidUUID(item.product_id) : undefined,
+        product_name_snapshot: item.product_name_snapshot || 'Gold Item',
+        sku_snapshot: item.sku_snapshot || '',
+        metal_type: item.metal_type || 'gold',
+        purity: item.purity || '22k',
+        gross_weight_g: Number(item.gross_weight_g || 0),
+        stone_weight_g: Number(item.stone_weight_g || 0),
+        net_weight_g: Number(item.net_weight_g || 0),
+        quantity: Number(item.quantity || 1),
+        metal_rate_snapshot: Number(item.metal_rate_snapshot || 0),
+        metal_value: Number(item.metal_value || 0),
+        making_charge: Number(item.making_charge || 0),
+        labour_charge: Number(item.labour_charge || 0),
+        wastage_percent: Number(item.wastage_percent || 0),
+        wastage_weight_g: Number(item.wastage_weight_g || 0),
+        wastage_value: Number(item.wastage_value || 0),
+        discount: Number(item.discount || 0),
+        line_total: Number(item.line_total || 0),
+        created_at: new Date().toISOString(),
+      }));
+      try {
+        await db.from('retail_invoice_items').insert(itemsPayload);
+      } catch (e) {
+        console.warn('Items insert warning:', e);
+      }
     }
 
     const resultInvoice: RetailInvoice = {
       ...savedInv,
-      customer_name: invoiceData.customer_name || savedInv.customer_name || 'Walk-in Customer',
-      customer_phone: invoiceData.customer_phone || savedInv.customer_phone || '',
+      customer_name: custName,
+      customer_phone: custPhone,
       items: invoiceData.items || [],
     };
 
