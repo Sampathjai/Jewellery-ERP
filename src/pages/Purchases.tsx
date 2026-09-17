@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { dataService } from '@/lib/dataService';
 import { getLocalDb, deletePurchaseRecord } from '@/lib/supabase';
+import { syncEngine } from '@/lib/syncEngine';
 import { formatCurrency, formatWeight, formatDate } from '@/lib/utils';
 import { Purchase } from '@/types';
 import { AddPurchaseModal } from '@/components/common/AddPurchaseModal';
@@ -26,11 +28,36 @@ import {
 
 export const Purchases: React.FC = () => {
   const [db, setDb] = useState(() => getLocalDb());
+  const [purchasesList, setPurchasesList] = useState<Purchase[]>(db.purchases || []);
+  const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'ledger' | 'summary'>('ledger');
   const [searchQuery, setSearchQuery] = useState('');
   const [metalFilter, setMetalFilter] = useState<'all' | 'gold' | 'silver'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'partial' | 'unpaid'>('all');
   const [supplierFilter, setSupplierFilter] = useState('all');
+
+  const loadPurchases = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await dataService.getPurchases();
+      setPurchasesList(data);
+      setDb(getLocalDb());
+    } catch (e) {
+      console.warn('Error loading purchases list:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPurchases();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'purchases' || tableName === 'general') {
+        loadPurchases();
+      }
+    });
+    return () => unsubscribe();
+  }, [loadPurchases]);
 
   // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);

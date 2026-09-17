@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PhotoUploader } from '@/components/common/PhotoUploader';
-import { getLocalDb, saveLocalDb, saveCustomerRecord } from '@/lib/supabase';
+import { dataService, ensureValidUUID } from '@/lib/dataService';
+import { getLocalDb } from '@/lib/supabase';
 import { Customer, CustomerType, Supplier, WholesaleProfitModel } from '@/types';
 import { ArrowLeft, Save } from 'lucide-react';
 
@@ -45,64 +46,29 @@ export const AddCustomer: React.FC = () => {
     e.preventDefault();
     if (!formData.full_name || !formData.phone) return;
 
-    const newCustomer: Customer = {
-      id: `cust-${Date.now()}`,
-      customer_code: formData.customer_code || `CUST-${Date.now()}`,
-      full_name: formData.full_name,
-      shop_name: formData.shop_name,
-      customer_type: formData.customer_type as CustomerType,
-      phone: formData.phone,
-      whatsapp_number: formData.whatsapp_number || formData.phone,
-      email: formData.email,
-      address: formData.address,
-      city: formData.city,
-      state: formData.state,
-      pin_code: formData.pin_code,
-      gstin: formData.gstin,
-      pan: formData.pan,
-      photo_url: formData.photo_url,
-      agreed_customer_touch: formData.agreed_customer_touch ?? 40,
-      credit_limit: formData.credit_limit || 0,
-      agreed_profit_percent: formData.agreed_profit_percent || 40,
-      profit_sharing_model: (formData.profit_sharing_model as WholesaleProfitModel) || 'model_a_profit_percent',
-      payment_terms: formData.payment_terms || '30 Days',
-      is_active: true,
-      notes: formData.notes,
-      created_at: new Date().toISOString(),
-    };
-
-    await saveCustomerRecord(newCustomer);
+    const savedCustomer = await dataService.createCustomer({
+      ...formData,
+      id: ensureValidUUID(),
+    });
 
     // If type is supplier, also sync a Supplier record in db.suppliers
-    if (newCustomer.customer_type === 'supplier') {
-      const db = getLocalDb();
-      const displayName = newCustomer.shop_name || newCustomer.full_name;
-      const newSupplier: Supplier = {
-        id: newCustomer.id,
-        supplier_code: newCustomer.customer_code.replace('CUST', 'SUP'),
+    if (savedCustomer.customer_type === 'supplier') {
+      const displayName = savedCustomer.shop_name || savedCustomer.full_name;
+      await dataService.createSupplier({
+        id: ensureValidUUID(),
+        supplier_code: `SUP-${Math.floor(100 + Math.random() * 900)}`,
         supplier_name: displayName,
-        contact_person: newCustomer.full_name,
-        phone: newCustomer.phone,
-        whatsapp: newCustomer.whatsapp_number,
-        email: newCustomer.email,
-        address: `${newCustomer.address || ''} ${newCustomer.city || ''}`.trim(),
-        gstin: newCustomer.gstin,
+        contact_person: savedCustomer.full_name,
+        phone: savedCustomer.phone,
+        email: savedCustomer.email,
+        address: `${savedCustomer.address || ''} ${savedCustomer.city || ''}`.trim(),
+        gstin: savedCustomer.gstin,
+        notes: savedCustomer.notes,
         primary_metal: 'gold',
-        notes: newCustomer.notes,
-        created_at: newCustomer.created_at,
-      };
-
-      db.suppliers = db.suppliers || [];
-      const existingIdx = db.suppliers.findIndex((s) => s.id === newSupplier.id);
-      if (existingIdx !== -1) {
-        db.suppliers[existingIdx] = newSupplier;
-      } else {
-        db.suppliers.unshift(newSupplier);
-      }
-      saveLocalDb(db, 'suppliers', 'INSERT', newSupplier);
+      });
     }
 
-    if (newCustomer.customer_type === 'supplier') {
+    if (savedCustomer.customer_type === 'supplier') {
       navigate('/purchases');
     } else {
       navigate('/customers');

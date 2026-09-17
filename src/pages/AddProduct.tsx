@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PhotoUploader } from '@/components/common/PhotoUploader';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { dataService, ensureValidUUID } from '@/lib/dataService';
+import { getLocalDb } from '@/lib/supabase';
 import { Product, MetalType, MetalPurity } from '@/types';
 import { useTranslation } from '@/lib/i18n';
 import { ArrowLeft, Save, Plus, Sparkles, AlertCircle } from 'lucide-react';
@@ -64,7 +65,7 @@ export const AddProduct: React.FC = () => {
     return true;
   };
 
-  const handleSave = (addAnother: boolean = false) => {
+  const handleSave = async (addAnother: boolean = false) => {
     if (!validate()) return;
 
     const sku = `SKU-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -81,8 +82,8 @@ export const AddProduct: React.FC = () => {
       purityFallback = '18k';
     }
 
-    const newProduct: Product = {
-      id: `prod-${Date.now()}`,
+    await dataService.createProduct({
+      id: ensureValidUUID(),
       sku,
       barcode,
       qr_code: `QR-${barcode}`,
@@ -112,38 +113,15 @@ export const AddProduct: React.FC = () => {
       primary_photo_url: formData.primary_photo_url,
       status: 'in_stock',
       created_at: new Date().toISOString(),
-    };
-
-    db.products.unshift(newProduct);
-
-    db.inventoryMovements.unshift({
-      id: `mov-${Date.now()}`,
-      product_id: newProduct.id,
-      product_name: newProduct.name,
-      sku: newProduct.sku,
-      movement_type: 'opening_stock',
-      quantity_change: newProduct.quantity,
-      weight_change_g: newProduct.net_weight_g * newProduct.quantity,
-      notes: 'Initial stock addition',
-      created_at: new Date().toISOString(),
     });
 
-    saveLocalDb(db);
-
     if (addAnother) {
-      setFormData({
+      setFormData((prev) => ({
+        ...prev,
         name: '',
-        category_name: formData.category_name,
-        metal_type: formData.metal_type,
-        actual_touch: formData.actual_touch,
-        quantity: 10,
-        gross_weight_g: 3.680,
-        deduction_weight_g: 1.000,
-        stone_weight_g: 0.0,
-        primary_photo_url: '',
+        gross_weight_g: 3.68,
         description: '',
-      });
-      setErrorMsg('');
+      }));
     } else {
       navigate('/products');
     }

@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { MetalBadge } from '@/components/common/MetalBadge';
 import { PurityBadge } from '@/components/common/PurityBadge';
 import { BarcodeScannerModal } from '@/components/common/BarcodeScannerModal';
 import { EditProductModal } from '@/components/common/EditProductModal';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
+import { getLocalDb } from '@/lib/supabase';
+import { syncEngine } from '@/lib/syncEngine';
 import { Product } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import { Plus, Search, Barcode, Eye, Filter, Boxes, Edit3, Trash2, AlertTriangle } from 'lucide-react';
@@ -13,6 +15,8 @@ import { Plus, Search, Barcode, Eye, Filter, Boxes, Edit3, Trash2, AlertTriangle
 export const ProductsList: React.FC = () => {
   const navigate = useNavigate();
   const [db, setDb] = useState(getLocalDb());
+  const [productsList, setProductsList] = useState<Product[]>(db.products || []);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [metalFilter, setMetalFilter] = useState<string>('all');
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -25,7 +29,32 @@ export const ProductsList: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const products = db.products.filter((p) => {
+  const loadProducts = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await dataService.getProducts();
+      setProductsList(data);
+      setDb(getLocalDb());
+    } catch (e) {
+      console.warn('Error loading products list:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProducts();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'products' || tableName === 'general') {
+        loadProducts();
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [loadProducts]);
+
+  const products = productsList.filter((p) => {
     const matchesSearch =
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -35,22 +64,17 @@ export const ProductsList: React.FC = () => {
     return matchesSearch && matchesMetal;
   });
 
-  const handleSaveProduct = (updatedProduct: Product) => {
-    const index = db.products.findIndex((p) => p.id === updatedProduct.id);
-    if (index !== -1) {
-      db.products[index] = updatedProduct;
-      saveLocalDb(db);
-      setDb({ ...db });
-      showToast(`Product "${updatedProduct.name}" updated successfully.`);
-    }
+  const handleSaveProduct = async (updatedProduct: Product) => {
+    await dataService.updateProduct(updatedProduct.id, updatedProduct);
+    await loadProducts();
+    showToast(`Product "${updatedProduct.name}" updated successfully.`);
   };
 
-  const handleDeleteProduct = () => {
+  const handleDeleteProduct = async () => {
     if (!deletingProduct) return;
-    db.products = db.products.filter((p) => p.id !== deletingProduct.id);
-    saveLocalDb(db);
-    setDb({ ...db });
-    showToast(`Product "${deletingProduct.name}" has been deleted.`);
+    await dataService.deleteProduct(deletingProduct.id);
+    await loadProducts();
+    showToast(`Product "${deletingProduct.name}" deleted successfully.`);
     setDeletingProduct(null);
   };
 

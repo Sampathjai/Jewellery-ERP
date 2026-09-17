@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { BarcodeScannerModal } from '@/components/common/BarcodeScannerModal';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { dataService, ensureValidUUID } from '@/lib/dataService';
+import { getLocalDb } from '@/lib/supabase';
+import { syncEngine } from '@/lib/syncEngine';
 import { Product, Customer, RetailInvoiceItem, RetailInvoice } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import { generateRetailInvoicePDF } from '@/lib/pdfGenerator';
@@ -10,11 +12,40 @@ import { ShoppingCart, Search, Plus, Trash2, Printer, Barcode, UserCheck, Percen
 
 export const RetailPOS: React.FC = () => {
   const navigate = useNavigate();
-  const [db] = useState(getLocalDb());
+  const [db, setDb] = useState(getLocalDb());
+  const [customersList, setCustomersList] = useState<Customer[]>(db.customers || []);
+  const [productsList, setProductsList] = useState<Product[]>(db.products || []);
   const todayRate = db.metalRates[0] || { gold_24k_per_gram: 7450, gold_22k_per_gram: 6830, silver_per_gram: 89.5 };
 
+  const loadPosData = useCallback(async () => {
+    try {
+      const [cData, pData] = await Promise.all([
+        dataService.getCustomers(),
+        dataService.getProducts(),
+      ]);
+      setCustomersList(cData);
+      setProductsList(pData);
+      setDb(getLocalDb());
+      if (cData.length > 0 && !selectedCustomerId) {
+        setSelectedCustomerId(cData[0].id);
+      }
+    } catch (e) {
+      console.warn('Error loading POS data:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPosData();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'customers' || tableName === 'products' || tableName === 'general') {
+        loadPosData();
+      }
+    });
+    return () => unsubscribe();
+  }, [loadPosData]);
+
   // POS State
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(db.customers[0]?.id || '');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [cartItems, setCartItems] = useState<RetailInvoiceItem[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -33,7 +64,7 @@ export const RetailPOS: React.FC = () => {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'card' | 'split'>('upi');
   const [notes, setNotes] = useState('');
 
-  const selectedCustomer = db.customers.find((c) => c.id === selectedCustomerId);
+  const selectedCustomer = customersList.find((c) => c.id === selectedCustomerId) || customersList[0];
 
   const handleAddProductToCart = (product: Product) => {
     // Metal rate selection based on purity/type
@@ -107,66 +138,50 @@ export const RetailPOS: React.FC = () => {
   const taxAmount = gstEnabled ? (taxableSubtotal * manualGstPercent) / 100 : 0;
   const grandTotal = Math.round(taxableSubtotal + taxAmount);
 
-  const handleFinalizeBill = () => {
+  const handleFinalizeBill = async () => {
     if (cartItems.length === 0 || !selectedCustomer) return;
 
-    // 1. Stock Inventory Reduction for Retail Sale
-    cartItems.forEach((cartItem) => {
-      const prod = db.products.find((p) => p.id === cartItem.product_id);
-      if (prod) {
-        prod.quantity = Math.max(0, prod.quantity - cartItem.quantity);
-        if (prod.quantity === 0) {
-          prod.status = 'sold';
-        }
-      }
-
-      db.inventoryMovements.unshift({
-        id: `mov-${Date.now()}-${Math.random()}`,
-        product_id: cartItem.product_id,
-        product_name: cartItem.product_name_snapshot,
-        sku: cartItem.sku_snapshot,
-        movement_type: 'retail_sale',
-        quantity_change: -cartItem.quantity,
-        weight_change_g: -cartItem.net_weight_g,
-        reference_id: `${db.settings.invoice_prefix}${db.settings.next_invoice_number || 1005}`,
-        notes: `Retail Checkout - Sold to ${selectedCustomer.full_name}`,
-        created_at: new Date().toISOString(),
-      });
-    });
-
     const invoiceNo = `${db.settings.invoice_prefix}${db.settings.next_invoice_number || 1005}`;
-    const newInvoice: RetailInvoice = {
-      id: `inv-${Date.now()}`,
-      invoice_number: invoiceNo,
-      customer_id: selectedCustomer.id,
-      customer_name: selectedCustomer.full_name,
-      customer_phone: selectedCustomer.phone,
-      invoice_date: new Date().toISOString().split('T')[0],
-      subtotal_metal_value: subtotalMetalValue,
-      total_making_charges: itemMakingCharges + manualMakingCharge + customSetharamAmount,
-      total_labour_charges: 0,
-      total_wastage_value: customWastageAmount,
-      discount_amount: discountAmount,
-      tax_percent: gstEnabled ? manualGstPercent : 0,
-      tax_amount: taxAmount,
-      round_off: 0,
-      total_amount: grandTotal,
-      paid_amount: grandTotal,
-      balance_due: 0,
-      payment_status: 'paid',
-      status: 'finalized',
-      items: cartItems,
-      notes: notes || (gstEnabled ? 'GST Invoice' : 'Bill without GST'),
-      created_at: new Date().toISOString(),
-    };
+    const invoiceId = ensureValidUUID();
 
-    db.retailInvoices.unshift(newInvoice);
-    db.settings.next_invoice_number = (db.settings.next_invoice_number || 1005) + 1;
-    saveLocalDb(db);
+    const createdInvoice = await dataService.createRetailInvoice(
+      {
+        id: invoiceId,
+        invoice_number: invoiceNo,
+        customer_id: ensureValidUUID(selectedCustomer.id),
+        customer_name: selectedCustomer.full_name,
+        customer_phone: selectedCustomer.phone,
+        invoice_date: new Date().toISOString().split('T')[0],
+        subtotal_metal_value: subtotalMetalValue,
+        total_making_charges: itemMakingCharges + manualMakingCharge + customSetharamAmount,
+        total_labour_charges: 0,
+        total_wastage_value: customWastageAmount,
+        discount_amount: discountAmount,
+        tax_percent: gstEnabled ? manualGstPercent : 0,
+        tax_amount: taxAmount,
+        round_off: 0,
+        total_amount: grandTotal,
+        paid_amount: grandTotal,
+        balance_due: 0,
+        payment_status: 'paid',
+        status: 'finalized',
+        items: cartItems,
+        notes: notes || (gstEnabled ? 'GST Invoice' : 'Bill without GST'),
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: ensureValidUUID(),
+        invoice_id: invoiceId,
+        payment_date: new Date().toISOString().split('T')[0],
+        amount: grandTotal,
+        payment_mode: paymentMode,
+        reference_number: `REF-${Date.now()}`,
+      }
+    );
 
     // Auto PDF Generation & Download
-    generateRetailInvoicePDF(newInvoice, db.settings);
-    navigate(`/invoices/${newInvoice.id}`);
+    generateRetailInvoicePDF(createdInvoice, db.settings);
+    navigate(`/invoices/${createdInvoice.id}`);
   };
 
   const filteredProducts = db.products.filter(

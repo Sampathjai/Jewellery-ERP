@@ -1,22 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { dataService, ensureValidUUID } from '@/lib/dataService';
+import { getLocalDb } from '@/lib/supabase';
+import { syncEngine } from '@/lib/syncEngine';
 import { Expense } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Receipt, Plus, Save } from 'lucide-react';
 
 export const Expenses: React.FC = () => {
   const [db, setDb] = useState(getLocalDb());
+  const [expensesList, setExpensesList] = useState<Expense[]>(db.expenses || []);
+  const [isLoading, setIsLoading] = useState(true);
   const [category, setCategory] = useState('Goldsmith labour');
   const [amount, setAmount] = useState<number>(3500);
   const [vendor, setVendor] = useState('Murugan Goldsmiths');
   const [notes, setNotes] = useState('Labour charges for 20 nose pins batch');
 
-  const handleAddExpense = (e: React.FormEvent) => {
+  const loadExpenses = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await dataService.getExpenses();
+      setExpensesList(data);
+      setDb(getLocalDb());
+    } catch (e) {
+      console.warn('Error loading expenses:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadExpenses();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'expenses' || tableName === 'general') {
+        loadExpenses();
+      }
+    });
+    return () => unsubscribe();
+  }, [loadExpenses]);
+
+  const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newExp: Expense = {
-      id: `exp-${Date.now()}`,
-      expense_number: `EXP-100${db.expenses.length + 1}`,
+    if (amount <= 0) return;
+
+    await dataService.createExpense({
+      id: ensureValidUUID(),
+      expense_number: `EXP-${Date.now().toString().slice(-6)}`,
       category,
       amount,
       expense_date: new Date().toISOString().split('T')[0],
@@ -24,14 +53,12 @@ export const Expenses: React.FC = () => {
       vendor_name: vendor,
       notes,
       created_at: new Date().toISOString(),
-    };
+    });
 
-    db.expenses.unshift(newExp);
-    saveLocalDb(db);
-    setDb({ ...db });
+    await loadExpenses();
   };
 
-  const totalExpenses = db.expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = expensesList.reduce((sum, e) => sum + (e.amount || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -132,9 +159,9 @@ export const Expenses: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
-                  {db.expenses.map((e) => (
+                  {expensesList.map((e) => (
                     <tr key={e.id}>
-                      <td className="p-3 font-mono font-bold text-slate-600">{e.expense_number}</td>
+                      <td className="p-3 font-mono font-bold text-slate-600">{e.expense_number || e.id.slice(0, 8)}</td>
                       <td className="p-3 font-mono">{formatDate(e.expense_date)}</td>
                       <td className="p-3 font-bold text-charcoal-900 dark:text-slate-100">{e.category}</td>
                       <td className="p-3 text-slate-500">{e.vendor_name || '-'}</td>

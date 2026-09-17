@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { dataService, ensureValidUUID } from '@/lib/dataService';
+import { getLocalDb } from '@/lib/supabase';
 import { WholesaleIssue, WholesaleIssueItem, WholesaleProfitModel, Customer } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import { generateWholesaleIssuePDF } from '@/lib/pdfGenerator';
@@ -131,16 +132,16 @@ export const WholesaleIssuePage: React.FC = () => {
     setAgreedProfitPercent(newCust.agreed_customer_touch ?? newCust.agreed_profit_percent ?? 40);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (issueItems.length === 0 || !selectedCustomer) return;
 
     const issueNo = `WI-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const newIssue: WholesaleIssue = {
-      id: `issue-${Date.now()}`,
+    const createdIssue = await dataService.createWholesaleIssue({
+      id: ensureValidUUID(),
       issue_number: issueNo,
-      customer_id: selectedCustomer.id,
+      customer_id: ensureValidUUID(selectedCustomer.id),
       customer_name: selectedCustomer.full_name,
       customer_shop: selectedCustomer.shop_name || 'Dealer',
       issue_date: issueDate,
@@ -164,60 +165,10 @@ export const WholesaleIssuePage: React.FC = () => {
       items: issueItems,
       notes,
       created_at: new Date().toISOString(),
-    };
-
-    // Store in DB
-    db.wholesaleIssues.unshift(newIssue);
-
-    // Deduct stock from db.products and record inventory movement for wholesale issue
-    issueItems.forEach((item) => {
-      const prod = db.products.find((p) => p.id === item.product_id);
-      if (prod) {
-        prod.quantity = Math.max(0, prod.quantity - item.quantity_issued);
-        if (prod.quantity === 0) {
-          prod.status = 'wholesale_issued';
-        }
-      }
-
-      db.inventoryMovements.unshift({
-        id: `mov-${Date.now()}-${Math.random()}`,
-        product_id: item.product_id,
-        product_name: item.product_name,
-        sku: item.sku,
-        movement_type: 'wholesale_issue',
-        quantity_change: -item.quantity_issued,
-        weight_change_g: -item.net_weight_g,
-        reference_id: issueNo,
-        notes: `Wholesale Consignment Bill Issued to ${selectedCustomer.full_name}`,
-        created_at: new Date().toISOString(),
-      });
     });
 
-    // Record initial payment entry if cash or gold paid
-    if (cashPaid > 0 || gold916ValuePaid > 0) {
-      db.wholesalePayments.unshift({
-        id: `wpay-${Date.now()}`,
-        customer_id: selectedCustomer.id,
-        issue_id: newIssue.id,
-        payment_date: issueDate,
-        payment_method: cashPaid > 0 && gold916ValuePaid > 0 ? 'split' : gold916ValuePaid > 0 ? 'gold_916' : 'cash',
-        amount: totalPaid,
-        cash_amount: cashPaid,
-        gold_weight_g: gold916PaidWeight,
-        gold_purity: '916',
-        gold_rate: gold916Rate,
-        gold_value: gold916ValuePaid,
-        payment_mode: cashPaid > 0 && gold916ValuePaid > 0 ? 'split' : gold916ValuePaid > 0 ? 'gold_916' : 'cash',
-        reference_number: `INITIAL-BILL-${issueNo}`,
-        notes: `Initial payment at consignment issue creation`,
-        created_at: new Date().toISOString(),
-      });
-    }
-
-    saveLocalDb(db);
-
-    generateWholesaleIssuePDF(newIssue, selectedCustomer, db.settings);
-    navigate(`/wholesale-issues/${newIssue.id}`);
+    generateWholesaleIssuePDF(createdIssue, selectedCustomer, db.settings);
+    navigate(`/wholesale-issues/${createdIssue.id}`);
   };
 
   return (
