@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb, fetchCustomersFromSupabase } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
 import { Customer, CustomerType } from '@/types';
 import { formatCurrency } from '@/lib/utils';
@@ -10,8 +10,7 @@ import { Plus, Search, MessageSquare, Phone, MapPin, Eye, Building } from 'lucid
 
 export const CustomersList: React.FC = () => {
   const navigate = useNavigate();
-  const [db, setDb] = useState(getLocalDb());
-  const [customersList, setCustomersList] = useState<Customer[]>(db.customers || []);
+  const [customersList, setCustomersList] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
@@ -19,11 +18,10 @@ export const CustomersList: React.FC = () => {
   const loadCustomers = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await fetchCustomersFromSupabase();
+      const data = await dataService.getCustomers();
       setCustomersList(data);
-      setDb(getLocalDb());
     } catch (e) {
-      console.warn('Error loading customers list:', e);
+      console.error('Error loading customers list:', e);
     } finally {
       setIsLoading(false);
     }
@@ -53,7 +51,7 @@ export const CustomersList: React.FC = () => {
   });
 
   const handleWhatsAppReminder = (customer: Customer) => {
-    const msg = buildWhatsAppPaymentReminder(customer.full_name, customer.credit_limit || 24550, db.settings);
+    const msg = buildWhatsAppPaymentReminder(customer.full_name, customer.credit_limit || 0);
     openWhatsAppClickToChat(customer.whatsapp_number || customer.phone, msg);
   };
 

@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PhotoUploader } from '@/components/common/PhotoUploader';
 import { dataService, ensureValidUUID } from '@/lib/dataService';
-import { getLocalDb } from '@/lib/supabase';
 import { Customer, CustomerType, Supplier, WholesaleProfitModel } from '@/types';
 import { ArrowLeft, Save } from 'lucide-react';
 

@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured, getLocalDb, saveLocalDb } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
 

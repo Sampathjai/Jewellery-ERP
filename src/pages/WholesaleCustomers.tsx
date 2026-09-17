@@ -1,26 +1,29 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb, fetchCustomersFromSupabase } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
-import { Customer } from '@/types';
+import { Customer, WholesaleIssue } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 import { openWhatsAppClickToChat, buildWhatsAppWholesaleIssueMessage } from '@/lib/whatsapp';
 import { HandCoins, Plus, Search, Building, Phone, MapPin, Eye, MessageSquare, BadgePercent } from 'lucide-react';
 
 export const WholesaleCustomers: React.FC = () => {
   const navigate = useNavigate();
-  const [db, setDb] = useState(getLocalDb());
-  const [customersList, setCustomersList] = useState<Customer[]>(db.customers || []);
+  const [customersList, setCustomersList] = useState<Customer[]>([]);
+  const [wholesaleIssuesList, setWholesaleIssuesList] = useState<WholesaleIssue[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
   const loadWholesaleCustomers = useCallback(async () => {
     try {
-      const data = await fetchCustomersFromSupabase();
-      setCustomersList(data);
-      setDb(getLocalDb());
+      const [custData, issueData] = await Promise.all([
+        dataService.getCustomers(),
+        dataService.getWholesaleIssues(),
+      ]);
+      setCustomersList(custData);
+      setWholesaleIssuesList(issueData);
     } catch (e) {
-      console.warn('Error loading wholesale customers:', e);
+      console.error('Error loading wholesale customers:', e);
     }
   }, []);
 
@@ -76,7 +79,7 @@ export const WholesaleCustomers: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {wholesaleCustomers.map((c) => {
-          const customerIssues = db.wholesaleIssues.filter((w) => w.customer_id === c.id && w.status === 'active');
+          const customerIssues = wholesaleIssuesList.filter((w) => w.customer_id === c.id && w.status === 'active');
           const totalItemsIssued = customerIssues.reduce((sum, w) => sum + w.total_items_issued, 0);
 
           return (

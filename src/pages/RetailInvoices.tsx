@@ -1,16 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
+import { syncEngine } from '@/lib/syncEngine';
+import { RetailInvoice } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { ShoppingCart, Eye, FileText, Search, Plus } from 'lucide-react';
 
 export const RetailInvoices: React.FC = () => {
   const navigate = useNavigate();
-  const db = getLocalDb();
+  const [invoicesList, setInvoicesList] = useState<RetailInvoice[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const invoices = db.retailInvoices.filter(
+  const loadInvoices = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await dataService.getRetailInvoices();
+      setInvoicesList(data);
+    } catch (e) {
+      console.error('Error loading retail invoices:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInvoices();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'retail_invoices' || tableName === 'general') {
+        loadInvoices();
+      }
+    });
+    return () => unsubscribe();
+  }, [loadInvoices]);
+
+  const invoices = invoicesList.filter(
     (inv) =>
       inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (inv.customer_name && inv.customer_name.toLowerCase().includes(searchTerm.toLowerCase()))

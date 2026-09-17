@@ -1,14 +1,16 @@
-import { supabase, isSupabaseConfigured, getLocalDb, saveLocalDb } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 import { syncEngine } from './syncEngine';
 import {
   Customer,
   Product,
+  ProductCategory,
   RetailInvoice,
   RetailPayment,
   WholesaleIssue,
   WholesaleReturn,
   WholesaleSettlement,
   WholesalePayment,
+  WholesaleSale,
   Purchase,
   PurchasePayment,
   Expense,
@@ -16,7 +18,10 @@ import {
   MetalRate,
   BusinessSettings,
   InventoryMovement,
+  ManufacturingJob,
+  UserProfile,
   AuditLog,
+  NotificationItem,
 } from '@/types';
 
 // ============================================================================
@@ -33,9 +38,17 @@ export const ensureValidUUID = (id?: string): string => {
   return crypto.randomUUID();
 };
 
+const checkSupabaseClient = () => {
+  if (!isSupabaseConfigured() || !supabase) {
+    throw new Error('Supabase database client is not initialized or configured.');
+  }
+  return supabase;
+};
+
 // ============================================================================
-// CENTRAL DATA SERVICE
-// Single source of truth interfacing directly with Supabase PostgreSQL
+// CENTRAL DIRECT SUPABASE DATA SERVICE
+// Single source of truth interfacing directly with Supabase PostgreSQL.
+// LocalStorage is NEVER used as a primary, fallback, or startup database.
 // ============================================================================
 
 export const dataService = {
@@ -43,32 +56,24 @@ export const dataService = {
   // CUSTOMERS
   // --------------------------------------------------------------------------
   async getCustomers(): Promise<Customer[]> {
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('customers')
-          .select('*')
-          .order('created_at', { ascending: false });
+    const db = checkSupabaseClient();
+    const { data, error } = await db
+      .from('customers')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-        if (!error && Array.isArray(data)) {
-          const db = getLocalDb();
-          db.customers = data as Customer[];
-          saveLocalDb(db);
-          return data as Customer[];
-        } else if (error) {
-          console.warn('Supabase getCustomers error:', error.message);
-        }
-      } catch (err) {
-        console.warn('Error in getCustomers:', err);
-      }
+    if (error) {
+      console.error('Failed to fetch customers from Supabase:', error.message);
+      throw new Error(`Database Error: ${error.message}`);
     }
-    const db = getLocalDb();
-    return db.customers || [];
+    return (data || []) as Customer[];
   },
 
   async createCustomer(customerData: Partial<Customer>): Promise<Customer> {
+    const db = checkSupabaseClient();
     const validId = ensureValidUUID(customerData.id);
-    const newCustomer: Customer = {
+
+    const payload: Customer = {
       id: validId,
       customer_code: customerData.customer_code || `CUST-${Math.floor(100 + Math.random() * 900)}`,
       full_name: customerData.full_name || '',
@@ -94,118 +99,84 @@ export const dataService = {
       created_at: customerData.created_at || new Date().toISOString(),
     };
 
-    // Update local cache
-    const db = getLocalDb();
-    db.customers = [newCustomer, ...(db.customers || []).filter((c) => c.id !== newCustomer.id)];
-    saveLocalDb(db, 'customers', 'INSERT', newCustomer);
+    const { data, error } = await db
+      .from('customers')
+      .insert(payload)
+      .select()
+      .single();
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('customers')
-          .insert(newCustomer)
-          .select()
-          .single();
-
-        if (error) {
-          console.error('Supabase customer insert error:', error.message);
-          throw new Error(error.message);
-        }
-        if (data) {
-          const updatedDb = getLocalDb();
-          const idx = updatedDb.customers.findIndex((c) => c.id === newCustomer.id);
-          if (idx !== -1) updatedDb.customers[idx] = data as Customer;
-          saveLocalDb(updatedDb);
-          return data as Customer;
-        }
-      } catch (err) {
-        console.error('Error inserting customer into Supabase:', err);
-      }
+    if (error) {
+      console.error('Failed to create customer in Supabase:', error.message);
+      throw new Error(`Customer Save Failed: ${error.message}`);
     }
-    return newCustomer;
+
+    syncEngine.notifyDataChange('customers', 'INSERT', data);
+    return data as Customer;
   },
 
   async updateCustomer(id: string, updates: Partial<Customer>): Promise<Customer> {
-    const db = getLocalDb();
-    const idx = db.customers.findIndex((c) => c.id === id);
-    if (idx !== -1) {
-      db.customers[idx] = { ...db.customers[idx], ...updates };
-      saveLocalDb(db, 'customers', 'UPDATE', db.customers[idx]);
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(id);
+
+    const { data, error } = await db
+      .from('customers')
+      .update(updates)
+      .eq('id', validId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to update customer in Supabase:', error.message);
+      throw new Error(`Customer Update Failed: ${error.message}`);
     }
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('customers')
-          .update(updates)
-          .eq('id', id)
-          .select()
-          .single();
-
-        if (!error && data) {
-          return data as Customer;
-        }
-      } catch (err) {
-        console.warn('Error updating customer in Supabase:', err);
-      }
-    }
-    return db.customers[idx] || (updates as Customer);
+    syncEngine.notifyDataChange('customers', 'UPDATE', data);
+    return data as Customer;
   },
 
   async deleteCustomer(id: string): Promise<boolean> {
-    const db = getLocalDb();
-    db.customers = (db.customers || []).filter((c) => c.id !== id);
-    saveLocalDb(db, 'customers', 'DELETE', { id });
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(id);
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { error } = await supabase.from('customers').delete().eq('id', id);
-        if (error) {
-          console.warn('Supabase customer delete warning:', error.message);
-          return false;
-        }
-        return true;
-      } catch (err) {
-        console.warn('Error deleting customer in Supabase:', err);
-      }
+    const { error } = await db.from('customers').delete().eq('id', validId);
+
+    if (error) {
+      console.error('Failed to delete customer in Supabase:', error.message);
+      throw new Error(`Customer Delete Failed: ${error.message}`);
     }
+
+    syncEngine.notifyDataChange('customers', 'DELETE', { id: validId });
     return true;
   },
 
   // --------------------------------------------------------------------------
-  // PRODUCTS & INVENTORY
+  // PRODUCTS & STOCK
   // --------------------------------------------------------------------------
   async getProducts(): Promise<Product[]> {
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .order('created_at', { ascending: false });
+    const db = checkSupabaseClient();
+    const { data, error } = await db
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-        if (!error && Array.isArray(data)) {
-          const db = getLocalDb();
-          db.products = data as Product[];
-          saveLocalDb(db);
-          return data as Product[];
-        }
-      } catch (err) {
-        console.warn('Error in getProducts:', err);
-      }
+    if (error) {
+      console.error('Failed to fetch products from Supabase:', error.message);
+      throw new Error(`Database Error: ${error.message}`);
     }
-    const db = getLocalDb();
-    return db.products || [];
+    return (data || []) as Product[];
   },
 
   async createProduct(productData: Partial<Product>): Promise<Product> {
+    const db = checkSupabaseClient();
     const validId = ensureValidUUID(productData.id);
-    const newProduct: Product = {
+
+    const payload: Product = {
       id: validId,
       sku: productData.sku || `SKU-${Date.now()}`,
       barcode: productData.barcode || `${Math.floor(100000 + Math.random() * 900000)}`,
       qr_code: productData.qr_code || `QR-${Date.now()}`,
       name: productData.name || '',
-      category_id: productData.category_id || '',
+      category_id: productData.category_id ? ensureValidUUID(productData.category_id) : undefined,
       category_name: productData.category_name || '',
       metal_type: productData.metal_type || 'gold',
       purity: productData.purity || '22k',
@@ -224,121 +195,103 @@ export const dataService = {
       manufacturing_cost: Number(productData.manufacturing_cost || 0),
       retail_price: Number(productData.retail_price || 0),
       wholesale_valuation: Number(productData.wholesale_valuation || 0),
-      minimum_stock: Number(productData.minimum_stock || 5),
+      minimum_stock: Number(productData.minimum_stock || 1),
       description: productData.description || '',
       primary_photo_url: productData.primary_photo_url || '',
       status: productData.status || 'in_stock',
       created_at: productData.created_at || new Date().toISOString(),
     };
 
-    const db = getLocalDb();
-    db.products = [newProduct, ...(db.products || []).filter((p) => p.id !== newProduct.id)];
-    saveLocalDb(db, 'products', 'INSERT', newProduct);
+    const { data, error } = await db
+      .from('products')
+      .insert(payload)
+      .select()
+      .single();
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('products')
-          .insert(newProduct)
-          .select()
-          .single();
-
-        if (error) {
-          console.error('Supabase product insert error:', error.message);
-          throw new Error(error.message);
-        }
-        if (data) {
-          const updatedDb = getLocalDb();
-          const idx = updatedDb.products.findIndex((p) => p.id === newProduct.id);
-          if (idx !== -1) updatedDb.products[idx] = data as Product;
-          saveLocalDb(updatedDb);
-          return data as Product;
-        }
-      } catch (err) {
-        console.error('Error creating product in Supabase:', err);
-      }
+    if (error) {
+      console.error('Failed to create product in Supabase:', error.message);
+      throw new Error(`Product Save Failed: ${error.message}`);
     }
-    return newProduct;
+
+    syncEngine.notifyDataChange('products', 'INSERT', data);
+    return data as Product;
   },
 
   async updateProduct(id: string, updates: Partial<Product>): Promise<Product> {
-    const db = getLocalDb();
-    const idx = db.products.findIndex((p) => p.id === id);
-    if (idx !== -1) {
-      db.products[idx] = { ...db.products[idx], ...updates };
-      saveLocalDb(db, 'products', 'UPDATE', db.products[idx]);
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(id);
+
+    const { data, error } = await db
+      .from('products')
+      .update(updates)
+      .eq('id', validId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to update product in Supabase:', error.message);
+      throw new Error(`Product Update Failed: ${error.message}`);
     }
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('products')
-          .update(updates)
-          .eq('id', id)
-          .select()
-          .single();
-
-        if (!error && data) {
-          return data as Product;
-        }
-      } catch (err) {
-        console.warn('Error updating product in Supabase:', err);
-      }
-    }
-    return db.products[idx] || (updates as Product);
+    syncEngine.notifyDataChange('products', 'UPDATE', data);
+    return data as Product;
   },
 
   async deleteProduct(id: string): Promise<boolean> {
-    const db = getLocalDb();
-    db.products = (db.products || []).filter((p) => p.id !== id);
-    saveLocalDb(db, 'products', 'DELETE', { id });
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(id);
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { error } = await supabase.from('products').delete().eq('id', id);
-        return !error;
-      } catch (err) {
-        console.warn('Error deleting product in Supabase:', err);
-      }
+    const { error } = await db.from('products').delete().eq('id', validId);
+
+    if (error) {
+      console.error('Failed to delete product in Supabase:', error.message);
+      throw new Error(`Product Delete Failed: ${error.message}`);
     }
+
+    syncEngine.notifyDataChange('products', 'DELETE', { id: validId });
     return true;
+  },
+
+  // --------------------------------------------------------------------------
+  // PRODUCT CATEGORIES
+  // --------------------------------------------------------------------------
+  async getCategories(): Promise<ProductCategory[]> {
+    const db = checkSupabaseClient();
+    const { data, error } = await db.from('product_categories').select('*').order('name', { ascending: true });
+
+    if (error) {
+      console.error('Failed to fetch categories:', error.message);
+      return [];
+    }
+    return (data || []) as ProductCategory[];
   },
 
   // --------------------------------------------------------------------------
   // RETAIL INVOICES & PAYMENTS
   // --------------------------------------------------------------------------
   async getRetailInvoices(): Promise<RetailInvoice[]> {
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('retail_invoices')
-          .select('*')
-          .order('created_at', { ascending: false });
+    const db = checkSupabaseClient();
+    const { data, error } = await db
+      .from('retail_invoices')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-        if (!error && Array.isArray(data)) {
-          const db = getLocalDb();
-          db.retailInvoices = data as RetailInvoice[];
-          saveLocalDb(db);
-          return data as RetailInvoice[];
-        }
-      } catch (err) {
-        console.warn('Error in getRetailInvoices:', err);
-      }
+    if (error) {
+      console.error('Failed to fetch retail invoices from Supabase:', error.message);
+      throw new Error(`Database Error: ${error.message}`);
     }
-    const db = getLocalDb();
-    return db.retailInvoices || [];
+    return (data || []) as RetailInvoice[];
   },
 
   async createRetailInvoice(invoiceData: Partial<RetailInvoice>, paymentData?: Partial<RetailPayment>): Promise<RetailInvoice> {
+    const db = checkSupabaseClient();
     const validId = ensureValidUUID(invoiceData.id);
-    const validCustomerId = ensureValidUUID(invoiceData.customer_id);
+    const validCustomerId = invoiceData.customer_id ? ensureValidUUID(invoiceData.customer_id) : undefined;
 
-    const newInvoice: RetailInvoice = {
+    const payload: Partial<RetailInvoice> = {
       id: validId,
       invoice_number: invoiceData.invoice_number || `SJ-INV-${Date.now()}`,
       customer_id: validCustomerId,
-      customer_name: invoiceData.customer_name || 'Retail Buyer',
-      customer_phone: invoiceData.customer_phone || '',
       invoice_date: invoiceData.invoice_date || new Date().toISOString().split('T')[0],
       subtotal_metal_value: Number(invoiceData.subtotal_metal_value || 0),
       total_making_charges: Number(invoiceData.total_making_charges || 0),
@@ -354,170 +307,236 @@ export const dataService = {
       payment_status: invoiceData.payment_status || 'paid',
       status: invoiceData.status || 'finalized',
       notes: invoiceData.notes || '',
-      items: invoiceData.items || [],
       created_at: invoiceData.created_at || new Date().toISOString(),
     };
 
-    let newPayment: RetailPayment | undefined;
+    const { data: savedInv, error: invError } = await db
+      .from('retail_invoices')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (invError) {
+      console.error('Failed to insert retail invoice into Supabase:', invError.message);
+      throw new Error(`Invoice Creation Failed: ${invError.message}`);
+    }
+
     if (paymentData) {
-      newPayment = {
+      const paymentPayload: RetailPayment = {
         id: ensureValidUUID(paymentData.id),
         invoice_id: validId,
         payment_date: paymentData.payment_date || new Date().toISOString().split('T')[0],
-        amount: Number(paymentData.amount || newInvoice.paid_amount),
+        amount: Number(paymentData.amount || payload.paid_amount),
         payment_mode: paymentData.payment_mode || 'cash',
         reference_number: paymentData.reference_number || '',
         notes: paymentData.notes || '',
+        created_at: new Date().toISOString(),
       };
+      await db.from('retail_payments').insert(paymentPayload);
     }
 
-    const db = getLocalDb();
-    db.retailInvoices = [newInvoice, ...(db.retailInvoices || []).filter((i) => i.id !== newInvoice.id)];
-    if (newPayment) {
-      db.retailPayments = [newPayment, ...(db.retailPayments || [])];
+    syncEngine.notifyDataChange('retail_invoices', 'INSERT', savedInv);
+    return savedInv as RetailInvoice;
+  },
+
+  async getRetailPayments(): Promise<RetailPayment[]> {
+    const db = checkSupabaseClient();
+    const { data, error } = await db
+      .from('retail_payments')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Failed to fetch retail payments:', error.message);
+      return [];
     }
-    saveLocalDb(db, 'retail_invoices', 'INSERT', newInvoice);
-
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data: invData, error: invError } = await supabase
-          .from('retail_invoices')
-          .insert(newInvoice)
-          .select()
-          .single();
-
-        if (invError) {
-          console.error('Supabase retail invoice insert error:', invError.message);
-        }
-
-        if (newPayment) {
-          await supabase.from('retail_payments').insert(newPayment);
-        }
-
-        if (invData) {
-          return invData as RetailInvoice;
-        }
-      } catch (err) {
-        console.error('Error inserting retail invoice into Supabase:', err);
-      }
-    }
-    return newInvoice;
+    return (data || []) as RetailPayment[];
   },
 
   // --------------------------------------------------------------------------
-  // WHOLESALE ISSUES & SETTLEMENTS
+  // WHOLESALE CONSIGNMENT & CREDIT ENGINE
   // --------------------------------------------------------------------------
   async getWholesaleIssues(): Promise<WholesaleIssue[]> {
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('wholesale_issues')
-          .select('*')
-          .order('created_at', { ascending: false });
+    const db = checkSupabaseClient();
+    const { data, error } = await db
+      .from('wholesale_issues')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-        if (!error && Array.isArray(data)) {
-          const db = getLocalDb();
-          db.wholesaleIssues = data as WholesaleIssue[];
-          saveLocalDb(db);
-          return data as WholesaleIssue[];
-        }
-      } catch (err) {
-        console.warn('Error in getWholesaleIssues:', err);
-      }
+    if (error) {
+      console.error('Failed to fetch wholesale issues from Supabase:', error.message);
+      throw new Error(`Database Error: ${error.message}`);
     }
-    const db = getLocalDb();
-    return db.wholesaleIssues || [];
+    return (data || []) as WholesaleIssue[];
   },
 
   async createWholesaleIssue(issueData: Partial<WholesaleIssue>): Promise<WholesaleIssue> {
+    const db = checkSupabaseClient();
     const validId = ensureValidUUID(issueData.id);
     const validCustomerId = ensureValidUUID(issueData.customer_id);
 
-    const newIssue: WholesaleIssue = {
+    const payload: Partial<WholesaleIssue> = {
       id: validId,
       issue_number: issueData.issue_number || `WI-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
       customer_id: validCustomerId,
-      customer_name: issueData.customer_name || '',
-      customer_shop: issueData.customer_shop || '',
       issue_date: issueData.issue_date || new Date().toISOString().split('T')[0],
       expected_return_date: issueData.expected_return_date || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
       total_items_issued: Number(issueData.total_items_issued || 0),
       total_gross_weight_g: Number(issueData.total_gross_weight_g || 0),
-      total_deduction_weight_g: Number(issueData.total_deduction_weight_g || 0),
       total_net_weight_g: Number(issueData.total_net_weight_g || 0),
-      total_fine_gold_g: Number(issueData.total_fine_gold_g || 0),
-      gold_rate_per_gram: Number(issueData.gold_rate_per_gram || 0),
-      total_cash_value: Number(issueData.total_cash_value || 0),
       total_valuation_amount: Number(issueData.total_valuation_amount || 0),
       agreed_profit_model: issueData.agreed_profit_model || 'model_a_profit_percent',
       agreed_profit_percent: Number(issueData.agreed_profit_percent || 40),
-      cash_paid: Number(issueData.cash_paid || 0),
-      gold_916_weight_paid_g: Number(issueData.gold_916_weight_paid_g || 0),
-      gold_916_rate: Number(issueData.gold_916_rate || 0),
-      gold_916_value_paid: Number(issueData.gold_916_value_paid || 0),
-      remaining_balance: Number(issueData.remaining_balance || 0),
+      notes: issueData.notes || '',
       status: issueData.status || 'active',
-      items: issueData.items || [],
       created_at: issueData.created_at || new Date().toISOString(),
     };
 
-    const db = getLocalDb();
-    db.wholesaleIssues = [newIssue, ...(db.wholesaleIssues || []).filter((w) => w.id !== newIssue.id)];
-    saveLocalDb(db, 'wholesale_issues', 'INSERT', newIssue);
+    const { data, error } = await db
+      .from('wholesale_issues')
+      .insert(payload)
+      .select()
+      .single();
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('wholesale_issues')
-          .insert(newIssue)
-          .select()
-          .single();
-
-        if (error) {
-          console.error('Supabase wholesale issue insert error:', error.message);
-        }
-        if (data) return data as WholesaleIssue;
-      } catch (err) {
-        console.error('Error inserting wholesale issue into Supabase:', err);
-      }
+    if (error) {
+      console.error('Failed to create wholesale issue in Supabase:', error.message);
+      throw new Error(`Wholesale Issue Creation Failed: ${error.message}`);
     }
-    return newIssue;
+
+    syncEngine.notifyDataChange('wholesale_issues', 'INSERT', data);
+    return data as WholesaleIssue;
+  },
+
+  async getWholesaleReturns(): Promise<WholesaleReturn[]> {
+    const db = checkSupabaseClient();
+    const { data, error } = await db.from('wholesale_returns').select('*').order('created_at', { ascending: false });
+    if (error) return [];
+    return (data || []) as WholesaleReturn[];
+  },
+
+  async createWholesaleReturn(returnData: Partial<WholesaleReturn>): Promise<WholesaleReturn> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(returnData.id);
+    const payload: WholesaleReturn = {
+      id: validId,
+      return_number: returnData.return_number || `WR-${Date.now().toString().slice(-6)}`,
+      issue_id: returnData.issue_id ? ensureValidUUID(returnData.issue_id) : undefined,
+      customer_id: ensureValidUUID(returnData.customer_id),
+      return_date: returnData.return_date || new Date().toISOString().split('T')[0],
+      total_quantity_returned: Number(returnData.total_quantity_returned || 0),
+      total_weight_returned_g: Number(returnData.total_weight_returned_g || 0),
+      condition_notes: returnData.condition_notes || '',
+      created_at: returnData.created_at || new Date().toISOString(),
+    };
+
+    const { data, error } = await db.from('wholesale_returns').insert(payload).select().single();
+    if (error) throw new Error(`Wholesale Return Save Failed: ${error.message}`);
+
+    syncEngine.notifyDataChange('wholesale_returns', 'INSERT', data);
+    return data as WholesaleReturn;
+  },
+
+  async getWholesaleSettlements(): Promise<WholesaleSettlement[]> {
+    const db = checkSupabaseClient();
+    const { data, error } = await db
+      .from('wholesale_settlements')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Failed to fetch wholesale settlements:', error.message);
+      return [];
+    }
+    return (data || []) as WholesaleSettlement[];
+  },
+
+  async createWholesaleSettlement(settlementData: Partial<WholesaleSettlement>): Promise<WholesaleSettlement> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(settlementData.id);
+    const validCustomerId = ensureValidUUID(settlementData.customer_id);
+
+    const payload: Partial<WholesaleSettlement> = {
+      id: validId,
+      settlement_number: settlementData.settlement_number || `SETTL-${Date.now().toString().slice(-6)}`,
+      customer_id: validCustomerId,
+      settlement_date: settlementData.settlement_date || new Date().toISOString().split('T')[0],
+      period_start: settlementData.period_start || new Date().toISOString().split('T')[0],
+      period_end: settlementData.period_end || new Date().toISOString().split('T')[0],
+      total_gross_sales: Number(settlementData.total_gross_sales || 0),
+      total_cost_valuation: Number(settlementData.total_cost_valuation || 0),
+      gross_profit: Number(settlementData.gross_profit || 0),
+      customer_profit_share: Number(settlementData.customer_profit_share || 0),
+      shop_profit_share: Number(settlementData.shop_profit_share || 0),
+      adjustments_amount: Number(settlementData.adjustments_amount || 0),
+      net_payable_to_customer: Number(settlementData.net_payable_to_customer || 0),
+      net_payable_to_shop: Number(settlementData.net_payable_to_shop || 0),
+      amount_paid: Number(settlementData.amount_paid || 0),
+      balance_due: Number(settlementData.balance_due || 0),
+      status: settlementData.status || 'draft',
+      notes: settlementData.notes || '',
+      created_at: settlementData.created_at || new Date().toISOString(),
+    };
+
+    const { data, error } = await db.from('wholesale_settlements').insert(payload).select().single();
+    if (error) throw new Error(`Settlement Save Failed: ${error.message}`);
+
+    syncEngine.notifyDataChange('wholesale_settlements', 'INSERT', data);
+    return data as WholesaleSettlement;
+  },
+
+  async getWholesalePayments(): Promise<WholesalePayment[]> {
+    const db = checkSupabaseClient();
+    const { data, error } = await db.from('wholesale_payments').select('*').order('created_at', { ascending: false });
+    if (error) return [];
+    return (data || []) as WholesalePayment[];
+  },
+
+  async createWholesalePayment(paymentData: Partial<WholesalePayment>): Promise<WholesalePayment> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(paymentData.id);
+
+    const payload: WholesalePayment = {
+      id: validId,
+      customer_id: ensureValidUUID(paymentData.customer_id),
+      settlement_id: paymentData.settlement_id ? ensureValidUUID(paymentData.settlement_id) : undefined,
+      payment_date: paymentData.payment_date || new Date().toISOString().split('T')[0],
+      amount: Number(paymentData.amount || 0),
+      payment_mode: paymentData.payment_mode || 'cash',
+      reference_number: paymentData.reference_number || '',
+      notes: paymentData.notes || '',
+      created_at: paymentData.created_at || new Date().toISOString(),
+    };
+
+    const { data, error } = await db.from('wholesale_payments').insert(payload).select().single();
+    if (error) throw new Error(`Wholesale Payment Save Failed: ${error.message}`);
+
+    syncEngine.notifyDataChange('wholesale_payments', 'INSERT', data);
+    return data as WholesalePayment;
   },
 
   // --------------------------------------------------------------------------
-  // PURCHASES & EXPENSES
+  // PURCHASES & SUPPLIERS
   // --------------------------------------------------------------------------
   async getPurchases(): Promise<Purchase[]> {
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('purchases')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!error && Array.isArray(data)) {
-          const db = getLocalDb();
-          db.purchases = data as Purchase[];
-          saveLocalDb(db);
-          return data as Purchase[];
-        }
-      } catch (err) {
-        console.warn('Error in getPurchases:', err);
-      }
+    const db = checkSupabaseClient();
+    const { data, error } = await db.from('purchases').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.error('Failed to fetch purchases from Supabase:', error.message);
+      throw new Error(`Database Error: ${error.message}`);
     }
-    const db = getLocalDb();
-    return db.purchases || [];
+    return (data || []) as Purchase[];
   },
 
-  async createPurchase(purchaseData: Partial<Purchase>, paymentData?: Partial<PurchasePayment>): Promise<Purchase> {
+  async createPurchase(purchaseData: Partial<Purchase>): Promise<Purchase> {
+    const db = checkSupabaseClient();
     const validId = ensureValidUUID(purchaseData.id);
-    const validSupplierId = ensureValidUUID(purchaseData.supplier_id);
+    const validSupplierId = purchaseData.supplier_id ? ensureValidUUID(purchaseData.supplier_id) : undefined;
 
-    const newPurchase: Purchase = {
+    const payload: Purchase = {
       id: validId,
       purchase_number: purchaseData.purchase_number || `PUR-${Date.now()}`,
       purchase_date: purchaseData.purchase_date || new Date().toISOString().split('T')[0],
-      supplier_id: validSupplierId,
+      supplier_id: validSupplierId || '',
       supplier_name: purchaseData.supplier_name || '',
       supplier_phone: purchaseData.supplier_phone || '',
       supplier_invoice_number: purchaseData.supplier_invoice_number || '',
@@ -537,111 +556,43 @@ export const dataService = {
       created_at: purchaseData.created_at || new Date().toISOString(),
     };
 
-    const db = getLocalDb();
-    db.purchases = [newPurchase, ...(db.purchases || []).filter((p) => p.id !== newPurchase.id)];
-    saveLocalDb(db, 'purchases', 'INSERT', newPurchase);
+    const { data, error } = await db.from('purchases').insert(payload).select().single();
+    if (error) throw new Error(`Purchase Save Failed: ${error.message}`);
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('purchases')
-          .insert(newPurchase)
-          .select()
-          .single();
-
-        if (!error && data) return data as Purchase;
-      } catch (err) {
-        console.error('Error inserting purchase into Supabase:', err);
-      }
-    }
-    return newPurchase;
+    syncEngine.notifyDataChange('purchases', 'INSERT', data);
+    return data as Purchase;
   },
 
-  async getExpenses(): Promise<Expense[]> {
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('expenses')
-          .select('*')
-          .order('created_at', { ascending: false });
+  async deletePurchase(id: string): Promise<boolean> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(id);
 
-        if (!error && Array.isArray(data)) {
-          const db = getLocalDb();
-          db.expenses = data as Expense[];
-          saveLocalDb(db);
-          return data as Expense[];
-        }
-      } catch (err) {
-        console.warn('Error in getExpenses:', err);
-      }
+    const { error } = await db.from('purchases').delete().eq('id', validId);
+
+    if (error) {
+      console.error('Failed to delete purchase in Supabase:', error.message);
+      throw new Error(`Purchase Delete Failed: ${error.message}`);
     }
-    const db = getLocalDb();
-    return db.expenses || [];
+
+    syncEngine.notifyDataChange('purchases', 'DELETE', { id: validId });
+    return true;
   },
 
-  async createExpense(expenseData: Partial<Expense>): Promise<Expense> {
-    const validId = ensureValidUUID(expenseData.id);
-    const newExpense: Expense = {
-      id: validId,
-      expense_number: expenseData.expense_number || `EXP-${Math.floor(100 + Math.random() * 900)}`,
-      category: expenseData.category || 'General Operations',
-      amount: Number(expenseData.amount || 0),
-      expense_date: expenseData.expense_date || new Date().toISOString().split('T')[0],
-      payment_mode: expenseData.payment_mode || 'cash',
-      vendor_name: expenseData.vendor_name || '',
-      notes: expenseData.notes || '',
-      attachment_url: expenseData.attachment_url || '',
-      created_at: expenseData.created_at || new Date().toISOString(),
-    };
-
-    const db = getLocalDb();
-    db.expenses = [newExpense, ...(db.expenses || []).filter((e) => e.id !== newExpense.id)];
-    saveLocalDb(db, 'expenses', 'INSERT', newExpense);
-
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('expenses')
-          .insert(newExpense)
-          .select()
-          .single();
-
-        if (!error && data) return data as Expense;
-      } catch (err) {
-        console.error('Error inserting expense into Supabase:', err);
-      }
-    }
-    return newExpense;
-  },
-
-  // --------------------------------------------------------------------------
-  // SUPPLIERS
-  // --------------------------------------------------------------------------
   async getSuppliers(): Promise<Supplier[]> {
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('suppliers')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!error && Array.isArray(data)) {
-          const db = getLocalDb();
-          db.suppliers = data as Supplier[];
-          saveLocalDb(db);
-          return data as Supplier[];
-        }
-      } catch (err) {
-        console.warn('Error in getSuppliers:', err);
-      }
+    const db = checkSupabaseClient();
+    const { data, error } = await db.from('suppliers').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.error('Failed to fetch suppliers:', error.message);
+      return [];
     }
-    const db = getLocalDb();
-    return db.suppliers || [];
+    return (data || []) as Supplier[];
   },
 
   async createSupplier(supplierData: Partial<Supplier>): Promise<Supplier> {
+    const db = checkSupabaseClient();
     const validId = ensureValidUUID(supplierData.id);
-    const newSupplier: Supplier = {
+
+    const payload: Supplier = {
       id: validId,
       supplier_code: supplierData.supplier_code || `SUP-${Math.floor(100 + Math.random() * 900)}`,
       supplier_name: supplierData.supplier_name || '',
@@ -656,76 +607,218 @@ export const dataService = {
       created_at: supplierData.created_at || new Date().toISOString(),
     };
 
-    const db = getLocalDb();
-    db.suppliers = [newSupplier, ...(db.suppliers || []).filter((s) => s.id !== newSupplier.id)];
-    saveLocalDb(db, 'suppliers', 'INSERT', newSupplier);
+    const { data, error } = await db.from('suppliers').insert(payload).select().single();
+    if (error) throw new Error(`Supplier Save Failed: ${error.message}`);
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('suppliers')
-          .insert(newSupplier)
-          .select()
-          .single();
-
-        if (!error && data) return data as Supplier;
-      } catch (err) {
-        console.error('Error inserting supplier into Supabase:', err);
-      }
-    }
-    return newSupplier;
+    syncEngine.notifyDataChange('suppliers', 'INSERT', data);
+    return data as Supplier;
   },
 
   // --------------------------------------------------------------------------
-  // LOCAL DATA MIGRATION UTILITY
-  // Inspects browser localStorage, fixes non-UUID IDs, and uploads missing local records to Supabase
+  // EXPENSES
   // --------------------------------------------------------------------------
-  async migrateLocalDataToSupabase(): Promise<{ migratedCustomers: number; migratedProducts: number; migratedInvoices: number }> {
-    if (!isSupabaseConfigured() || !supabase) {
-      return { migratedCustomers: 0, migratedProducts: 0, migratedInvoices: 0 };
+  async getExpenses(): Promise<Expense[]> {
+    const db = checkSupabaseClient();
+    const { data, error } = await db.from('expenses').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.error('Failed to fetch expenses:', error.message);
+      throw new Error(`Database Error: ${error.message}`);
+    }
+    return (data || []) as Expense[];
+  },
+
+  async createExpense(expenseData: Partial<Expense>): Promise<Expense> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(expenseData.id);
+
+    const payload: Expense = {
+      id: validId,
+      expense_number: expenseData.expense_number || `EXP-${Math.floor(100 + Math.random() * 900)}`,
+      category: expenseData.category || 'General Operations',
+      amount: Number(expenseData.amount || 0),
+      expense_date: expenseData.expense_date || new Date().toISOString().split('T')[0],
+      payment_mode: expenseData.payment_mode || 'cash',
+      vendor_name: expenseData.vendor_name || '',
+      notes: expenseData.notes || '',
+      attachment_url: expenseData.attachment_url || '',
+      created_at: expenseData.created_at || new Date().toISOString(),
+    };
+
+    const { data, error } = await db.from('expenses').insert(payload).select().single();
+    if (error) throw new Error(`Expense Save Failed: ${error.message}`);
+
+    syncEngine.notifyDataChange('expenses', 'INSERT', data);
+    return data as Expense;
+  },
+
+  // --------------------------------------------------------------------------
+  // METAL RATES & BUSINESS SETTINGS
+  // --------------------------------------------------------------------------
+  async getMetalRates(): Promise<MetalRate[]> {
+    const db = checkSupabaseClient();
+    const { data, error } = await db.from('metal_rates').select('*').order('rate_date', { ascending: false });
+    if (error) return [];
+    return (data || []) as MetalRate[];
+  },
+
+  async saveMetalRates(rateData: Partial<MetalRate>): Promise<MetalRate> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(rateData.id);
+
+    const payload: MetalRate = {
+      id: validId,
+      rate_date: rateData.rate_date || new Date().toISOString().split('T')[0],
+      gold_24k_per_gram: Number(rateData.gold_24k_per_gram || 0),
+      gold_22k_per_gram: Number(rateData.gold_22k_per_gram || 0),
+      gold_18k_per_gram: Number(rateData.gold_18k_per_gram || 0),
+      silver_per_gram: Number(rateData.silver_per_gram || 0),
+      silver_per_kg: Number(rateData.silver_per_kg || 0),
+      source: rateData.source || 'manual',
+      notes: rateData.notes || '',
+      created_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await db.from('metal_rates').upsert(payload).select().single();
+    if (error) throw new Error(`Metal Rate Save Failed: ${error.message}`);
+
+    syncEngine.notifyDataChange('metal_rates', 'UPDATE', data);
+    return data as MetalRate;
+  },
+
+  async getBusinessSettings(): Promise<BusinessSettings | null> {
+    const db = checkSupabaseClient();
+    const { data, error } = await db.from('business_settings').select('*').limit(1).single();
+    if (error || !data) return null;
+    return data as BusinessSettings;
+  },
+
+  // --------------------------------------------------------------------------
+  // EXPLICIT BACKUP & RESTORE SYSTEM (PHASE 8)
+  // Exports full Supabase database to downloadable JSON & restores JSON into Supabase
+  // --------------------------------------------------------------------------
+  async exportDatabaseBackup(): Promise<string> {
+    const db = checkSupabaseClient();
+
+    const [
+      { data: customers },
+      { data: products },
+      { data: retailInvoices },
+      { data: wholesaleIssues },
+      { data: wholesaleSettlements },
+      { data: wholesalePayments },
+      { data: purchases },
+      { data: expenses },
+      { data: suppliers },
+      { data: metalRates },
+      { data: businessSettings },
+    ] = await Promise.all([
+      db.from('customers').select('*'),
+      db.from('products').select('*'),
+      db.from('retail_invoices').select('*'),
+      db.from('wholesale_issues').select('*'),
+      db.from('wholesale_settlements').select('*'),
+      db.from('wholesale_payments').select('*'),
+      db.from('purchases').select('*'),
+      db.from('expenses').select('*'),
+      db.from('suppliers').select('*'),
+      db.from('metal_rates').select('*'),
+      db.from('business_settings').select('*'),
+    ]);
+
+    const backupPayload = {
+      app_version: '1.0.0',
+      shop_name: 'Shankar Jewellery ERP',
+      export_timestamp: new Date().toISOString(),
+      data: {
+        customers: customers || [],
+        products: products || [],
+        retailInvoices: retailInvoices || [],
+        wholesaleIssues: wholesaleIssues || [],
+        wholesaleSettlements: wholesaleSettlements || [],
+        wholesalePayments: wholesalePayments || [],
+        purchases: purchases || [],
+        expenses: expenses || [],
+        suppliers: suppliers || [],
+        metalRates: metalRates || [],
+        businessSettings: businessSettings || [],
+      },
+    };
+
+    const jsonString = JSON.stringify(backupPayload, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `shankar_jewellery_erp_backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    return jsonString;
+  },
+
+  async restoreDatabaseBackup(jsonData: string): Promise<{ restoredCounts: Record<string, number> }> {
+    const db = checkSupabaseClient();
+    const parsed = JSON.parse(jsonData);
+
+    if (!parsed || !parsed.data) {
+      throw new Error('Invalid backup file format. Missing root data object.');
     }
 
-    let cCount = 0;
-    let pCount = 0;
-    let iCount = 0;
+    const { data } = parsed;
+    const counts: Record<string, number> = {};
 
-    try {
-      const db = getLocalDb();
-
-      // 1. Migrate Customers
-      if (Array.isArray(db.customers) && db.customers.length > 0) {
-        for (const cust of db.customers) {
-          const validId = ensureValidUUID(cust.id);
-          const formatted = { ...cust, id: validId };
-          const { error } = await supabase.from('customers').upsert(formatted);
-          if (!error) cCount++;
-        }
-      }
-
-      // 2. Migrate Products
-      if (Array.isArray(db.products) && db.products.length > 0) {
-        for (const prod of db.products) {
-          const validId = ensureValidUUID(prod.id);
-          const formatted = { ...prod, id: validId };
-          const { error } = await supabase.from('products').upsert(formatted);
-          if (!error) pCount++;
-        }
-      }
-
-      // 3. Migrate Invoices
-      if (Array.isArray(db.retailInvoices) && db.retailInvoices.length > 0) {
-        for (const inv of db.retailInvoices) {
-          const validId = ensureValidUUID(inv.id);
-          const validCustId = ensureValidUUID(inv.customer_id);
-          const formatted = { ...inv, id: validId, customer_id: validCustId };
-          const { error } = await supabase.from('retail_invoices').upsert(formatted);
-          if (!error) iCount++;
-        }
-      }
-    } catch (err) {
-      console.warn('Local storage data migration warning:', err);
+    if (Array.isArray(data.customers) && data.customers.length > 0) {
+      const formatted = data.customers.map((c: any) => ({ ...c, id: ensureValidUUID(c.id) }));
+      const { error } = await db.from('customers').upsert(formatted);
+      if (error) throw new Error(`Customers Restore Failed: ${error.message}`);
+      counts.customers = formatted.length;
     }
 
-    return { migratedCustomers: cCount, migratedProducts: pCount, migratedInvoices: iCount };
+    if (Array.isArray(data.products) && data.products.length > 0) {
+      const formatted = data.products.map((p: any) => ({ ...p, id: ensureValidUUID(p.id) }));
+      const { error } = await db.from('products').upsert(formatted);
+      if (error) throw new Error(`Products Restore Failed: ${error.message}`);
+      counts.products = formatted.length;
+    }
+
+    if (Array.isArray(data.retailInvoices) && data.retailInvoices.length > 0) {
+      const formatted = data.retailInvoices.map((i: any) => ({
+        ...i,
+        id: ensureValidUUID(i.id),
+        customer_id: i.customer_id ? ensureValidUUID(i.customer_id) : undefined,
+      }));
+      const { error } = await db.from('retail_invoices').upsert(formatted);
+      if (error) throw new Error(`Invoices Restore Failed: ${error.message}`);
+      counts.retailInvoices = formatted.length;
+    }
+
+    if (Array.isArray(data.wholesaleIssues) && data.wholesaleIssues.length > 0) {
+      const formatted = data.wholesaleIssues.map((w: any) => ({
+        ...w,
+        id: ensureValidUUID(w.id),
+        customer_id: ensureValidUUID(w.customer_id),
+      }));
+      const { error } = await db.from('wholesale_issues').upsert(formatted);
+      if (error) throw new Error(`Wholesale Issues Restore Failed: ${error.message}`);
+      counts.wholesaleIssues = formatted.length;
+    }
+
+    if (Array.isArray(data.expenses) && data.expenses.length > 0) {
+      const formatted = data.expenses.map((e: any) => ({ ...e, id: ensureValidUUID(e.id) }));
+      const { error } = await db.from('expenses').upsert(formatted);
+      if (error) throw new Error(`Expenses Restore Failed: ${error.message}`);
+      counts.expenses = formatted.length;
+    }
+
+    if (Array.isArray(data.suppliers) && data.suppliers.length > 0) {
+      const formatted = data.suppliers.map((s: any) => ({ ...s, id: ensureValidUUID(s.id) }));
+      const { error } = await db.from('suppliers').upsert(formatted);
+      if (error) throw new Error(`Suppliers Restore Failed: ${error.message}`);
+      counts.suppliers = formatted.length;
+    }
+
+    return { restoredCounts: counts };
   },
 };

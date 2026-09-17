@@ -1,20 +1,55 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
-import { WholesaleSettlement } from '@/types';
+import { dataService, ensureValidUUID } from '@/lib/dataService';
+import { syncEngine } from '@/lib/syncEngine';
+import { WholesaleSettlement, Customer, BusinessSettings } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { generateWholesaleSettlementPDF } from '@/lib/pdfGenerator';
 import { openWhatsAppClickToChat, buildWhatsAppSettlementMessage } from '@/lib/whatsapp';
 import { BadgePercent, Plus, Download, MessageSquare, Check, Save } from 'lucide-react';
 
 export const WholesaleSettlements: React.FC = () => {
-  const [db, setDb] = useState(getLocalDb());
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(db.customers[0]?.id || '');
+  const [customersList, setCustomersList] = useState<Customer[]>([]);
+  const [settlementsList, setSettlementsList] = useState<WholesaleSettlement[]>([]);
+  const [settings, setSettings] = useState<BusinessSettings | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [grossSales, setGrossSales] = useState<number>(0);
   const [valuationCost, setValuationCost] = useState<number>(0);
   const [amountPaid, setAmountPaid] = useState<number>(0);
 
-  const selectedCustomer = db.customers.find((c) => c.id === selectedCustomerId);
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [cData, sData, settingsData] = await Promise.all([
+        dataService.getCustomers(),
+        dataService.getWholesaleSettlements(),
+        dataService.getBusinessSettings(),
+      ]);
+      setCustomersList(cData.filter((c) => c.customer_type === 'wholesale'));
+      setSettlementsList(sData);
+      setSettings(settingsData);
+      if (cData.length > 0 && !selectedCustomerId) {
+        setSelectedCustomerId(cData[0].id);
+      }
+    } catch (e) {
+      console.error('Error loading settlements data:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'wholesale_settlements' || tableName === 'customers' || tableName === 'general') {
+        loadData();
+      }
+    });
+    return () => unsubscribe();
+  }, [loadData]);
+
+  const selectedCustomer = customersList.find((c) => c.id === selectedCustomerId);
 
   const grossProfit = Math.max(0, grossSales - valuationCost);
   const customerShare = selectedCustomer ? (grossProfit * (selectedCustomer.agreed_profit_percent || 40)) / 100 : 0;
@@ -22,14 +57,13 @@ export const WholesaleSettlements: React.FC = () => {
   const netPayableToShop = valuationCost + shopShare;
   const balanceDue = Math.max(0, netPayableToShop - amountPaid);
 
-  const handleCreateSettlement = (e: React.FormEvent) => {
+  const handleCreateSettlement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomer) return;
 
-    const settleNo = `WST-2026-${Math.floor(100 + Math.random() * 900)}`;
-    const newSettlement: WholesaleSettlement = {
-      id: `settle-${Date.now()}`,
-      settlement_number: settleNo,
+    const newSettlement = await dataService.createWholesaleSettlement({
+      id: ensureValidUUID(),
+      settlement_number: `WST-2026-${Math.floor(100 + Math.random() * 900)}`,
       customer_id: selectedCustomer.id,
       customer_name: selectedCustomer.full_name,
       customer_shop: selectedCustomer.shop_name,
@@ -48,18 +82,15 @@ export const WholesaleSettlements: React.FC = () => {
       balance_due: balanceDue,
       status: 'approved',
       created_at: new Date().toISOString(),
-    };
+    });
 
-    db.wholesaleSettlements.unshift(newSettlement);
-    saveLocalDb(db, 'wholesale_settlements', 'INSERT', newSettlement);
-    setDb({ ...db });
-
-    generateWholesaleSettlementPDF(newSettlement, selectedCustomer, db.settings);
+    await loadData();
+    generateWholesaleSettlementPDF(newSettlement, selectedCustomer, settings || undefined);
   };
 
   const handleWhatsApp = (s: WholesaleSettlement) => {
     if (!selectedCustomer) return;
-    const msg = buildWhatsAppSettlementMessage(s, db.settings);
+    const msg = buildWhatsAppSettlementMessage(s, settings || undefined);
     openWhatsAppClickToChat(selectedCustomer.whatsapp_number || selectedCustomer.phone, msg);
   };
 
@@ -88,7 +119,7 @@ export const WholesaleSettlements: React.FC = () => {
               onChange={(e) => setSelectedCustomerId(e.target.value)}
               className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-100 font-bold"
             >
-              {db.customers
+              {customersList
                 .filter((c) => c.customer_type === 'wholesale')
                 .map((c) => (
                   <option key={c.id} value={c.id}>
@@ -178,8 +209,8 @@ export const WholesaleSettlements: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
-                {db.wholesaleSettlements.map((s) => {
-                  const targetCust = db.customers.find((c) => c.id === s.customer_id) || selectedCustomer;
+                {settlementsList.map((s) => {
+                  const targetCust = customersList.find((c) => c.id === s.customer_id) || selectedCustomer;
                   return (
                     <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-charcoal-800/50">
                       <td className="p-3 font-mono font-bold text-amber-900 dark:text-gold-300">{s.settlement_number}</td>
@@ -193,7 +224,7 @@ export const WholesaleSettlements: React.FC = () => {
                         <div className="flex items-center justify-end gap-2">
                           {targetCust && (
                             <button
-                              onClick={() => generateWholesaleSettlementPDF(s, targetCust, db.settings)}
+                              onClick={() => generateWholesaleSettlementPDF(s, targetCust)}
                               className="text-slate-700 hover:text-gold-600 dark:text-slate-300"
                               title="Download PDF"
                             >

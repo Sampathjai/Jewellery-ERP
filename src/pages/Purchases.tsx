@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { dataService } from '@/lib/dataService';
-import { getLocalDb, deletePurchaseRecord } from '@/lib/supabase';
 import { syncEngine } from '@/lib/syncEngine';
 import { formatCurrency, formatWeight, formatDate } from '@/lib/utils';
-import { Purchase } from '@/types';
+import { Purchase, Supplier, Customer } from '@/types';
 import { AddPurchaseModal } from '@/components/common/AddPurchaseModal';
 import { RecordPurchasePaymentModal } from '@/components/common/RecordPurchasePaymentModal';
 import { ViewPurchaseModal } from '@/components/common/ViewPurchaseModal';
@@ -27,8 +26,9 @@ import {
 } from 'lucide-react';
 
 export const Purchases: React.FC = () => {
-  const [db, setDb] = useState(() => getLocalDb());
-  const [purchasesList, setPurchasesList] = useState<Purchase[]>(db.purchases || []);
+  const [purchasesList, setPurchasesList] = useState<Purchase[]>([]);
+  const [suppliersList, setSuppliersList] = useState<Supplier[]>([]);
+  const [customersList, setCustomersList] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'ledger' | 'summary'>('ledger');
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,11 +39,16 @@ export const Purchases: React.FC = () => {
   const loadPurchases = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await dataService.getPurchases();
-      setPurchasesList(data);
-      setDb(getLocalDb());
+      const [purchasesData, suppliersData, customersData] = await Promise.all([
+        dataService.getPurchases(),
+        dataService.getSuppliers(),
+        dataService.getCustomers(),
+      ]);
+      setPurchasesList(purchasesData);
+      setSuppliersList(suppliersData);
+      setCustomersList(customersData);
     } catch (e) {
-      console.warn('Error loading purchases list:', e);
+      console.error('Error loading purchases list:', e);
     } finally {
       setIsLoading(false);
     }
@@ -52,7 +57,7 @@ export const Purchases: React.FC = () => {
   useEffect(() => {
     loadPurchases();
     const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
-      if (tableName === 'purchases' || tableName === 'general') {
+      if (tableName === 'purchases' || tableName === 'suppliers' || tableName === 'customers' || tableName === 'general') {
         loadPurchases();
       }
     });
@@ -69,14 +74,10 @@ export const Purchases: React.FC = () => {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedViewPurchase, setSelectedViewPurchase] = useState<Purchase | null>(null);
 
-  const refreshDb = () => {
-    setDb(getLocalDb());
-  };
+  const purchases: Purchase[] = purchasesList || [];
 
-  const purchases: Purchase[] = db.purchases || [];
-
-  const supplierCustomers = (db.customers || []).filter((c) => c.customer_type === 'supplier');
-  const dbSuppliers = db.suppliers || [];
+  const supplierCustomers = (customersList || []).filter((c) => c.customer_type === 'supplier');
+  const dbSuppliers = suppliersList || [];
 
   const supplierMap = new Map<string, { id: string; name: string }>();
 
@@ -163,7 +164,7 @@ export const Purchases: React.FC = () => {
 
   const supplierSummaries = Array.from(supplierSummaryMap.values());
 
-  const handleDelete = (purchase: Purchase) => {
+  const handleDelete = async (purchase: Purchase) => {
     if (
       window.confirm(
         `Are you sure you want to delete purchase entry ${purchase.purchase_number} from ${purchase.supplier_name}?\n\nThis will reverse the inventory stock addition of ${formatWeight(
@@ -171,8 +172,12 @@ export const Purchases: React.FC = () => {
         )}.`
       )
     ) {
-      deletePurchaseRecord(purchase.id);
-      refreshDb();
+      try {
+        await dataService.deletePurchase(purchase.id);
+        await loadPurchases();
+      } catch (e) {
+        alert('Failed to delete purchase: ' + (e as Error).message);
+      }
     }
   };
 
@@ -534,14 +539,14 @@ export const Purchases: React.FC = () => {
       <AddPurchaseModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        onSuccess={refreshDb}
+        onSuccess={loadPurchases}
         editPurchase={editingPurchase}
       />
 
       <RecordPurchasePaymentModal
         isOpen={isPayModalOpen}
         onClose={() => setIsPayModalOpen(false)}
-        onSuccess={refreshDb}
+        onSuccess={loadPurchases}
         purchase={selectedPayPurchase}
       />
 

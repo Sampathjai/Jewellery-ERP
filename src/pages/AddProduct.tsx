@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PhotoUploader } from '@/components/common/PhotoUploader';
 import { dataService, ensureValidUUID } from '@/lib/dataService';
-import { getLocalDb } from '@/lib/supabase';
 import { Product, MetalType, MetalPurity } from '@/types';
 import { useTranslation } from '@/lib/i18n';
 import { ArrowLeft, Save, Plus, Sparkles, AlertCircle } from 'lucide-react';
@@ -11,7 +10,6 @@ import { ArrowLeft, Save, Plus, Sparkles, AlertCircle } from 'lucide-react';
 export const AddProduct: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const db = getLocalDb();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -29,8 +27,8 @@ export const AddProduct: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
 
   // Metal Rate calculation based on metal type
-  const goldRate = db.metalRates?.[0]?.gold_22k_per_gram || 6850;
-  const silverRate = db.metalRates?.[0]?.silver_per_gram || 90;
+  const goldRate = 6850;
+  const silverRate = 90;
   const activeRate = formData.metal_type === 'silver' ? silverRate : goldRate;
 
   // Weight logic

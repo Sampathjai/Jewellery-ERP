@@ -1,15 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { dataService, ensureValidUUID } from '@/lib/dataService';
-import { getLocalDb } from '@/lib/supabase';
 import { syncEngine } from '@/lib/syncEngine';
 import { Expense } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Receipt, Plus, Save } from 'lucide-react';
 
 export const Expenses: React.FC = () => {
-  const [db, setDb] = useState(getLocalDb());
-  const [expensesList, setExpensesList] = useState<Expense[]>(db.expenses || []);
+  const [expensesList, setExpensesList] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [category, setCategory] = useState('Goldsmith labour');
   const [amount, setAmount] = useState<number>(3500);
@@ -21,9 +19,8 @@ export const Expenses: React.FC = () => {
     try {
       const data = await dataService.getExpenses();
       setExpensesList(data);
-      setDb(getLocalDb());
     } catch (e) {
-      console.warn('Error loading expenses:', e);
+      console.error('Error loading expenses:', e);
     } finally {
       setIsLoading(false);
     }

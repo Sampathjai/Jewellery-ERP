@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb, saveLocalDb, isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { openWhatsAppClickToChat, buildWhatsAppPaymentReminder } from '@/lib/whatsapp';
 import { CameraModal } from '@/components/common/CameraModal';
-import { Customer } from '@/types';
+import { Customer, BusinessSettings } from '@/types';
 import {
   ArrowLeft,
   MessageSquare,
@@ -38,6 +39,8 @@ export const CustomerDetails: React.FC = () => {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [totalOutstanding, setTotalOutstanding] = useState<number>(0);
+  const [settings, setSettings] = useState<BusinessSettings | null>(null);
+  const [goldRate, setGoldRate] = useState<number>(6850);
 
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isEditingTouch, setIsEditingTouch] = useState(false);
@@ -59,12 +62,25 @@ export const CustomerDetails: React.FC = () => {
         return;
       }
 
-      const db = getLocalDb();
+      let targetCustomer: Customer | null = null;
+      let invoices: any[] = [];
+      let wholesaleIssues: any[] = [];
+      let wholesaleReturns: any[] = [];
+      let settlements: any[] = [];
+      let wholesalePayments: any[] = [];
+      let retailPayments: any[] = [];
 
-      // Strict foreign key & primary key lookup (NEVER fallback to db.customers[0])
-      let targetCustomer = db.customers.find((c) => c.id === id || c.customer_code === id) || null;
+      try {
+        const [rates, sData] = await Promise.all([
+          dataService.getMetalRates(),
+          dataService.getBusinessSettings(),
+        ]);
+        if (rates?.[0]?.gold_22k_per_gram) setGoldRate(rates[0].gold_22k_per_gram);
+        if (sData) setSettings(sData);
+      } catch (e) {
+        console.error('Error fetching settings/rates for customer details:', e);
+      }
 
-      // If Supabase is connected, query Supabase for customer profile directly
       if (isSupabaseConfigured() && supabase) {
         try {
           const { data: supaCust } = await supabase
@@ -75,63 +91,42 @@ export const CustomerDetails: React.FC = () => {
 
           if (supaCust) {
             targetCustomer = supaCust;
+            const custId = supaCust.id;
+
+            const [
+              { data: sInvoices },
+              { data: sIssues },
+              { data: sReturns },
+              { data: sSettlements },
+              { data: sWPayments },
+              { data: sRPayments },
+            ] = await Promise.all([
+              supabase.from('retail_invoices').select('*').eq('customer_id', custId),
+              supabase.from('wholesale_issues').select('*').eq('customer_id', custId),
+              supabase.from('wholesale_returns').select('*').eq('customer_id', custId),
+              supabase.from('wholesale_settlements').select('*').eq('customer_id', custId),
+              supabase.from('wholesale_payments').select('*').eq('customer_id', custId),
+              supabase.from('retail_payments').select('*').eq('customer_id', custId),
+            ]);
+
+            if (sInvoices) invoices = sInvoices;
+            if (sIssues) wholesaleIssues = sIssues;
+            if (sReturns) wholesaleReturns = sReturns;
+            if (sSettlements) settlements = sSettlements;
+            if (sWPayments) wholesalePayments = sWPayments;
+            if (sRPayments) retailPayments = sRPayments;
           }
         } catch (err) {
-          console.warn('Error querying customer from Supabase:', err);
-        }
-      }
-
-      if (!targetCustomer) {
-        if (isMounted) {
-          setCustomer(null);
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      const custId = targetCustomer.id;
-
-      // Fetch transaction tables strictly filtered by customer_id = custId
-      let invoices = db.retailInvoices.filter((i) => i.customer_id === custId);
-      let wholesaleIssues = db.wholesaleIssues.filter((w) => w.customer_id === custId);
-      let wholesaleReturns = (db.wholesaleReturns || []).filter((r) => r.customer_id === custId);
-      let settlements = db.wholesaleSettlements.filter((s) => s.customer_id === custId);
-      let wholesalePayments = (db.wholesalePayments || []).filter((p) => p.customer_id === custId);
-      let retailPayments = (db.retailPayments || []).filter((p) =>
-        invoices.some((i) => i.id === p.invoice_id)
-      );
-
-      // If Supabase is configured, fetch live Supabase customer transactions
-      if (isSupabaseConfigured() && supabase) {
-        try {
-          const [
-            { data: sInvoices },
-            { data: sIssues },
-            { data: sReturns },
-            { data: sSettlements },
-            { data: sWPayments },
-            { data: sRPayments },
-          ] = await Promise.all([
-            supabase.from('retail_invoices').select('*').eq('customer_id', custId),
-            supabase.from('wholesale_issues').select('*').eq('customer_id', custId),
-            supabase.from('wholesale_returns').select('*').eq('customer_id', custId),
-            supabase.from('wholesale_settlements').select('*').eq('customer_id', custId),
-            supabase.from('wholesale_payments').select('*').eq('customer_id', custId),
-            supabase.from('retail_payments').select('*').eq('customer_id', custId),
-          ]);
-
-          if (sInvoices) invoices = sInvoices;
-          if (sIssues) wholesaleIssues = sIssues;
-          if (sReturns) wholesaleReturns = sReturns;
-          if (sSettlements) settlements = sSettlements;
-          if (sWPayments) wholesalePayments = sWPayments;
-          if (sRPayments) retailPayments = sRPayments;
-        } catch (err) {
-          console.warn('Error querying customer transactions from Supabase:', err);
+          console.error('Error querying customer data from Supabase:', err);
         }
       }
 
       const rawEntries: LedgerEntry[] = [];
+      if (!targetCustomer) {
+        if (isMounted) setIsLoading(false);
+        return;
+      }
+      const custId = targetCustomer.id;
 
       // Retail Invoices (Debit)
       invoices.forEach((inv) => {
@@ -141,45 +136,48 @@ export const CustomerDetails: React.FC = () => {
             date: inv.invoice_date,
             reference: inv.invoice_number,
             type: 'Retail Invoice',
-            typeBadgeClass: 'bg-purple-100 text-purple-900 dark:bg-purple-950/60 dark:text-purple-300',
+            typeBadgeClass: 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300',
             debit: inv.total_amount || 0,
             credit: 0,
           });
         }
       });
 
-      // Retail Payments (Credit)
+      // Retail Payments Received (Credit)
       retailPayments.forEach((pay) => {
-        rawEntries.push({
-          id: `rpay-${pay.id}`,
-          date: pay.payment_date,
-          reference: pay.reference_number || `PAY-${pay.id.slice(0, 6)}`,
-          type: 'Retail Payment',
-          typeBadgeClass: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300',
-          debit: 0,
-          credit: pay.amount || 0,
-        });
+        if (pay.customer_id === custId) {
+          rawEntries.push({
+            id: `rpay-${pay.id}`,
+            date: pay.payment_date,
+            reference: pay.reference_number || `RPAY-${pay.id.slice(0, 6)}`,
+            type: 'Payment Received',
+            typeBadgeClass: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300',
+            debit: 0,
+            credit: pay.amount || 0,
+          });
+        }
       });
 
-      // Wholesale Issues (Debit + Initial Cash Credit if paid)
+      // Wholesale Issues
       wholesaleIssues.forEach((issue) => {
         if (issue.customer_id === custId) {
-          const cashValue = issue.total_cash_value || issue.total_valuation_amount || 0;
-          rawEntries.push({
-            id: `issue-${issue.id}`,
-            date: issue.issue_date,
-            reference: issue.issue_number,
-            type: 'Wholesale Issue',
-            typeBadgeClass: 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300',
-            debit: cashValue,
-            credit: 0,
-          });
+          if (issue.total_cash_value && issue.total_cash_value > 0) {
+            rawEntries.push({
+              id: `wiss-${issue.id}`,
+              date: issue.issue_date,
+              reference: issue.issue_number,
+              type: 'Wholesale Issue',
+              typeBadgeClass: 'bg-purple-100 text-purple-900 dark:bg-purple-950/60 dark:text-purple-300',
+              debit: issue.total_cash_value,
+              credit: 0,
+            });
+          }
           if (issue.cash_paid && issue.cash_paid > 0) {
             rawEntries.push({
-              id: `issue-cash-${issue.id}`,
+              id: `wiss-cash-${issue.id}`,
               date: issue.issue_date,
               reference: `${issue.issue_number}-ADV`,
-              type: 'Advance Cash Paid',
+              type: 'Advance Cash',
               typeBadgeClass: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300',
               debit: 0,
               credit: issue.cash_paid,
@@ -191,7 +189,6 @@ export const CustomerDetails: React.FC = () => {
       // Wholesale Returns (Credit)
       wholesaleReturns.forEach((ret) => {
         if (ret.customer_id === custId) {
-          const goldRate = db.metalRates[0]?.gold_22k_per_gram || 6850;
           const returnVal = (ret.total_weight_returned_g || 0) * goldRate;
           rawEntries.push({
             id: `wret-${ret.id}`,
@@ -273,27 +270,29 @@ export const CustomerDetails: React.FC = () => {
     };
   }, [id]);
 
-  const handleSaveTouch = () => {
+  const handleSaveTouch = async () => {
     if (!customer) return;
-    const db = getLocalDb();
-    const idx = db.customers.findIndex((c) => c.id === customer.id);
-    if (idx !== -1) {
-      db.customers[idx].agreed_customer_touch = touchInput;
-      db.customers[idx].agreed_profit_percent = touchInput;
-      saveLocalDb(db, 'customers', 'UPDATE', db.customers[idx]);
-      setCustomer({ ...db.customers[idx] });
+    try {
+      const updated = await dataService.updateCustomer(customer.id, {
+        agreed_customer_touch: touchInput,
+        agreed_profit_percent: touchInput,
+      });
+      setCustomer(updated);
+    } catch (e) {
+      alert('Failed to save agreed touch: ' + (e as Error).message);
     }
     setIsEditingTouch(false);
   };
 
-  const handleUpdatePhoto = (newPhotoUrl: string) => {
+  const handleUpdatePhoto = async (newPhotoUrl: string) => {
     if (!customer) return;
-    const db = getLocalDb();
-    const idx = db.customers.findIndex((c) => c.id === customer.id);
-    if (idx !== -1) {
-      db.customers[idx].photo_url = newPhotoUrl;
-      saveLocalDb(db, 'customers', 'UPDATE', db.customers[idx]);
-      setCustomer({ ...db.customers[idx] });
+    try {
+      const updated = await dataService.updateCustomer(customer.id, {
+        photo_url: newPhotoUrl,
+      });
+      setCustomer(updated);
+    } catch (e) {
+      alert('Failed to update photo: ' + (e as Error).message);
     }
   };
 
@@ -323,8 +322,7 @@ export const CustomerDetails: React.FC = () => {
 
   const handleSendWhatsApp = () => {
     if (!customer) return;
-    const db = getLocalDb();
-    const msg = buildWhatsAppPaymentReminder(customer.full_name, totalOutstanding, db.settings);
+    const msg = buildWhatsAppPaymentReminder(customer.full_name, totalOutstanding, settings || undefined);
     openWhatsAppClickToChat(customer.whatsapp_number || customer.phone, msg);
   };
 

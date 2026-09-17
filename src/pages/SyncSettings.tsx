@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { syncEngine, SyncStatusChangeEvent } from '@/lib/syncEngine';
-import { isSupabaseConfigured, supabase, rawSupabaseUrl, getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase, rawSupabaseUrl } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
 import { formatDateTime } from '@/lib/utils';
 import {
   Wifi,
@@ -15,6 +16,8 @@ import {
   ShieldCheck,
   Zap,
   Database,
+  Download,
+  Upload,
 } from 'lucide-react';
 
 interface SyncLogItem {
@@ -110,22 +113,48 @@ export const SyncSettings: React.FC = () => {
     }
   };
 
+  const [isExporting, setIsExporting] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
+
+  const handleExportBackup = async () => {
+    setIsExporting(true);
+    setBackupStatus(null);
+    try {
+      await dataService.exportDatabaseBackup();
+      setBackupStatus('JSON Database Backup successfully generated and downloaded.');
+    } catch (e: any) {
+      setBackupStatus(`Backup Export Failed: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleRestoreBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!window.confirm('Are you sure you want to restore database records from this backup file? Existing records with matching IDs will be safely updated.')) {
+      return;
+    }
+
+    setIsRestoring(true);
+    setBackupStatus('Validating and restoring backup payload into Supabase...');
+
+    try {
+      const text = await file.text();
+      const res = await dataService.restoreDatabaseBackup(text);
+      setBackupStatus(`Database Restore Successful! Restored: ${JSON.stringify(res.restoredCounts)}`);
+    } catch (err: any) {
+      setBackupStatus(`Restore Failed: ${err?.message || 'Invalid backup format'}`);
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
   const handleSyncNow = async () => {
     setIsSyncingNow(true);
     syncEngine.notifyDataChange('all_tables', 'UPDATE', { manual: true });
-
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data: custData } = await supabase.from('customers').select('*');
-        if (custData && custData.length > 0) {
-          const db = getLocalDb();
-          db.customers = custData;
-          saveLocalDb(db);
-        }
-      } catch (e) {
-        console.warn('Manual sync fetch warning:', e);
-      }
-    }
 
     setTimeout(() => {
       setIsSyncingNow(false);
@@ -274,6 +303,52 @@ export const SyncSettings: React.FC = () => {
             </p>
             <p className="text-[11px] text-slate-500">Prevents duplicate records & write conflicts</p>
           </div>
+        </div>
+      </div>
+
+      {/* Phase 8 — JSON Database Backup & Restore Engine */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-charcoal-800">
+          <div className="flex items-center gap-2">
+            <Database className="h-5 w-5 text-gold-600" />
+            <h3 className="font-serif text-base font-bold text-charcoal-900 dark:text-slate-100">
+              Manual JSON Database Backup & Restore (Phase 8)
+            </h3>
+          </div>
+          <span className="text-[11px] font-semibold text-slate-500">Explicit User Backup Only</span>
+        </div>
+
+        <p className="text-xs text-slate-600 dark:text-slate-300">
+          Export a complete copy of your central Supabase PostgreSQL database as a downloadable JSON file for offline archival, or restore records directly into Supabase.
+        </p>
+
+        {backupStatus && (
+          <div className="rounded-xl bg-gold-50 p-3 text-xs font-semibold text-amber-900 border border-gold-200 dark:bg-gold-950/20 dark:border-gold-800 dark:text-gold-300">
+            {backupStatus}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-4 pt-1">
+          <button
+            onClick={handleExportBackup}
+            disabled={isExporting}
+            className="flex items-center gap-2 rounded-xl bg-gold-500 px-4 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            {isExporting ? 'Exporting...' : 'Export Full Business Backup (JSON)'}
+          </button>
+
+          <label className="flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-200 cursor-pointer">
+            <Upload className="h-4 w-4 text-slate-600 dark:text-slate-300" />
+            <span>{isRestoring ? 'Restoring...' : 'Restore Data from JSON File'}</span>
+            <input
+              type="file"
+              accept=".json"
+              disabled={isRestoring}
+              onChange={handleRestoreBackup}
+              className="hidden"
+            />
+          </label>
         </div>
       </div>
 

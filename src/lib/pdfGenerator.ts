@@ -12,17 +12,17 @@ import { formatCurrency, formatWeight, formatDate } from './utils';
 import { loadPdfFont } from './pdfFont';
 
 // Helper for shop header info
-function getShopHeaderDetails(settings: BusinessSettings) {
-  const name = 'Shankar Jewellery';
-  const address = 'No.4 sandhukadai, bigbazzar street, Trichy - 620008';
-  const phoneStr = 'Phone: +91 98765 43210';
+function getShopHeaderDetails(settings?: BusinessSettings) {
+  const name = settings?.shop_name || 'Shankar Jewellery';
+  const address = settings?.address || 'No.4 sandhukadai, bigbazzar street, Trichy - 620008';
+  const phoneStr = `Phone: ${settings?.phone || '+91 98765 43210'}`;
   return { name, address, phoneStr };
 }
 
 // ============================================================================
 // 1. RETAIL INVOICE PDF (Shankar Jewellery Customer Invoice)
 // ============================================================================
-export function generateRetailInvoicePDF(invoice: RetailInvoice, settings: BusinessSettings) {
+export function generateRetailInvoicePDF(invoice: RetailInvoice, settings?: BusinessSettings) {
   const doc = new jsPDF();
   loadPdfFont(doc);
 
@@ -129,8 +129,8 @@ export function generateRetailInvoicePDF(invoice: RetailInvoice, settings: Busin
   doc.setTextColor(100, 100, 100);
   doc.setFont('Georgia', 'normal');
   doc.text('Bank Payment Info:', 14, finalY + 14);
-  doc.text(`Bank: ${settings.bank_name || 'State Bank of India'} | A/C: ${settings.bank_account_number || '39182746501'}`, 14, finalY + 20);
-  doc.text(`IFSC: ${settings.bank_ifsc || 'SBIN0001234'} | UPI: ${settings.upi_id || 'shankarjewels@upi'}`, 14, finalY + 26);
+  doc.text(`Bank: ${settings?.bank_name || 'State Bank of India'} | A/C: ${settings?.bank_account_number || '39182746501'}`, 14, finalY + 20);
+  doc.text(`IFSC: ${settings?.bank_ifsc || 'SBIN0001234'} | UPI: ${settings?.upi_id || 'shankarjewels@upi'}`, 14, finalY + 26);
   doc.text('Terms: Goods certified under Hallmark standards. Return subject to shop policy.', 14, finalY + 35);
 
   doc.text('Customer Signature', 14, finalY + 58);
@@ -147,13 +147,16 @@ export function generateRetailInvoicePDF(invoice: RetailInvoice, settings: Busin
 // ============================================================================
 export function generateCustomerWholesaleIssuePDF(
   issue: WholesaleIssue,
-  customer: Customer,
-  settings: BusinessSettings
+  customer?: Customer,
+  settings?: BusinessSettings
 ) {
   const doc = new jsPDF();
   loadPdfFont(doc);
 
   const shop = getShopHeaderDetails(settings);
+  const custName = customer?.full_name || issue.customer_name || 'Wholesale Partner';
+  const custShop = customer?.shop_name || issue.customer_shop || '';
+  const custPhone = customer?.phone || '';
 
   // Premium Header Banner
   doc.setFillColor(30, 31, 38);
@@ -186,9 +189,9 @@ export function generateCustomerWholesaleIssuePDF(
 
   doc.setFont('Georgia', 'normal');
   doc.setFontSize(9);
-  doc.text(`Customer Name: ${customer.full_name}`, 14, 55);
-  doc.text(`Shop Name: ${customer.shop_name || 'Dealer'}`, 14, 61);
-  doc.text(`Phone: ${customer.phone} | City: ${customer.city || 'Tamil Nadu'}`, 14, 67);
+  doc.text(`Customer Name: ${custName}`, 14, 55);
+  doc.text(`Shop Name: ${custShop || 'Dealer'}`, 14, 61);
+  doc.text(`Phone: ${custPhone} | City: ${customer?.city || 'Tamil Nadu'}`, 14, 67);
 
   doc.setFont('Georgia', 'bold');
   doc.text(`Invoice / Bill No: ${issue.issue_number}`, 125, 48);
@@ -342,13 +345,16 @@ export function generateCustomerWholesaleIssuePDF(
 // ============================================================================
 export function generateInternalWholesaleIssuePDF(
   issue: WholesaleIssue,
-  customer: Customer,
-  settings: BusinessSettings
+  customer?: Customer,
+  settings?: BusinessSettings
 ) {
   const doc = new jsPDF();
   loadPdfFont(doc);
 
   const shop = getShopHeaderDetails(settings);
+  const custName = customer?.full_name || issue.customer_name || 'Wholesale Partner';
+  const custShop = customer?.shop_name || issue.customer_shop || '';
+  const custPhone = customer?.phone || '';
 
   // Dark Header Banner
   doc.setFillColor(30, 31, 38);
@@ -371,9 +377,9 @@ export function generateInternalWholesaleIssuePDF(
   doc.text(`Date: ${formatDate(issue.issue_date)}`, 14, 50);
 
   doc.setFont('Georgia', 'bold');
-  doc.text(`Wholesale Partner: ${customer.full_name}`, 110, 44);
+  doc.text(`Wholesale Partner: ${custName}`, 110, 44);
   doc.setFont('Georgia', 'normal');
-  doc.text(`Shop: ${customer.shop_name || 'N/A'} | Phone: ${customer.phone}`, 110, 50);
+  doc.text(`Shop: ${custShop || 'N/A'} | Phone: ${custPhone}`, 110, 50);
 
   // Table Data with complete Touch calculation breakdown
   const tableData = issue.items.map((item, idx) => {
@@ -498,8 +504,8 @@ export function generateInternalWholesaleIssuePDF(
 // Default export wrapper
 export function generateWholesaleIssuePDF(
   issue: WholesaleIssue,
-  customer: Customer,
-  settings: BusinessSettings,
+  customer?: Customer,
+  settings?: BusinessSettings,
   isInternal: boolean = false
 ) {
   if (isInternal) {
@@ -514,8 +520,8 @@ export function generateWholesaleIssuePDF(
 // ============================================================================
 export function generateWholesaleSettlementPDF(
   settlement: WholesaleSettlement,
-  customer: Customer,
-  settings: BusinessSettings
+  customer?: Customer,
+  settings?: BusinessSettings
 ) {
   const doc = new jsPDF();
   loadPdfFont(doc);
@@ -541,7 +547,7 @@ export function generateWholesaleSettlementPDF(
   doc.setFont('Georgia', 'normal');
   doc.text(`Settlement Date: ${formatDate(settlement.settlement_date)}`, 14, 50);
   doc.setFont('Georgia', 'bold');
-  doc.text(`Wholesale Partner: ${customer.full_name} (${customer.shop_name || 'N/A'})`, 110, 44);
+  doc.text(`Wholesale Partner: ${customer?.full_name || settlement.customer_name} (${customer?.shop_name || settlement.customer_shop || 'N/A'})`, 110, 44);
   doc.setFont('Georgia', 'normal');
   doc.text(`Period: ${formatDate(settlement.period_start)} to ${formatDate(settlement.period_end)}`, 110, 50);
 

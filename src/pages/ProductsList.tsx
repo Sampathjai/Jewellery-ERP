@@ -6,7 +6,6 @@ import { PurityBadge } from '@/components/common/PurityBadge';
 import { BarcodeScannerModal } from '@/components/common/BarcodeScannerModal';
 import { EditProductModal } from '@/components/common/EditProductModal';
 import { dataService } from '@/lib/dataService';
-import { getLocalDb } from '@/lib/supabase';
 import { syncEngine } from '@/lib/syncEngine';
 import { Product } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
@@ -14,8 +13,7 @@ import { Plus, Search, Barcode, Eye, Filter, Boxes, Edit3, Trash2, AlertTriangle
 
 export const ProductsList: React.FC = () => {
   const navigate = useNavigate();
-  const [db, setDb] = useState(getLocalDb());
-  const [productsList, setProductsList] = useState<Product[]>(db.products || []);
+  const [productsList, setProductsList] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [metalFilter, setMetalFilter] = useState<string>('all');
@@ -34,9 +32,8 @@ export const ProductsList: React.FC = () => {
     try {
       const data = await dataService.getProducts();
       setProductsList(data);
-      setDb(getLocalDb());
     } catch (e) {
-      console.warn('Error loading products list:', e);
+      console.error('Error loading products list:', e);
     } finally {
       setIsLoading(false);
     }

@@ -3,34 +3,34 @@ import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { BarcodeScannerModal } from '@/components/common/BarcodeScannerModal';
 import { dataService, ensureValidUUID } from '@/lib/dataService';
-import { getLocalDb } from '@/lib/supabase';
 import { syncEngine } from '@/lib/syncEngine';
-import { Product, Customer, RetailInvoiceItem, RetailInvoice } from '@/types';
+import { Product, Customer, RetailInvoiceItem, RetailInvoice, BusinessSettings } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import { generateRetailInvoicePDF } from '@/lib/pdfGenerator';
 import { ShoppingCart, Search, Plus, Trash2, Printer, Barcode, UserCheck, Percent, Sliders, ShieldCheck } from 'lucide-react';
 
 export const RetailPOS: React.FC = () => {
   const navigate = useNavigate();
-  const [db, setDb] = useState(getLocalDb());
-  const [customersList, setCustomersList] = useState<Customer[]>(db.customers || []);
-  const [productsList, setProductsList] = useState<Product[]>(db.products || []);
-  const todayRate = db.metalRates[0] || { gold_24k_per_gram: 7450, gold_22k_per_gram: 6830, silver_per_gram: 89.5 };
+  const [customersList, setCustomersList] = useState<Customer[]>([]);
+  const [productsList, setProductsList] = useState<Product[]>([]);
+  const [settings, setSettings] = useState<BusinessSettings | null>(null);
+  const todayRate = { gold_24k_per_gram: 7450, gold_22k_per_gram: 6830, silver_per_gram: 89.5 };
 
   const loadPosData = useCallback(async () => {
     try {
-      const [cData, pData] = await Promise.all([
+      const [cData, pData, sData] = await Promise.all([
         dataService.getCustomers(),
         dataService.getProducts(),
+        dataService.getBusinessSettings(),
       ]);
       setCustomersList(cData);
       setProductsList(pData);
-      setDb(getLocalDb());
+      setSettings(sData);
       if (cData.length > 0 && !selectedCustomerId) {
         setSelectedCustomerId(cData[0].id);
       }
     } catch (e) {
-      console.warn('Error loading POS data:', e);
+      console.error('Error loading POS data:', e);
     }
   }, []);
 
@@ -66,82 +66,81 @@ export const RetailPOS: React.FC = () => {
 
   const selectedCustomer = customersList.find((c) => c.id === selectedCustomerId) || customersList[0];
 
-  const handleAddProductToCart = (product: Product) => {
-    // Metal rate selection based on purity/type
-    const metalRate = product.metal_type === 'gold' ? (manualGoldRate * 0.916) : manualSilverRate;
-    const metalVal = product.net_weight_g * metalRate;
-    const itemWastageVal = product.net_weight_g * (product.wastage_percent / 100) * metalRate;
-    const lineTot = metalVal + product.making_charge_rate + product.labour_charge + itemWastageVal;
+  const handleAddProductToCart = (prod: Product) => {
+    const isGold = prod.metal_type === 'gold';
+    const ratePerGram = isGold ? manualGoldRate : manualSilverRate;
+    const metalVal = Number((prod.net_weight_g * ratePerGram).toFixed(2));
+    const makingCharge = (prod.making_charge_rate || 0) + (prod.labour_charge || 0);
+    const itemWastageVal = Number(((prod.net_weight_g * (prod.wastage_percent || 0) * ratePerGram) / 100).toFixed(2));
+    const finalVal = metalVal + makingCharge + itemWastageVal;
 
-    const newItem: RetailInvoiceItem = {
-      id: `item-${Date.now()}-${Math.random()}`,
-      product_id: product.id,
-      product_name_snapshot: product.name,
-      sku_snapshot: product.sku,
-      metal_type: product.metal_type,
-      purity: product.purity,
-      gross_weight_g: product.gross_weight_g,
-      stone_weight_g: product.stone_weight_g,
-      net_weight_g: product.net_weight_g,
-      quantity: 1,
-      metal_rate_snapshot: metalRate,
-      metal_value: metalVal,
-      making_charge: product.making_charge_rate,
-      labour_charge: product.labour_charge,
-      wastage_percent: product.wastage_percent,
-      wastage_weight_g: product.wastage_weight_g || 0,
-      wastage_value: itemWastageVal,
-      discount: 0,
-      line_total: lineTot,
-    };
-
-    setCartItems((prev) => [...prev, newItem]);
+    const existingIndex = cartItems.findIndex((item) => item.product_id === prod.id);
+    if (existingIndex > -1) {
+      const updated = [...cartItems];
+      updated[existingIndex].quantity += 1;
+      updated[existingIndex].line_total = updated[existingIndex].quantity * finalVal;
+      setCartItems(updated);
+    } else {
+      const newItem: RetailInvoiceItem = {
+        id: ensureValidUUID(),
+        invoice_id: '',
+        product_id: prod.id,
+        product_name_snapshot: prod.name,
+        sku_snapshot: prod.sku,
+        metal_type: prod.metal_type,
+        purity: prod.purity,
+        gross_weight_g: prod.gross_weight_g,
+        stone_weight_g: prod.stone_weight_g || 0,
+        net_weight_g: prod.net_weight_g,
+        quantity: 1,
+        metal_rate_snapshot: ratePerGram,
+        metal_value: metalVal,
+        making_charge: prod.making_charge_rate || 0,
+        labour_charge: prod.labour_charge || 0,
+        wastage_percent: prod.wastage_percent || 0,
+        wastage_weight_g: prod.wastage_weight_g || 0,
+        wastage_value: itemWastageVal,
+        discount: 0,
+        line_total: finalVal,
+      };
+      setCartItems([...cartItems, newItem]);
+    }
   };
 
   const handleRemoveFromCart = (itemId: string) => {
-    setCartItems((prev) => prev.filter((i) => i.id !== itemId));
+    setCartItems(cartItems.filter((i) => i.id !== itemId));
   };
 
-  // Financial Calculations
-  const totalNetWeight = cartItems.reduce((sum, item) => sum + item.net_weight_g, 0);
-  const subtotalMetalValue = cartItems.reduce((sum, item) => sum + item.metal_value, 0);
-  const itemMakingCharges = cartItems.reduce((sum, item) => sum + item.making_charge + item.labour_charge, 0);
-  const itemWastageValue = cartItems.reduce((sum, item) => sum + item.wastage_value, 0);
+  // Calculations
+  const subtotalMetalValue = cartItems.reduce((sum, item) => sum + item.metal_value * item.quantity, 0);
+  const itemMakingCharges = cartItems.reduce((sum, item) => sum + (item.making_charge + item.labour_charge) * item.quantity, 0);
+  const totalGrossWeight = cartItems.reduce((sum, item) => sum + item.gross_weight_g * item.quantity, 0);
+  const totalNetWeight = cartItems.reduce((sum, item) => sum + item.net_weight_g * item.quantity, 0);
 
-  // Manual Customer-wise Wastage Calculation
-  let customWastageAmount = 0;
-  if (manualWastageVal > 0) {
-    if (manualWastageUnit === 'percent') {
-      customWastageAmount = (subtotalMetalValue * manualWastageVal) / 100;
-    } else {
-      customWastageAmount = manualWastageVal * manualGoldRate;
-    }
-  } else {
-    customWastageAmount = itemWastageValue;
-  }
+  // Manual Wastage
+  const customWastageAmount =
+    manualWastageUnit === 'percent'
+      ? (subtotalMetalValue * manualWastageVal) / 100
+      : manualWastageVal * manualGoldRate;
 
-  // Manual Customer-wise சேதாரம் Calculation
-  let customSetharamAmount = 0;
-  if (manualSetharamVal > 0) {
-    if (manualSetharamUnit === 'percent') {
-      customSetharamAmount = (subtotalMetalValue * manualSetharamVal) / 100;
-    } else {
-      customSetharamAmount = manualSetharamVal;
-    }
-  }
+  // Manual Setharam (சேதாரம்)
+  const customSetharamAmount =
+    manualSetharamUnit === 'percent'
+      ? (subtotalMetalValue * manualSetharamVal) / 100
+      : manualSetharamVal;
 
   const combinedMakingAndWastage = itemMakingCharges + customWastageAmount + customSetharamAmount + manualMakingCharge;
   const rawSubtotal = subtotalMetalValue + combinedMakingAndWastage;
   const taxableSubtotal = Math.max(0, rawSubtotal - discountAmount);
-
-  // GST Calculation (Applied ONLY if Enabled)
   const taxAmount = gstEnabled ? (taxableSubtotal * manualGstPercent) / 100 : 0;
   const grandTotal = Math.round(taxableSubtotal + taxAmount);
 
   const handleFinalizeBill = async () => {
     if (cartItems.length === 0 || !selectedCustomer) return;
 
-    const invoiceNo = `${db.settings.invoice_prefix}${db.settings.next_invoice_number || 1005}`;
+    const prefix = settings?.invoice_prefix || 'INV-2026-';
+    const nextNum = settings?.next_invoice_number || 1005;
+    const invoiceNo = `${prefix}${nextNum}`;
     const invoiceId = ensureValidUUID();
 
     const createdInvoice = await dataService.createRetailInvoice(
@@ -180,11 +179,11 @@ export const RetailPOS: React.FC = () => {
     );
 
     // Auto PDF Generation & Download
-    generateRetailInvoicePDF(createdInvoice, db.settings);
+    generateRetailInvoicePDF(createdInvoice, settings || undefined);
     navigate(`/invoices/${createdInvoice.id}`);
   };
 
-  const filteredProducts = db.products.filter(
+  const filteredProducts = productsList.filter(
     (p) =>
       p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
       p.sku.toLowerCase().includes(productSearch.toLowerCase()) ||
@@ -224,7 +223,7 @@ export const RetailPOS: React.FC = () => {
                   onChange={(e) => setSelectedCustomerId(e.target.value)}
                   className="mt-0.5 w-full truncate rounded-lg border-0 bg-transparent text-xs font-bold text-charcoal-900 focus:outline-none dark:text-slate-100 cursor-pointer"
                 >
-                  {db.customers.map((c) => (
+                  {customersList.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.full_name} ({c.phone})
                     </option>
@@ -489,7 +488,7 @@ export const RetailPOS: React.FC = () => {
         isOpen={scannerOpen}
         onClose={() => setScannerOpen(false)}
         onScan={(code) => {
-          const match = db.products.find((p) => p.barcode === code || p.sku === code);
+          const match = productsList.find((p) => p.barcode === code || p.sku === code);
           if (match) handleAddProductToCart(match);
         }}
       />

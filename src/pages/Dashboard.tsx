@@ -2,15 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
-import {
-  getLocalDb,
-  fetchCustomersFromSupabase,
-  fetchProductsFromSupabase,
-  fetchRetailInvoicesFromSupabase,
-  fetchWholesaleIssuesFromSupabase,
-  fetchWholesaleSettlementsFromSupabase,
-  fetchExpensesFromSupabase,
-} from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
 import { useLanguage } from '@/lib/i18n';
 import { formatCurrency, formatWeight } from '@/lib/utils';
@@ -44,23 +36,34 @@ import {
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
-  const [db, setDb] = useState(getLocalDb());
+
+  const [invoicesList, setInvoicesList] = useState<any[]>([]);
+  const [productsList, setProductsList] = useState<any[]>([]);
+  const [customersList, setCustomersList] = useState<any[]>([]);
+  const [wholesaleIssuesList, setWholesaleIssuesList] = useState<any[]>([]);
+  const [expensesList, setExpensesList] = useState<any[]>([]);
+  const [wholesaleSettlementsList, setWholesaleSettlementsList] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadDashboardData = useCallback(async () => {
     setIsLoading(true);
     try {
-      await Promise.all([
-        fetchCustomersFromSupabase(),
-        fetchProductsFromSupabase(),
-        fetchRetailInvoicesFromSupabase(),
-        fetchWholesaleIssuesFromSupabase(),
-        fetchWholesaleSettlementsFromSupabase(),
-        fetchExpensesFromSupabase(),
+      const [cData, pData, rData, wData, eData, sData] = await Promise.all([
+        dataService.getCustomers(),
+        dataService.getProducts(),
+        dataService.getRetailInvoices(),
+        dataService.getWholesaleIssues(),
+        dataService.getExpenses(),
+        dataService.getWholesaleSettlements(),
       ]);
-      setDb(getLocalDb());
+      setCustomersList(cData);
+      setProductsList(pData);
+      setInvoicesList(rData);
+      setWholesaleIssuesList(wData);
+      setExpensesList(eData);
+      setWholesaleSettlementsList(sData);
     } catch (e) {
-      console.warn('Error loading live dashboard metrics:', e);
+      console.error('Error loading live dashboard metrics:', e);
     } finally {
       setIsLoading(false);
     }
@@ -76,66 +79,66 @@ export const Dashboard: React.FC = () => {
     };
   }, [loadDashboardData]);
 
-  // Aggregate metrics from live DB
-  const todaySales = (db.retailInvoices || [])
+  // Aggregate metrics from live Supabase data
+  const todaySales = (invoicesList || [])
     .filter((i) => i.invoice_date === new Date().toISOString().split('T')[0])
-    .reduce((sum, i) => sum + i.total_amount, 0);
+    .reduce((sum, i) => sum + (i.total_amount || 0), 0);
 
-  const monthSales = (db.retailInvoices || []).reduce((sum, i) => sum + i.total_amount, 0);
+  const monthSales = (invoicesList || []).reduce((sum, i) => sum + (i.total_amount || 0), 0);
 
-  const totalGoldWeight = db.products
+  const totalGoldWeight = (productsList || [])
     .filter((p) => p.metal_type === 'gold')
-    .reduce((sum, p) => sum + p.net_weight_g * p.quantity, 0);
+    .reduce((sum, p) => sum + (p.net_weight_g || 0) * (p.quantity || 1), 0);
 
-  const totalSilverWeight = db.products
+  const totalSilverWeight = (productsList || [])
     .filter((p) => p.metal_type === 'silver')
-    .reduce((sum, p) => sum + p.net_weight_g * p.quantity, 0);
+    .reduce((sum, p) => sum + (p.net_weight_g || 0) * (p.quantity || 1), 0);
 
-  const totalStockValue = db.products.reduce((sum, p) => sum + p.retail_price * p.quantity, 0);
+  const totalStockValue = (productsList || []).reduce((sum, p) => sum + (p.retail_price || 0) * (p.quantity || 1), 0);
 
-  const activeWholesaleCustomers = db.customers.filter((c) => c.customer_type === 'wholesale').length;
+  const activeWholesaleCustomers = (customersList || []).filter((c) => c.customer_type === 'wholesale').length;
 
-  const totalWholesaleIssuedItems = db.wholesaleIssues
+  const totalWholesaleIssuedItems = (wholesaleIssuesList || [])
     .filter((w) => w.status === 'active')
-    .reduce((sum, w) => sum + w.total_items_issued, 0);
+    .reduce((sum, w) => sum + (w.total_items_issued || 0), 0);
 
-  const totalPendingReturns = db.wholesaleIssues
+  const totalPendingReturns = (wholesaleIssuesList || [])
     .filter((w) => w.status === 'active')
     .reduce(
       (sum, w) =>
         sum +
-        w.items.reduce((iSum, item) => iSum + item.quantity_remaining, 0),
+        (Array.isArray(w.items) ? w.items.reduce((iSum: number, item: any) => iSum + (item.quantity_remaining || 0), 0) : 0),
       0
     );
 
-  const outstandingWholesaleBalances = db.wholesaleSettlements
+  const outstandingWholesaleBalances = (wholesaleSettlementsList || [])
     .filter((s) => s.status !== 'paid')
-    .reduce((sum, s) => sum + s.balance_due, 0);
+    .reduce((sum, s) => sum + (s.balance_due || 0), 0);
 
-  const totalExpenses = (db.expenses || []).reduce((sum, e) => sum + (e.amount || 0), 0);
+  const totalExpenses = (expensesList || []).reduce((sum, e) => sum + (e.amount || 0), 0);
 
   // Compute real gross profit from actual database invoices and wholesale settlements
-  const retailGrossProfit = (db.retailInvoices || []).reduce((sum, inv) => {
-    const invCost = (inv.items || []).reduce((iSum, item) => iSum + (item.metal_value || 0), 0);
+  const retailGrossProfit = (invoicesList || []).reduce((sum, inv) => {
+    const invCost = (inv.items || []).reduce((iSum: number, item: any) => iSum + (item.metal_value || 0), 0);
     const profit = Math.max(0, (inv.total_amount || 0) - invCost);
     return sum + profit;
   }, 0);
 
-  const wholesaleGrossProfit = (db.wholesaleSettlements || []).reduce((sum, s) => sum + (s.shop_profit_share || 0), 0);
+  const wholesaleGrossProfit = (wholesaleSettlementsList || []).reduce((sum, s) => sum + (s.shop_profit_share || 0), 0);
 
   const grossProfit = retailGrossProfit + wholesaleGrossProfit;
   const netProfit = Math.max(0, grossProfit - totalExpenses);
 
-  const pendingPayments = (db.retailInvoices || [])
+  const pendingPayments = (invoicesList || [])
     .filter((i) => i.payment_status !== 'paid')
     .reduce((sum, i) => sum + (i.balance_due || 0), 0);
 
   // Dynamic Stock & Settlement Alerts from Database
-  const lowStockProducts = (db.products || []).filter((p) => p.quantity <= (p.minimum_stock || 5));
-  const overdueWholesaleIssues = (db.wholesaleIssues || []).filter(
+  const lowStockProducts = (productsList || []).filter((p) => (p.quantity || 0) <= (p.minimum_stock || 5));
+  const overdueWholesaleIssues = (wholesaleIssuesList || []).filter(
     (w) => w.status === 'active' && w.expected_return_date && new Date(w.expected_return_date) < new Date()
   );
-  const pendingWholesaleSettlements = (db.wholesaleSettlements || []).filter((s) => s.balance_due > 0);
+  const pendingWholesaleSettlements = (wholesaleSettlementsList || []).filter((s) => (s.balance_due || 0) > 0);
 
   // Dynamic Chart Data from DB
   const daysOfWeek = [
@@ -149,14 +152,14 @@ export const Dashboard: React.FC = () => {
   ];
 
   const dailySalesTrendData = daysOfWeek.map((d) => {
-    const retailTotal = (db.retailInvoices || [])
+    const retailTotal = (invoicesList || [])
       .filter((i) => {
         const dt = new Date(i.invoice_date);
         return dt.getDay() === d.key;
       })
       .reduce((sum, i) => sum + (i.total_amount || 0), 0);
 
-    const wholesaleTotal = (db.wholesaleIssues || [])
+    const wholesaleTotal = (wholesaleIssuesList || [])
       .filter((w) => {
         const dt = new Date(w.issue_date);
         return dt.getDay() === d.key;
@@ -171,12 +174,12 @@ export const Dashboard: React.FC = () => {
   });
 
   const catCountMap = new Map<string, number>();
-  (db.products || []).forEach((p) => {
+  (productsList || []).forEach((p) => {
     const cName = p.category_name || 'Jewellery';
     catCountMap.set(cName, (catCountMap.get(cName) || 0) + (p.quantity || 0));
   });
 
-  const totalProdQty = (db.products || []).reduce((sum, p) => sum + (p.quantity || 0), 0);
+  const totalProdQty = (productsList || []).reduce((sum, p) => sum + (p.quantity || 0), 0);
   const categoryDistribution = totalProdQty > 0
     ? Array.from(catCountMap.entries()).slice(0, 4).map(([name, qty]) => ({
         name,

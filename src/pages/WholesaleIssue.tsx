@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { dataService, ensureValidUUID } from '@/lib/dataService';
-import { getLocalDb } from '@/lib/supabase';
-import { WholesaleIssue, WholesaleIssueItem, WholesaleProfitModel, Customer } from '@/types';
+import { WholesaleIssue, WholesaleIssueItem, WholesaleProfitModel, Customer, Product, BusinessSettings, MetalRate } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import { generateWholesaleIssuePDF } from '@/lib/pdfGenerator';
 import { AddWholesaleCustomerModal } from '@/components/common/AddWholesaleCustomerModal';
@@ -14,26 +13,27 @@ export const WholesaleIssuePage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { t } = useTranslation();
-  const db = getLocalDb();
 
-  const wholesaleCustomers = db.customers.filter((c) => c.customer_type === 'wholesale');
-  const preselectedCustomerId = searchParams.get('customerId') || wholesaleCustomers[0]?.id || '';
+  const [wholesaleCustomers, setWholesaleCustomers] = useState<Customer[]>([]);
+  const [productsList, setProductsList] = useState<Product[]>([]);
+  const [settings, setSettings] = useState<BusinessSettings | null>(null);
+  const [metalRatesList, setMetalRatesList] = useState<MetalRate[]>([]);
 
-  const [customerId, setCustomerId] = useState<string>(preselectedCustomerId);
+  const [customerId, setCustomerId] = useState<string>(searchParams.get('customerId') || '');
   const [issueDate, setIssueDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [expectedReturnDate, setExpectedReturnDate] = useState<string>(
     new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
   );
   const [agreedProfitModel, setAgreedProfitModel] = useState<WholesaleProfitModel>('model_a_profit_percent');
   const [agreedProfitPercent, setAgreedProfitPercent] = useState<number>(40);
-  const [goldRatePerGram, setGoldRatePerGram] = useState<number>(db.metalRates?.[0]?.gold_22k_per_gram || 6850);
+  const [goldRatePerGram, setGoldRatePerGram] = useState<number>(6850);
   const [notes, setNotes] = useState('');
 
   // Modal State
   const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false);
 
   // Selected product item states
-  const [selectedProductId, setSelectedProductId] = useState<string>(db.products[0]?.id || '');
+  const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [issueQty, setIssueQty] = useState<number>(10);
   const [itemGrossWeight, setItemGrossWeight] = useState<number>(3.680);
   const [itemDeductionWeight, setItemDeductionWeight] = useState<number>(1.000);
@@ -43,11 +43,41 @@ export const WholesaleIssuePage: React.FC = () => {
   // Payment Settlement initial inputs
   const [cashPaid, setCashPaid] = useState<number>(0);
   const [gold916PaidWeight, setGold916PaidWeight] = useState<number>(0);
-  const [gold916Rate, setGold916Rate] = useState<number>(db.metalRates?.[0]?.gold_22k_per_gram || 6850);
+  const [gold916Rate, setGold916Rate] = useState<number>(6850);
 
   const [issueItems, setIssueItems] = useState<WholesaleIssueItem[]>([]);
 
-  const selectedCustomer: Customer | undefined = db.customers.find((c) => c.id === customerId) || wholesaleCustomers[0];
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [cData, pData, sData, ratesData] = await Promise.all([
+          dataService.getCustomers(),
+          dataService.getProducts(),
+          dataService.getBusinessSettings(),
+          dataService.getMetalRates(),
+        ]);
+        const wCusts = cData.filter((c: Customer) => c.customer_type === 'wholesale');
+        setWholesaleCustomers(wCusts);
+        setProductsList(pData);
+        setSettings(sData);
+        setMetalRatesList(ratesData);
+        if (ratesData?.[0]?.gold_22k_per_gram) {
+          setGold916Rate(ratesData[0].gold_22k_per_gram);
+        }
+        if (wCusts.length > 0 && !customerId) {
+          setCustomerId(wCusts[0].id);
+        }
+        if (pData.length > 0 && !selectedProductId) {
+          setSelectedProductId(pData[0].id);
+        }
+      } catch (e) {
+        console.error('Error loading wholesale issue data:', e);
+      }
+    };
+    loadData();
+  }, []);
+
+  const selectedCustomer: Customer | undefined = wholesaleCustomers.find((c) => c.id === customerId) || wholesaleCustomers[0];
 
   // Update touch defaults when selected customer changes
   useEffect(() => {
@@ -56,11 +86,11 @@ export const WholesaleIssuePage: React.FC = () => {
       setItemProfitTouch(selectedCustomer.default_profit_touch ?? 10);
       setAgreedProfitPercent(selectedCustomer.agreed_customer_touch ?? selectedCustomer.agreed_profit_percent ?? 40);
     }
-  }, [customerId]);
+  }, [customerId, selectedCustomer]);
 
   // Update item gross weight default when selected product or qty changes
   useEffect(() => {
-    const prod = db.products.find((p) => p.id === selectedProductId);
+    const prod = productsList.find((p) => p.id === selectedProductId);
     if (prod) {
       setItemGrossWeight(Number((prod.gross_weight_g * issueQty).toFixed(3)));
       setItemDeductionWeight(Number(((prod.deduction_weight_g || 0) * issueQty).toFixed(3)));
@@ -68,7 +98,7 @@ export const WholesaleIssuePage: React.FC = () => {
         setItemActualTouch(prod.actual_touch);
       }
     }
-  }, [selectedProductId, issueQty]);
+  }, [selectedProductId, issueQty, productsList]);
 
   // Calculations for current item form
   const itemNetWeight = Math.max(0, Number((itemGrossWeight - itemDeductionWeight).toFixed(3)));
@@ -77,7 +107,7 @@ export const WholesaleIssuePage: React.FC = () => {
   const itemValuation = Number((itemFineGold * goldRatePerGram).toFixed(2));
 
   const handleAddItem = () => {
-    const prod = db.products.find((p) => p.id === selectedProductId);
+    const prod = productsList.find((p) => p.id === selectedProductId);
     if (!prod) return;
 
     const newItem: WholesaleIssueItem = {
@@ -167,7 +197,7 @@ export const WholesaleIssuePage: React.FC = () => {
       created_at: new Date().toISOString(),
     });
 
-    generateWholesaleIssuePDF(createdIssue, selectedCustomer, db.settings);
+    generateWholesaleIssuePDF(createdIssue, selectedCustomer, settings || undefined);
     navigate(`/wholesale-issues/${createdIssue.id}`);
   };
 
@@ -314,7 +344,7 @@ export const WholesaleIssuePage: React.FC = () => {
                 onChange={(e) => setSelectedProductId(e.target.value)}
                 className="mt-1 w-full rounded-xl border border-slate-200 p-2 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100 font-bold"
               >
-                {db.products.map((p) => (
+                {productsList.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} ({p.sku}) • Gross: {formatWeight(p.gross_weight_g)}
                   </option>
