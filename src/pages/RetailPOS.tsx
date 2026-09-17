@@ -7,7 +7,7 @@ import { syncEngine } from '@/lib/syncEngine';
 import { Product, Customer, RetailInvoiceItem, RetailInvoice, BusinessSettings, MetalRate } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import { generateRetailInvoicePDF } from '@/lib/pdfGenerator';
-import { ShoppingCart, Search, Plus, Trash2, Printer, Barcode, UserCheck, Percent, Sliders, ShieldCheck } from 'lucide-react';
+import { ShoppingCart, Search, Plus, Minus, Trash2, Printer, Barcode, UserCheck, Percent, Sliders, ShieldCheck } from 'lucide-react';
 
 export const RetailPOS: React.FC = () => {
   const navigate = useNavigate();
@@ -120,6 +120,26 @@ export const RetailPOS: React.FC = () => {
     setCartItems(cartItems.filter((i) => i.id !== itemId));
   };
 
+  const handleUpdateQuantity = (itemId: string, delta: number) => {
+    setCartItems((prevCart) =>
+      prevCart
+        .map((item) => {
+          if (item.id === itemId) {
+            const newQty = item.quantity + delta;
+            if (newQty <= 0) return null;
+            const unitPrice = item.line_total / item.quantity;
+            return {
+              ...item,
+              quantity: newQty,
+              line_total: Number((newQty * unitPrice).toFixed(2)),
+            };
+          }
+          return item;
+        })
+        .filter(Boolean) as RetailInvoiceItem[]
+    );
+  };
+
   // Calculations
   const subtotalMetalValue = cartItems.reduce((sum, item) => sum + item.metal_value * item.quantity, 0);
   const itemMakingCharges = cartItems.reduce((sum, item) => sum + (item.making_charge + item.labour_charge) * item.quantity, 0);
@@ -161,6 +181,9 @@ export const RetailPOS: React.FC = () => {
       loyalty_points: 0,
     };
 
+    const custName = (activeCustomer.full_name || (activeCustomer as any).name || 'Walk-in / Cash Customer').trim() || 'Walk-in Customer';
+    const custPhone = (activeCustomer.phone || '').trim();
+
     setIsSubmitting(true);
 
     try {
@@ -173,9 +196,9 @@ export const RetailPOS: React.FC = () => {
         {
           id: invoiceId,
           invoice_number: invoiceNo,
-          customer_id: ensureValidUUID(activeCustomer.id),
-          customer_name: activeCustomer.full_name,
-          customer_phone: activeCustomer.phone || '',
+          customer_id: activeCustomer.id ? ensureValidUUID(activeCustomer.id) : undefined,
+          customer_name: custName,
+          customer_phone: custPhone,
           invoice_date: new Date().toISOString().split('T')[0],
           subtotal_metal_value: subtotalMetalValue,
           total_making_charges: itemMakingCharges + manualMakingCharge + customSetharamAmount,
@@ -439,13 +462,39 @@ export const RetailPOS: React.FC = () => {
                           {formatWeight(item.net_weight_g)} @ ₹{item.metal_rate_snapshot}/g
                         </p>
                       </div>
+
+                      {/* Quantity Add / Minus Controls */}
+                      <div className="flex items-center gap-1 bg-slate-100 dark:bg-charcoal-800 rounded-lg p-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateQuantity(item.id, -1)}
+                          className="rounded p-0.5 hover:bg-slate-200 dark:hover:bg-charcoal-700 text-slate-600 dark:text-slate-300 transition-colors"
+                          title="Decrease Quantity (-)"
+                        >
+                          <Minus className="h-3 w-3" />
+                        </button>
+                        <span className="px-1.5 font-bold font-mono text-xs text-charcoal-900 dark:text-slate-100 min-w-[18px] text-center">
+                          {item.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateQuantity(item.id, 1)}
+                          className="rounded p-0.5 hover:bg-slate-200 dark:hover:bg-charcoal-700 text-slate-600 dark:text-slate-300 transition-colors"
+                          title="Increase Quantity (+)"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
+                      </div>
+
                       <div className="flex items-center gap-2 shrink-0">
                         <strong className="font-serif text-xs text-amber-900 dark:text-gold-300">
                           {formatCurrency(item.line_total)}
                         </strong>
                         <button
+                          type="button"
                           onClick={() => handleRemoveFromCart(item.id)}
-                          className="text-red-500 hover:text-red-700 p-1"
+                          className="text-red-500 hover:text-red-700 p-1 transition-colors"
+                          title="Remove Item"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
