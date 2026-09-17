@@ -48,15 +48,15 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
         />
         {showText && (
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <h1 className={`font-serif font-bold tracking-tight text-charcoal-900 dark:text-slate-100 truncate ${selectedSize.textTitle}`}>
+            <div className="flex items-center gap-1.5">
+              <h1 className={`font-serif font-bold tracking-tight text-charcoal-900 dark:text-slate-100 whitespace-nowrap leading-none ${selectedSize.textTitle}`}>
                 Shankar Jewellery
               </h1>
-              <span className="shrink-0 rounded bg-gold-500/20 px-1 py-0.5 text-[9px] font-bold text-amber-900 dark:text-gold-300 uppercase">
+              <span className="shrink-0 rounded bg-gold-500/20 px-1 py-0.5 text-[9px] font-bold text-amber-900 dark:text-gold-300 uppercase leading-none border border-gold-400/30">
                 ERP
               </span>
             </div>
-            <p className={`text-amber-700 font-semibold uppercase tracking-wider dark:text-gold-400 truncate ${selectedSize.textSub}`}>
+            <p className={`text-amber-700 font-semibold uppercase tracking-wider dark:text-gold-400 whitespace-nowrap mt-0.5 leading-none ${selectedSize.textSub}`}>
               Trust • Tradition • Technology
             </p>
           </div>
