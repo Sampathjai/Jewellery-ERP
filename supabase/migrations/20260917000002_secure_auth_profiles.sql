@@ -176,30 +176,41 @@ EXCEPTION
         RAISE NOTICE 'Trigger on auth.users skipped: %', SQLERRM;
 END $$;
 
--- 6. Enable Row Level Security (RLS) on public.profiles
+-- 6. Dynamically drop ALL existing RLS policies on public.profiles to eliminate recursive policies
+DO $$
+DECLARE
+    pol RECORD;
+BEGIN
+    FOR pol IN (
+        SELECT policyname 
+        FROM pg_policies 
+        WHERE tablename = 'profiles' AND schemaname = 'public'
+    ) LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.profiles', pol.policyname);
+    END LOOP;
+END $$;
+
+-- 7. Enable Row Level Security (RLS) on public.profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Enable read access for all authenticated users" ON public.profiles;
-CREATE POLICY "Enable read access for all authenticated users"
+CREATE POLICY "profiles_select_policy"
 ON public.profiles FOR SELECT
 USING (true);
 
-DROP POLICY IF EXISTS "Enable insert access for authenticated and anon" ON public.profiles;
-CREATE POLICY "Enable insert access for authenticated and anon"
+CREATE POLICY "profiles_insert_policy"
 ON public.profiles FOR INSERT
 WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Enable update access for all users" ON public.profiles;
-CREATE POLICY "Enable update access for all users"
+CREATE POLICY "profiles_update_policy"
 ON public.profiles FOR UPDATE
-USING (true);
+USING (true)
+WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Enable delete access for all users" ON public.profiles;
-CREATE POLICY "Enable delete access for all users"
+CREATE POLICY "profiles_delete_policy"
 ON public.profiles FOR DELETE
 USING (true);
 
--- 7. Realtime Publication Setup
+-- 8. Realtime Publication Setup
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
@@ -209,5 +220,5 @@ EXCEPTION
     WHEN OTHERS THEN NULL;
 END $$;
 
--- 8. Reload PostgREST API schema cache
+-- 9. Reload PostgREST API schema cache
 NOTIFY pgrst, 'reload schema';
