@@ -17,7 +17,6 @@ import {
   Menu,
 } from 'lucide-react';
 
-import { SyncStatusBadge } from '@/components/common/SyncStatusBadge';
 import { BrandLogo } from '@/components/common/BrandLogo';
 
 interface HeaderProps {
@@ -135,9 +134,6 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Controls Section: Single Row, Vertically Centered */}
       <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-        {/* Real-Time Sync Status Badge */}
-        <SyncStatusBadge />
-
         {/* Dynamic Welcome Back Banner */}
         <div className="hidden lg:flex items-center gap-1 text-xs font-semibold text-charcoal-900 dark:text-slate-100 whitespace-nowrap">
           <span>Welcome back, <strong className="font-bold text-amber-900 dark:text-gold-300">{displayName}</strong> 👋</span>
