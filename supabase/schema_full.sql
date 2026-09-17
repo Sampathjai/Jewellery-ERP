@@ -607,3 +607,4 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- Schema setup completed successfully!
+

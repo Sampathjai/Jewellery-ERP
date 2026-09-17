@@ -15,6 +15,7 @@ export const ProductsList: React.FC = () => {
   const navigate = useNavigate();
   const [productsList, setProductsList] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [metalFilter, setMetalFilter] = useState<string>('all');
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -29,11 +30,13 @@ export const ProductsList: React.FC = () => {
 
   const loadProducts = useCallback(async () => {
     setIsLoading(true);
+    setErrorMsg('');
     try {
       const data = await dataService.getProducts();
       setProductsList(data);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error loading products list:', e);
+      setErrorMsg(e?.message || 'Failed to load products from Supabase PostgreSQL.');
     } finally {
       setIsLoading(false);
     }
@@ -106,6 +109,13 @@ export const ProductsList: React.FC = () => {
           </div>
         }
       />
+
+      {errorMsg && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs font-semibold text-red-900 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+          <p className="font-bold text-sm mb-1">⚠️ Database Schema Error</p>
+          <p>{errorMsg}</p>
+        </div>
+      )}
 
       {/* Search & Metal Filter Bar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200 bg-white p-4 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm">
