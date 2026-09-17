@@ -1,210 +1,303 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
+import { syncEngine } from '@/lib/syncEngine';
 import { MetalRate } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Coins, Save, TrendingUp, History, Sparkles, CheckCircle, ShieldCheck } from 'lucide-react';
+import {
+  syncLiveRatesToSupabase,
+  saveManualShopRatesToSupabase,
+  fetchLiveMarketRates,
+} from '@/lib/metalRatesService';
+import {
+  Coins,
+  Save,
+  TrendingUp,
+  Sparkles,
+  CheckCircle2,
+  RefreshCw,
+  AlertTriangle,
+  Info,
+  Clock,
+  Globe,
+  Sliders,
+} from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export const MetalRates: React.FC = () => {
-  const [db, setDb] = useState(getLocalDb());
-  const todayRate = db.metalRates[0] || {
-    id: 'rate-1',
-    rate_date: new Date().toISOString().split('T')[0],
-    gold_24k_per_gram: 7450,
-    gold_22k_per_gram: 6830,
-    gold_18k_per_gram: 5600,
-    silver_per_gram: 89.5,
-    silver_per_kg: 89500,
-    source: 'manual',
-    notes: 'Official Shankar Jewellery Rate',
-  };
+  const [ratesList, setRatesList] = useState<MetalRate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshingLive, setIsRefreshingLive] = useState(false);
+  const [isSubmittingManual, setIsSubmittingManual] = useState(false);
 
-  const [rateSource, setRateSource] = useState<'automatic' | 'manual'>(
-    (todayRate.source as 'automatic' | 'manual') || 'manual'
-  );
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  const activeRate = ratesList[0] || null;
+
+  const [rateSourceMode, setRateSourceMode] = useState<'automatic' | 'manual'>('manual');
   const [effectiveDate, setEffectiveDate] = useState<string>(
-    todayRate.rate_date || new Date().toISOString().split('T')[0]
+    new Date().toISOString().split('T')[0]
   );
+  const [gold24kRate, setGold24kRate] = useState<number>(7450);
+  const [silver925Rate, setSilver925Rate] = useState<number>(89.5);
+  const [notes, setNotes] = useState<string>('Shankar Jewellery Shop Selling Rate');
 
-  const [gold24kRate, setGold24kRate] = useState<number>(todayRate.gold_24k_per_gram || 7450);
-  const [silver925Rate, setSilver925Rate] = useState<number>(todayRate.silver_per_gram || 89.5);
-  const [notes, setNotes] = useState<string>(todayRate.notes || 'Shankar Jewellery Daily Rate');
-
-  const [notification, setNotification] = useState<string | null>(null);
-
-  const handleGold24kChange = (val: number) => {
-    setGold24kRate(val);
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 5000);
   };
 
-  const handleSilver925Change = (val: number) => {
-    setSilver925Rate(val);
+  const loadRates = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await dataService.getMetalRates();
+      setRatesList(data);
+      if (data.length > 0) {
+        const top = data[0];
+        setGold24kRate(top.gold_24k_per_gram || 7450);
+        setSilver925Rate(top.silver_per_gram || 89.5);
+        setRateSourceMode((top.source as 'automatic' | 'manual') || 'manual');
+        if (top.notes) setNotes(top.notes);
+      }
+    } catch (e: any) {
+      console.error('Error loading metal rates from Supabase:', e);
+      showNotification('error', e?.message || 'Failed to load metal rates from database.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRates();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'metal_rates' || tableName === 'general') {
+        loadRates();
+      }
+    });
+    return () => unsubscribe();
+  }, [loadRates]);
+
+  const handleFetchLiveMarketRates = async () => {
+    setIsRefreshingLive(true);
+    try {
+      const savedRate = await syncLiveRatesToSupabase();
+      await loadRates();
+      showNotification(
+        'success',
+        `Live market rates updated! 24K Gold = ₹${savedRate.gold_24k_per_gram}/g, 22K (916) = ₹${savedRate.gold_22k_per_gram}/g, Silver 925 = ₹${savedRate.silver_per_gram}/g`
+      );
+    } catch (err: any) {
+      console.error('Live rate fetch failed:', err);
+      showNotification(
+        'error',
+        err?.message || 'Failed to fetch live market rates from external API. Please check your network connection.'
+      );
+    } finally {
+      setIsRefreshingLive(false);
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!gold24kRate || gold24kRate <= 0 || !silver925Rate || silver925Rate <= 0) {
+      showNotification('error', 'Please enter valid positive gold and silver rates.');
+      return;
+    }
 
-    const gold22 = Number((gold24kRate * 0.916).toFixed(2));
-    const gold18 = Number((gold24kRate * 0.75).toFixed(2));
-    const silverKg = Number((silver925Rate * 1000).toFixed(2));
-
-    const newRate: MetalRate = {
-      id: `rate-${Date.now()}`,
-      rate_date: effectiveDate,
-      gold_24k_per_gram: gold24kRate,
-      gold_22k_per_gram: gold22,
-      gold_18k_per_gram: gold18,
-      silver_per_gram: silver925Rate,
-      silver_per_kg: silverKg,
-      source: rateSource,
-      notes: notes || (rateSource === 'manual' ? 'Admin Manual Override Rate' : 'Automatic Live Market Rate'),
-      created_at: new Date().toISOString(),
-    };
-
-    // Replace existing rate for same date or prepend
-    const updatedRates = [newRate, ...db.metalRates.filter((r) => r.rate_date !== effectiveDate)];
-    db.metalRates = updatedRates;
-    saveLocalDb(db);
-    setDb({ ...db });
-
-    setNotification(
-      `Rates updated successfully for ${effectiveDate} (${rateSource.toUpperCase()} Mode: Gold 24K = ₹${gold24kRate}/g, Silver 925 = ₹${silver925Rate}/g)`
-    );
-    setTimeout(() => setNotification(null), 4000);
+    setIsSubmittingManual(true);
+    try {
+      const saved = await saveManualShopRatesToSupabase({
+        effectiveDate,
+        gold24kRate,
+        silver925Rate,
+        notes: notes || 'Shop Manual Override Rate',
+      });
+      await loadRates();
+      showNotification(
+        'success',
+        `Shop rates saved for ${effectiveDate}: Gold 24K = ₹${saved.gold_24k_per_gram}/g, 22K = ₹${saved.gold_22k_per_gram}/g, Silver = ₹${saved.silver_per_gram}/g`
+      );
+    } catch (err: any) {
+      console.error('Manual rate save error:', err);
+      showNotification('error', err?.message || 'Failed to save shop rates to Supabase database.');
+    } finally {
+      setIsSubmittingManual(false);
+    }
   };
 
-  const handleSwitchToAutomatic = () => {
-    setRateSource('automatic');
-    // Default market rates benchmark
-    setGold24kRate(7450);
-    setSilver925Rate(89.5);
-    setNotification('Switched to Automatic Live Market Rates.');
-    setTimeout(() => setNotification(null), 3000);
-  };
-
-  const chartData = [...db.metalRates].reverse().map((r) => ({
+  const chartData = [...ratesList].reverse().map((r) => ({
     date: formatDate(r.rate_date),
     gold24k: r.gold_24k_per_gram,
-    silver925: r.silver_per_gram * 100,
+    gold22k: r.gold_22k_per_gram,
+    silver925: r.silver_per_gram,
   }));
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Metal Rates Settings & Daily Override"
-        subtitle="Configure automatic market rates or set manual Gold 24K and Silver 925 prices for billing priority"
+        title="Metal Rates & Price Management"
+        subtitle="Automatic live market spot rate updates & shop-specific manual price override system"
         breadcrumb={['Home', 'Metal Rates']}
+        actionBtn={
+          <button
+            onClick={handleFetchLiveMarketRates}
+            disabled={isRefreshingLive}
+            className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-700 disabled:opacity-50 transition-all"
+          >
+            <RefreshCw className={`h-4 w-4 ${isRefreshingLive ? 'animate-spin' : ''}`} />
+            {isRefreshingLive ? 'Fetching Live Market Rates...' : 'Fetch Live Market Rates'}
+          </button>
+        }
       />
 
       {notification && (
-        <div className="rounded-2xl border border-gold-400 bg-gold-50 p-4 text-xs font-bold text-amber-950 dark:border-gold-800 dark:bg-gold-950/40 dark:text-gold-300 flex items-center gap-2 shadow-sm">
-          <CheckCircle className="h-4 w-4 text-gold-600" />
-          <span>{notification}</span>
+        <div
+          className={`rounded-2xl border p-4 text-xs font-bold shadow-sm flex items-center gap-2.5 ${
+            notification.type === 'success'
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
+              : 'border-red-300 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300'
+          }`}
+        >
+          {notification.type === 'success' ? (
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
+          )}
+          <span>{notification.message}</span>
         </div>
       )}
 
-      {/* Active Rate Banner */}
-      <div className="rounded-2xl border border-gold-400/50 bg-gradient-to-r from-gold-50/80 via-amber-50/50 to-white p-5 dark:border-gold-800/40 dark:bg-gradient-to-r dark:from-gold-950/40 dark:to-charcoal-900 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gold-500 font-serif font-bold text-xl text-charcoal-950 shadow-gold">
-            ₹
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-serif text-base font-bold text-charcoal-900 dark:text-slate-100">
-                Active Billing Rates ({formatDate(todayRate.rate_date)})
-              </h3>
-              <span
-                className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
-                  todayRate.source === 'manual'
-                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300'
-                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300'
-                }`}
-              >
-                {todayRate.source === 'manual' ? 'MANUAL OVERRIDE ACTIVE' : 'AUTOMATIC LIVE RATE'}
-              </span>
+      {/* ACTIVE BILLING RATE BANNER */}
+      {activeRate ? (
+        <div className="rounded-2xl border border-gold-400/50 bg-gradient-to-r from-gold-50/90 via-amber-50/50 to-white p-6 dark:border-gold-800/40 dark:bg-gradient-to-r dark:from-gold-950/40 dark:to-charcoal-900 shadow-sm space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gold-500 font-serif font-bold text-2xl text-charcoal-950 shadow-gold shrink-0">
+                ₹
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-serif text-lg font-bold text-charcoal-900 dark:text-slate-100">
+                    Active Shop Rates ({formatDate(activeRate.rate_date)})
+                  </h3>
+                  <span
+                    className={`rounded-full px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                      activeRate.source === 'manual'
+                        ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300'
+                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300'
+                    }`}
+                  >
+                    {activeRate.source === 'manual' ? 'SHOP MANUAL OVERRIDE ACTIVE' : 'AUTOMATIC LIVE MARKET RATE'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 flex items-center gap-2">
+                  <Clock className="h-3.5 w-3.5 text-slate-400" />
+                  <span>
+                    Last Updated: {activeRate.created_at ? new Date(activeRate.created_at).toLocaleString() : 'Today'}
+                  </span>
+                  {activeRate.notes && <span className="text-slate-400">• {activeRate.notes}</span>}
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-              These rates will be applied automatically in Retail POS, Wholesale Billing, and Inventory Valuation.
-            </p>
+
+            <button
+              onClick={handleFetchLiveMarketRates}
+              disabled={isRefreshingLive}
+              className="flex items-center gap-1.5 shrink-0 rounded-xl bg-gold-500 px-3.5 py-2 text-xs font-bold text-charcoal-950 hover:bg-gold-600 shadow-gold transition-all"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingLive ? 'animate-spin' : ''}`} />
+              Sync Live Rate Now
+            </button>
+          </div>
+
+          {/* Detailed Metal Rates Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-2">
+            <div className="rounded-xl bg-white/90 dark:bg-charcoal-800/90 p-3 border border-slate-200 dark:border-charcoal-700 shadow-sm">
+              <span className="block text-[10px] font-bold text-slate-400 uppercase">Gold 24K (99.9%)</span>
+              <strong className="font-serif text-base text-gold-600 dark:text-gold-400 font-bold block mt-0.5">
+                {formatCurrency(activeRate.gold_24k_per_gram)}/g
+              </strong>
+            </div>
+
+            <div className="rounded-xl bg-white/90 dark:bg-charcoal-800/90 p-3 border border-amber-300 dark:border-gold-800/60 shadow-sm">
+              <span className="block text-[10px] font-bold text-amber-800 dark:text-gold-400 uppercase">Gold 22K (91.6%)</span>
+              <strong className="font-serif text-base text-amber-950 dark:text-gold-300 font-bold block mt-0.5">
+                {formatCurrency(activeRate.gold_22k_per_gram)}/g
+              </strong>
+            </div>
+
+            <div className="rounded-xl bg-white/90 dark:bg-charcoal-800/90 p-3 border border-slate-200 dark:border-charcoal-700 shadow-sm">
+              <span className="block text-[10px] font-bold text-slate-400 uppercase">Gold 18K (75.0%)</span>
+              <strong className="font-serif text-base text-slate-800 dark:text-slate-200 font-bold block mt-0.5">
+                {formatCurrency(activeRate.gold_18k_per_gram)}/g
+              </strong>
+            </div>
+
+            <div className="rounded-xl bg-white/90 dark:bg-charcoal-800/90 p-3 border border-slate-200 dark:border-charcoal-700 shadow-sm">
+              <span className="block text-[10px] font-bold text-slate-400 uppercase">Gold 14K (58.3%)</span>
+              <strong className="font-serif text-base text-slate-800 dark:text-slate-200 font-bold block mt-0.5">
+                {formatCurrency(activeRate.gold_14k_per_gram || Math.round(activeRate.gold_24k_per_gram * 0.5833))}/g
+              </strong>
+            </div>
+
+            <div className="rounded-xl bg-white/90 dark:bg-charcoal-800/90 p-3 border border-slate-200 dark:border-charcoal-700 shadow-sm">
+              <span className="block text-[10px] font-bold text-slate-400 uppercase">Silver 925 / g</span>
+              <strong className="font-serif text-base text-slate-800 dark:text-slate-200 font-bold block mt-0.5">
+                {formatCurrency(activeRate.silver_per_gram)}/g
+              </strong>
+            </div>
+
+            <div className="rounded-xl bg-white/90 dark:bg-charcoal-800/90 p-3 border border-slate-200 dark:border-charcoal-700 shadow-sm">
+              <span className="block text-[10px] font-bold text-slate-400 uppercase">Silver 925 / Kg</span>
+              <strong className="font-serif text-base text-slate-800 dark:text-slate-200 font-bold block mt-0.5">
+                {formatCurrency(activeRate.silver_per_kg)}/kg
+              </strong>
+            </div>
           </div>
         </div>
+      ) : (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-6 text-center text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
+          <p className="font-bold text-sm mb-1">⚠️ No Active Metal Rates Found in Database</p>
+          <p className="text-xs">Click "Fetch Live Market Rates" above or configure shop selling rates below.</p>
+        </div>
+      )}
 
-        <div className="flex items-center gap-4 bg-white/80 dark:bg-charcoal-800/80 px-4 py-2 rounded-xl border border-slate-200 dark:border-charcoal-700">
+      {/* Conversion Formula Info Box */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm text-xs space-y-2">
+        <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-200">
+          <Info className="h-4 w-4 text-gold-600" />
+          <span>Market Rate Unit Conversion & Purity Rules</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-slate-600 dark:text-slate-400">
           <div>
-            <span className="block text-[10px] font-bold text-slate-400 uppercase">Gold 24K</span>
-            <strong className="font-serif text-sm text-gold-600 dark:text-gold-400 font-bold">
-              {formatCurrency(todayRate.gold_24k_per_gram)}/g
-            </strong>
+            • <strong>Troy Ounce Formula:</strong> 1 Troy Ounce = 31.1034768 Grams.<br />
+            • <strong>INR Spot Rate:</strong> <code className="bg-slate-100 dark:bg-charcoal-800 px-1 py-0.5 rounded font-mono text-[11px]">(USD per troy oz × USD to INR) ÷ 31.1034768</code>
           </div>
-          <div className="h-6 w-px bg-slate-200 dark:bg-charcoal-700" />
           <div>
-            <span className="block text-[10px] font-bold text-slate-400 uppercase">Silver 925</span>
-            <strong className="font-serif text-sm text-slate-700 dark:text-slate-200 font-bold">
-              {formatCurrency(todayRate.silver_per_gram)}/g
-            </strong>
+            • <strong>22K (916) Gold:</strong> 24K Rate × 91.6% (0.916)<br />
+            • <strong>18K Gold:</strong> 24K Rate × 75.0% (0.750) • <strong>Silver 925:</strong> Fine Silver × 92.5%
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* METAL RATES ENTRY FORM */}
-        <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* SHOP MANUAL OVERRIDE FORM */}
+        <form
+          onSubmit={handleManualSubmit}
+          className="lg:col-span-5 rounded-2xl border border-slate-200 bg-white p-6 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm space-y-4"
+        >
           <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-charcoal-800">
             <div className="flex items-center gap-2">
-              <Coins className="h-5 w-5 text-gold-600" />
+              <Sliders className="h-5 w-5 text-gold-600" />
               <h3 className="font-serif text-base font-bold text-charcoal-900 dark:text-slate-100">
-                Rate Configuration & Override
+                Shop Selling Rate Override
               </h3>
             </div>
+            <span className="rounded bg-gold-100 dark:bg-gold-950/80 px-2 py-0.5 text-[10px] font-bold text-amber-900 dark:text-gold-300">
+              Manual Override
+            </span>
           </div>
 
-          {/* Rate Source Selector */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Rate Source Mode</label>
-            <div className="grid grid-cols-2 gap-2">
-              <label
-                className={`flex items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-bold cursor-pointer transition-all ${
-                  rateSource === 'automatic'
-                    ? 'border-emerald-500 bg-emerald-50/70 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                    : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-400'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="rateSource"
-                  value="automatic"
-                  checked={rateSource === 'automatic'}
-                  onChange={() => handleSwitchToAutomatic()}
-                  className="sr-only"
-                />
-                <Sparkles className="h-4 w-4 text-emerald-600" />
-                Automatic
-              </label>
-
-              <label
-                className={`flex items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-bold cursor-pointer transition-all ${
-                  rateSource === 'manual'
-                    ? 'border-gold-500 bg-gold-50/70 text-amber-950 dark:border-gold-700 dark:bg-gold-950/40 dark:text-gold-300'
-                    : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-400'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="rateSource"
-                  value="manual"
-                  checked={rateSource === 'manual'}
-                  onChange={() => setRateSource('manual')}
-                  className="sr-only"
-                />
-                <Coins className="h-4 w-4 text-gold-600" />
-                Manual Override
-              </label>
-            </div>
-          </div>
-
-          {/* Effective Date */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Effective Date *</label>
             <input
@@ -216,7 +309,6 @@ export const MetalRates: React.FC = () => {
             />
           </div>
 
-          {/* Gold 24K Rate */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               Gold 24K Rate per Gram (INR) *
@@ -228,17 +320,16 @@ export const MetalRates: React.FC = () => {
                 step="1"
                 required
                 value={gold24kRate}
-                onChange={(e) => handleGold24kChange(Number(e.target.value))}
+                onChange={(e) => setGold24kRate(Number(e.target.value))}
                 placeholder="7450"
                 className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-7 pr-3 text-xs font-bold text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
               />
             </div>
             <span className="mt-1 block text-[11px] text-slate-500">
-              Calculated 22K Equivalent: ₹{Number((gold24kRate * 0.916).toFixed(2))}/g
+              Calculated 22K (916): ₹{Number((gold24kRate * 0.916).toFixed(2))}/g
             </span>
           </div>
 
-          {/* Silver 925 Rate */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               Silver 925 Rate per Gram (INR) *
@@ -250,13 +341,13 @@ export const MetalRates: React.FC = () => {
                 step="0.1"
                 required
                 value={silver925Rate}
-                onChange={(e) => handleSilver925Change(Number(e.target.value))}
+                onChange={(e) => setSilver925Rate(Number(e.target.value))}
                 placeholder="89.5"
                 className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-7 pr-3 text-xs font-bold text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
               />
             </div>
             <span className="mt-1 block text-[11px] text-slate-500">
-              Silver per KG Equivalent: ₹{formatCurrency(silver925Rate * 1000)}/kg
+              Silver per KG: ₹{formatCurrency(silver925Rate * 1000)}/kg
             </span>
           </div>
 
@@ -266,24 +357,25 @@ export const MetalRates: React.FC = () => {
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Official Trichy Market Opening Rate"
+              placeholder="e.g. Shankar Jewellery Counter Selling Rate"
               className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-xs text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-100"
             />
           </div>
 
           <button
             type="submit"
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold-500 py-3 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 transition-all"
+            disabled={isSubmittingManual}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold-500 py-3 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50 transition-all"
           >
-            <Save className="h-4 w-4" /> Save Rates for {effectiveDate}
+            <Save className="h-4 w-4" /> {isSubmittingManual ? 'Saving Rates...' : `Save Rates for ${effectiveDate}`}
           </button>
         </form>
 
-        {/* Rate History Chart & Table */}
-        <div className="lg:col-span-2 space-y-6">
+        {/* RATE HISTORY CHART & SUPABASE AUDIT LOG */}
+        <div className="lg:col-span-7 space-y-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm">
-            <h3 className="font-serif text-lg font-bold text-charcoal-900 dark:text-slate-100 mb-4">
-              Gold 24K Price History Trend
+            <h3 className="font-serif text-base font-bold text-charcoal-900 dark:text-slate-100 mb-4">
+              Gold 24K & 22K Price Trend
             </h3>
             <div className="h-56 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -293,6 +385,7 @@ export const MetalRates: React.FC = () => {
                   <YAxis fontSize={11} domain={['auto', 'auto']} />
                   <Tooltip formatter={(val: any) => formatCurrency(Number(val))} />
                   <Line type="monotone" dataKey="gold24k" stroke="#d4af37" strokeWidth={3} name="Gold 24K / g" />
+                  <Line type="monotone" dataKey="gold22k" stroke="#b8860b" strokeWidth={2} strokeDasharray="4 4" name="Gold 22K (916) / g" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -300,7 +393,7 @@ export const MetalRates: React.FC = () => {
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm">
             <h3 className="font-serif text-base font-bold text-charcoal-900 dark:text-slate-100 mb-3">
-              Metal Rates Audit & Priority Log
+              Supabase Metal Rates Central History
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -308,16 +401,18 @@ export const MetalRates: React.FC = () => {
                   <tr>
                     <th className="p-2.5">Date</th>
                     <th className="p-2.5">Gold 24K</th>
+                    <th className="p-2.5">Gold 22K (916)</th>
                     <th className="p-2.5">Silver 925</th>
-                    <th className="p-2.5">Rate Source</th>
+                    <th className="p-2.5">Source</th>
                     <th className="p-2.5">Notes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
-                  {db.metalRates.map((r) => (
+                  {ratesList.map((r) => (
                     <tr key={r.id}>
                       <td className="p-2.5 font-bold font-mono">{formatDate(r.rate_date)}</td>
-                      <td className="p-2.5 font-bold text-amber-900 dark:text-gold-300">{formatCurrency(r.gold_24k_per_gram)}/g</td>
+                      <td className="p-2.5 font-bold text-gold-600 dark:text-gold-400">{formatCurrency(r.gold_24k_per_gram)}/g</td>
+                      <td className="p-2.5 font-bold text-amber-950 dark:text-gold-300">{formatCurrency(r.gold_22k_per_gram)}/g</td>
                       <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">{formatCurrency(r.silver_per_gram)}/g</td>
                       <td className="p-2.5">
                         <span
@@ -330,7 +425,7 @@ export const MetalRates: React.FC = () => {
                           {r.source || 'manual'}
                         </span>
                       </td>
-                      <td className="p-2.5 text-slate-500 text-[11px]">{r.notes}</td>
+                      <td className="p-2.5 text-slate-500 text-[11px] truncate max-w-[160px]">{r.notes}</td>
                     </tr>
                   ))}
                 </tbody>

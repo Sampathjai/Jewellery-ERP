@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured, getLocalDb, saveLocalDb } from './supabase';
 import { syncEngine } from './syncEngine';
 import {
   Customer,
@@ -706,9 +706,19 @@ export const dataService = {
   // --------------------------------------------------------------------------
   async getMetalRates(): Promise<MetalRate[]> {
     const db = checkSupabaseClient();
-    const { data, error } = await db.from('metal_rates').select('*').order('rate_date', { ascending: false });
-    if (error) return [];
-    return (data || []) as MetalRate[];
+    const { data, error } = await db
+      .from('metal_rates')
+      .select('*')
+      .order('rate_date', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error || !data) {
+      return getLocalDb().metalRates || [];
+    }
+    // Update local cache
+    const localDb = getLocalDb();
+    localDb.metalRates = data as MetalRate[];
+    saveLocalDb(localDb);
+    return data as MetalRate[];
   },
 
   async saveMetalRates(rateData: Partial<MetalRate>): Promise<MetalRate> {
@@ -721,6 +731,7 @@ export const dataService = {
       gold_24k_per_gram: Number(rateData.gold_24k_per_gram || 0),
       gold_22k_per_gram: Number(rateData.gold_22k_per_gram || 0),
       gold_18k_per_gram: Number(rateData.gold_18k_per_gram || 0),
+      gold_14k_per_gram: rateData.gold_14k_per_gram ? Number(rateData.gold_14k_per_gram) : undefined,
       silver_per_gram: Number(rateData.silver_per_gram || 0),
       silver_per_kg: Number(rateData.silver_per_kg || 0),
       source: rateData.source || 'manual',
@@ -728,8 +739,23 @@ export const dataService = {
       created_at: new Date().toISOString(),
     };
 
-    const { data, error } = await db.from('metal_rates').upsert(payload).select().single();
-    if (error) throw new Error(`Metal Rate Save Failed: ${error.message}`);
+    let { data, error } = await db.from('metal_rates').upsert(payload, { onConflict: 'rate_date' }).select().single();
+    if (error) {
+      // Fallback upsert by id if onConflict constraint differs
+      const { data: retryData, error: retryError } = await db.from('metal_rates').upsert(payload).select().single();
+      if (retryError) throw new Error(`Metal Rate Save Failed: ${retryError.message}`);
+      data = retryData;
+    }
+
+    // Update local cache
+    const localDb = getLocalDb();
+    const idx = (localDb.metalRates || []).findIndex((r) => r.rate_date === payload.rate_date);
+    if (idx > -1) {
+      localDb.metalRates[idx] = data as MetalRate;
+    } else {
+      localDb.metalRates = [data as MetalRate, ...(localDb.metalRates || [])];
+    }
+    saveLocalDb(localDb);
 
     syncEngine.notifyDataChange('metal_rates', 'UPDATE', data);
     return data as MetalRate;

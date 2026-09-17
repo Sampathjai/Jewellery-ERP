@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { BarcodeScannerModal } from '@/components/common/BarcodeScannerModal';
 import { dataService, ensureValidUUID } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
-import { Product, Customer, RetailInvoiceItem, RetailInvoice, BusinessSettings } from '@/types';
+import { Product, Customer, RetailInvoiceItem, RetailInvoice, BusinessSettings, MetalRate } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import { generateRetailInvoicePDF } from '@/lib/pdfGenerator';
 import { ShoppingCart, Search, Plus, Trash2, Printer, Barcode, UserCheck, Percent, Sliders, ShieldCheck } from 'lucide-react';
@@ -14,18 +14,27 @@ export const RetailPOS: React.FC = () => {
   const [customersList, setCustomersList] = useState<Customer[]>([]);
   const [productsList, setProductsList] = useState<Product[]>([]);
   const [settings, setSettings] = useState<BusinessSettings | null>(null);
-  const todayRate = { gold_24k_per_gram: 7450, gold_22k_per_gram: 6830, silver_per_gram: 89.5 };
+  const [metalRate, setMetalRate] = useState<MetalRate | null>(null);
 
   const loadPosData = useCallback(async () => {
     try {
-      const [cData, pData, sData] = await Promise.all([
+      const [cData, pData, sData, rData] = await Promise.all([
         dataService.getCustomers(),
         dataService.getProducts(),
         dataService.getBusinessSettings(),
+        dataService.getMetalRates(),
       ]);
       setCustomersList(cData);
       setProductsList(pData);
       setSettings(sData);
+
+      if (rData && rData.length > 0) {
+        const topRate = rData[0];
+        setMetalRate(topRate);
+        setManualGoldRate(topRate.gold_24k_per_gram);
+        setManualSilverRate(topRate.silver_per_gram);
+      }
+
       if (cData.length > 0 && !selectedCustomerId) {
         setSelectedCustomerId(cData[0].id);
       }
@@ -37,7 +46,7 @@ export const RetailPOS: React.FC = () => {
   useEffect(() => {
     loadPosData();
     const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
-      if (tableName === 'customers' || tableName === 'products' || tableName === 'general') {
+      if (tableName === 'customers' || tableName === 'products' || tableName === 'metal_rates' || tableName === 'general') {
         loadPosData();
       }
     });
@@ -51,8 +60,8 @@ export const RetailPOS: React.FC = () => {
   const [scannerOpen, setScannerOpen] = useState(false);
 
   // Customer-Wise Manual Billing Adjustments
-  const [manualGoldRate, setManualGoldRate] = useState<number>(todayRate.gold_24k_per_gram || 7450);
-  const [manualSilverRate, setManualSilverRate] = useState<number>(todayRate.silver_per_gram || 89.5);
+  const [manualGoldRate, setManualGoldRate] = useState<number>(7450);
+  const [manualSilverRate, setManualSilverRate] = useState<number>(89.5);
   const [manualWastageVal, setManualWastageVal] = useState<number>(0);
   const [manualWastageUnit, setManualWastageUnit] = useState<'percent' | 'grams'>('percent');
   const [manualSetharamVal, setManualSetharamVal] = useState<number>(0); // சேதாரம்

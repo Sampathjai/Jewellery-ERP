@@ -109,6 +109,7 @@ export interface MetalRate {
   gold_24k_per_gram: number;
   gold_22k_per_gram: number;
   gold_18k_per_gram: number;
+  gold_14k_per_gram?: number;
   silver_per_gram: number;
   silver_per_kg: number;
   source?: string;

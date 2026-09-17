@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
 import { Customer, WholesaleIssue, WholesalePayment } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import { useLanguage } from '@/lib/i18n';
@@ -22,13 +23,20 @@ export const RecordWholesalePaymentModal: React.FC<RecordWholesalePaymentModalPr
   onPaymentRecorded,
 }) => {
   const { t, language } = useLanguage();
-  const db = getLocalDb();
-  const todayRate = db.metalRates[0]?.gold_22k_per_gram || 6830;
-
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'gold_916' | 'split'>('cash');
   const [cashAmount, setCashAmount] = useState<number>(20000);
   const [goldWeightG, setGoldWeightG] = useState<number>(2.0);
-  const [goldRate, setGoldRate] = useState<number>(todayRate);
+  const [goldRate, setGoldRate] = useState<number>(6830);
+
+  useEffect(() => {
+    if (isOpen) {
+      dataService.getMetalRates().then((rates) => {
+        if (rates && rates.length > 0) {
+          setGoldRate(rates[0].gold_22k_per_gram || 6830);
+        }
+      });
+    }
+  }, [isOpen]);
   const [referenceNumber, setReferenceNumber] = useState('NEFT/891237');
   const [notes, setNotes] = useState('Payment settlement received');
 
@@ -45,6 +53,7 @@ export const RecordWholesalePaymentModal: React.FC<RecordWholesalePaymentModalPr
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const db = getLocalDb();
 
     const newPayment: WholesalePayment = {
       id: `wpay-${Date.now()}`,
