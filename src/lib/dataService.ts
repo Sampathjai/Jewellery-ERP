@@ -25,6 +25,7 @@ import {
   UserRole,
   AuditLog,
   NotificationItem,
+  WhatsAppMessage,
 } from '@/types';
 
 // ============================================================================
@@ -209,30 +210,61 @@ export const dataService = {
     return result;
   },
 
-  async deleteCustomer(id: string): Promise<boolean> {
+  async deleteCustomer(id: string): Promise<{ success: boolean; softDeleted: boolean; message: string }> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(id);
 
-    const { error } = await db.from('customers').delete().eq('id', validId);
+    const [retailRef, wholesaleRef] = await Promise.all([
+      db.from('retail_invoices').select('id').eq('customer_id', validId).limit(1),
+      db.from('wholesale_issues').select('id').eq('customer_id', validId).limit(1),
+    ]);
 
-    if (error) {
-      console.error('Failed to delete customer in Supabase:', error.message);
-      throw new Error(`Customer Delete Failed: ${error.message}`);
+    const isReferenced = (retailRef.data && retailRef.data.length > 0) ||
+                         (wholesaleRef.data && wholesaleRef.data.length > 0);
+
+    let softDeleted = false;
+    if (isReferenced) {
+      const { error } = await db.from('customers').update({ is_active: false }).eq('id', validId);
+      if (error) {
+        console.error('Failed to deactivate customer in Supabase:', error.message);
+        throw new Error(`Customer Deactivation Failed: ${error.message}`);
+      }
+      softDeleted = true;
+    } else {
+      const { error } = await db.from('customers').delete().eq('id', validId);
+      if (error) {
+        console.error('Failed to delete customer in Supabase:', error.message);
+        throw new Error(`Customer Delete Failed: ${error.message}`);
+      }
     }
 
+    await this.logAuditAction(
+      softDeleted ? 'deactivate_customer' : 'delete_customer',
+      'customer',
+      validId,
+      { softDeleted }
+    );
+
     syncEngine.notifyDataChange('customers', 'DELETE', { id: validId });
-    return true;
+    return {
+      success: true,
+      softDeleted,
+      message: softDeleted
+        ? 'Customer has historical transaction records; safely archived to protect CRM & accounting ledger history.'
+        : 'Customer permanently deleted.',
+    };
   },
 
   // --------------------------------------------------------------------------
   // PRODUCTS & STOCK
   // --------------------------------------------------------------------------
-  async getProducts(): Promise<Product[]> {
+  async getProducts(includeArchived: boolean = false): Promise<Product[]> {
     const db = checkSupabaseClient();
-    const { data, error } = await db
-      .from('products')
-      .select('*')
-      .order('created_at', { ascending: false });
+    let query = db.from('products').select('*');
+    if (!includeArchived) {
+      query = query.neq('status', 'archived');
+    }
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
       console.error('Failed to fetch products from Supabase:', error.message);
@@ -363,19 +395,51 @@ export const dataService = {
     return result;
   },
 
-  async deleteProduct(id: string): Promise<boolean> {
+  async deleteProduct(id: string): Promise<{ success: boolean; softDeleted: boolean; message: string }> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(id);
 
-    const { error } = await db.from('products').delete().eq('id', validId);
+    const [retailRef, wholesaleRef, movementRef] = await Promise.all([
+      db.from('retail_invoice_items').select('id').eq('product_id', validId).limit(1),
+      db.from('wholesale_issue_items').select('id').eq('product_id', validId).limit(1),
+      db.from('inventory_movements').select('id').eq('product_id', validId).limit(1),
+    ]);
 
-    if (error) {
-      console.error('Failed to delete product in Supabase:', error.message);
-      throw new Error(`Product Delete Failed: ${error.message}`);
+    const isReferenced = (retailRef.data && retailRef.data.length > 0) ||
+                         (wholesaleRef.data && wholesaleRef.data.length > 0) ||
+                         (movementRef.data && movementRef.data.length > 0);
+
+    let softDeleted = false;
+    if (isReferenced) {
+      const { error } = await db.from('products').update({ status: 'archived' }).eq('id', validId);
+      if (error) {
+        console.error('Failed to archive product in Supabase:', error.message);
+        throw new Error(`Product Archive Failed: ${error.message}`);
+      }
+      softDeleted = true;
+    } else {
+      const { error } = await db.from('products').delete().eq('id', validId);
+      if (error) {
+        console.error('Failed to delete product in Supabase:', error.message);
+        throw new Error(`Product Delete Failed: ${error.message}`);
+      }
     }
 
+    await this.logAuditAction(
+      softDeleted ? 'archive_product' : 'delete_product',
+      'product',
+      validId,
+      { softDeleted }
+    );
+
     syncEngine.notifyDataChange('products', 'DELETE', { id: validId });
-    return true;
+    return {
+      success: true,
+      softDeleted,
+      message: softDeleted
+        ? 'Product has historical billing records; safely archived to protect tax & accounting history.'
+        : 'Product permanently deleted.',
+    };
   },
 
   // --------------------------------------------------------------------------
@@ -497,6 +561,22 @@ export const dataService = {
     const custName = (invoiceData.customer_name || '').trim() || 'Walk-in Customer';
     const custPhone = (invoiceData.customer_phone || '').trim();
 
+    // Stock Validation Guard
+    if (invoiceData.items && invoiceData.items.length > 0) {
+      for (const item of invoiceData.items) {
+        if (!item.product_id) continue;
+        const validProdId = ensureValidUUID(item.product_id);
+        const { data: prodData } = await db.from('products').select('name, quantity').eq('id', validProdId).maybeSingle();
+        if (prodData) {
+          const availQty = prodData.quantity ?? 0;
+          const reqQty = Number(item.quantity || 1);
+          if (reqQty > availQty) {
+            throw new Error(`Insufficient stock for "${prodData.name}". Available: ${availQty} Pcs, Requested: ${reqQty} Pcs.`);
+          }
+        }
+      }
+    }
+
     const basePayload: Partial<RetailInvoice> = {
       id: validId,
       customer_id: validCustomerId,
@@ -607,6 +687,34 @@ export const dataService = {
       } catch (e) {
         console.warn('Items insert warning:', e);
       }
+
+      // Perform stock deduction & inventory movement logging
+      for (const item of invoiceData.items) {
+        if (!item.product_id) continue;
+        const validProdId = ensureValidUUID(item.product_id);
+        const reqQty = Number(item.quantity || 1);
+
+        try {
+          const { data: prodData } = await db.from('products').select('quantity, status').eq('id', validProdId).maybeSingle();
+          if (prodData) {
+            const currentQty = prodData.quantity ?? 0;
+            const newQty = Math.max(0, currentQty - reqQty);
+            const newStatus = newQty === 0 ? 'sold' : prodData.status;
+            await db.from('products').update({ quantity: newQty, status: newStatus }).eq('id', validProdId);
+
+            await this.createInventoryMovement({
+              product_id: validProdId,
+              product_name: item.product_name_snapshot || 'Retail Item',
+              movement_type: 'retail_sale',
+              quantity_change: -reqQty,
+              weight_change_g: -Number(((item.net_weight_g || 0) * reqQty).toFixed(3)),
+              notes: `Stock deducted for Retail Invoice #${savedInv.invoice_number}`,
+            });
+          }
+        } catch (e) {
+          console.warn('Stock deduction error:', e);
+        }
+      }
     }
 
     const resultInvoice: RetailInvoice = {
@@ -616,8 +724,83 @@ export const dataService = {
       items: invoiceData.items || [],
     };
 
+    await this.logAuditAction(
+      'create_retail_invoice',
+      'retail_invoice',
+      validId,
+      { invoice_number: savedInv.invoice_number, total_amount: savedInv.total_amount, customer_name: custName }
+    );
+
     syncEngine.notifyDataChange('retail_invoices', 'INSERT', resultInvoice);
+    syncEngine.notifyDataChange('products', 'UPDATE', { id: validId });
     return resultInvoice;
+  },
+
+  async deleteRetailInvoice(id: string): Promise<boolean> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(id);
+
+    const { data: invData } = await db
+      .from('retail_invoices')
+      .select('*, items:retail_invoice_items(*)')
+      .eq('id', validId)
+      .maybeSingle();
+
+    if (!invData) {
+      throw new Error(`Retail Invoice #${id} not found.`);
+    }
+
+    const invNumber = invData.invoice_number || id;
+
+    // Reverse Stock Quantity
+    if (invData.items && invData.items.length > 0) {
+      for (const item of invData.items) {
+        if (!item.product_id) continue;
+        const validProdId = ensureValidUUID(item.product_id);
+        const returnQty = Number(item.quantity || 1);
+
+        try {
+          const { data: prodData } = await db.from('products').select('quantity, status').eq('id', validProdId).maybeSingle();
+          if (prodData) {
+            const currentQty = prodData.quantity ?? 0;
+            const restoredQty = currentQty + returnQty;
+            const restoredStatus = prodData.status === 'sold' ? 'in_stock' : prodData.status;
+            await db.from('products').update({ quantity: restoredQty, status: restoredStatus }).eq('id', validProdId);
+
+            await this.createInventoryMovement({
+              product_id: validProdId,
+              product_name: item.product_name_snapshot || 'Retail Item',
+              movement_type: 'cancellation',
+              quantity_change: returnQty,
+              weight_change_g: Number(((item.net_weight_g || 0) * returnQty).toFixed(3)),
+              notes: `Restored stock from deleted Retail Invoice #${invNumber}`,
+            });
+          }
+        } catch (e) {
+          console.warn('Stock reversal warning:', e);
+        }
+      }
+    }
+
+    await db.from('retail_invoice_items').delete().eq('invoice_id', validId);
+    await db.from('retail_payments').delete().eq('invoice_id', validId);
+    const { error } = await db.from('retail_invoices').delete().eq('id', validId);
+
+    if (error) {
+      console.error('Failed to delete retail invoice from Supabase:', error.message);
+      throw formatDbError('Delete Retail Invoice Failed', error);
+    }
+
+    await this.logAuditAction(
+      'delete_retail_invoice',
+      'retail_invoice',
+      validId,
+      { invoice_number: invNumber, total_amount: invData.total_amount }
+    );
+
+    syncEngine.notifyDataChange('retail_invoices', 'DELETE', { id: validId });
+    syncEngine.notifyDataChange('products', 'UPDATE', { id: validId });
+    return true;
   },
 
   async getRetailPayments(): Promise<RetailPayment[]> {
@@ -676,6 +859,22 @@ export const dataService = {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(issueData.id);
     const validCustomerId = ensureValidUUID(issueData.customer_id);
+
+    // Stock Validation Guard
+    if (issueData.items && issueData.items.length > 0) {
+      for (const item of issueData.items) {
+        if (!item.product_id) continue;
+        const validProdId = ensureValidUUID(item.product_id);
+        const { data: prodData } = await db.from('products').select('name, quantity').eq('id', validProdId).maybeSingle();
+        if (prodData) {
+          const availQty = prodData.quantity ?? 0;
+          const reqQty = Number(item.quantity_issued || 1);
+          if (reqQty > availQty) {
+            throw new Error(`Insufficient stock for "${prodData.name}". Available: ${availQty} Pcs, Requested: ${reqQty} Pcs.`);
+          }
+        }
+      }
+    }
 
     let issueNumber = issueData.issue_number;
     if (!issueNumber) {
@@ -755,6 +954,34 @@ export const dataService = {
       } else if (itemsData) {
         insertedItems.push(...(itemsData as WholesaleIssueItem[]));
       }
+
+      // Perform stock deduction & inventory movement logging
+      for (const item of issueData.items) {
+        if (!item.product_id) continue;
+        const validProdId = ensureValidUUID(item.product_id);
+        const reqQty = Number(item.quantity_issued || 1);
+
+        try {
+          const { data: prodData } = await db.from('products').select('quantity, status').eq('id', validProdId).maybeSingle();
+          if (prodData) {
+            const currentQty = prodData.quantity ?? 0;
+            const newQty = Math.max(0, currentQty - reqQty);
+            const newStatus = newQty === 0 ? 'wholesale_issued' : prodData.status;
+            await db.from('products').update({ quantity: newQty, status: newStatus }).eq('id', validProdId);
+
+            await this.createInventoryMovement({
+              product_id: validProdId,
+              product_name: item.product_name || 'Wholesale Item',
+              movement_type: 'wholesale_issue',
+              quantity_change: -reqQty,
+              weight_change_g: -Number(((item.net_weight_g || 0) * reqQty).toFixed(3)),
+              notes: `Stock deducted for Wholesale Consignment #${issueNumber}`,
+            });
+          }
+        } catch (e) {
+          console.warn('Stock deduction error:', e);
+        }
+      }
     }
 
     const result = {
@@ -762,13 +989,90 @@ export const dataService = {
       items: insertedItems.length > 0 ? insertedItems : (issueData.items || []),
     } as WholesaleIssue;
 
+    await this.logAuditAction(
+      'create_wholesale_issue',
+      'wholesale_issue',
+      validId,
+      { issue_number: issueNumber, customer_name: issueData.customer_name, valuation: issueData.total_valuation_amount }
+    );
+
     const localDb = getLocalDb();
     if (!localDb.wholesaleIssues) localDb.wholesaleIssues = [];
     localDb.wholesaleIssues.unshift(result);
     saveLocalDb(localDb);
 
     syncEngine.notifyDataChange('wholesale_issues', 'INSERT', result);
+    syncEngine.notifyDataChange('products', 'UPDATE', { id: validId });
     return result;
+  },
+
+  async deleteWholesaleIssue(id: string): Promise<boolean> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(id);
+
+    const { data: issueData } = await db
+      .from('wholesale_issues')
+      .select('*, items:wholesale_issue_items(*)')
+      .eq('id', validId)
+      .maybeSingle();
+
+    if (!issueData) {
+      throw new Error(`Wholesale Consignment #${id} not found.`);
+    }
+
+    const issueNum = issueData.issue_number || id;
+
+    // Stock Reversal for unreturned items
+    if (issueData.items && issueData.items.length > 0) {
+      for (const item of issueData.items) {
+        if (!item.product_id) continue;
+        const validProdId = ensureValidUUID(item.product_id);
+        const returnQty = Number(item.quantity_remaining ?? item.quantity_issued ?? 1);
+
+        if (returnQty > 0) {
+          try {
+            const { data: prodData } = await db.from('products').select('quantity, status').eq('id', validProdId).maybeSingle();
+            if (prodData) {
+              const currentQty = prodData.quantity ?? 0;
+              const restoredQty = currentQty + returnQty;
+              const restoredStatus = prodData.status === 'wholesale_issued' ? 'in_stock' : prodData.status;
+              await db.from('products').update({ quantity: restoredQty, status: restoredStatus }).eq('id', validProdId);
+
+              await this.createInventoryMovement({
+                product_id: validProdId,
+                product_name: item.product_name || 'Wholesale Consignment Item',
+                movement_type: 'cancellation',
+                quantity_change: returnQty,
+                weight_change_g: Number(((item.net_weight_g || 0) * returnQty).toFixed(3)),
+                notes: `Restored stock from deleted Wholesale Consignment #${issueNum}`,
+              });
+            }
+          } catch (e) {
+            console.warn('Wholesale stock reversal warning:', e);
+          }
+        }
+      }
+    }
+
+    await db.from('wholesale_issue_items').delete().eq('issue_id', validId);
+    await db.from('wholesale_payments').delete().eq('issue_id', validId);
+    const { error } = await db.from('wholesale_issues').delete().eq('id', validId);
+
+    if (error) {
+      console.error('Failed to delete wholesale issue from Supabase:', error.message);
+      throw formatDbError('Delete Wholesale Consignment Failed', error);
+    }
+
+    await this.logAuditAction(
+      'delete_wholesale_issue',
+      'wholesale_issue',
+      validId,
+      { issue_number: issueNum, customer_name: issueData.customer_name }
+    );
+
+    syncEngine.notifyDataChange('wholesale_issues', 'DELETE', { id: validId });
+    syncEngine.notifyDataChange('products', 'UPDATE', { id: validId });
+    return true;
   },
 
   async getWholesaleReturns(): Promise<WholesaleReturn[]> {
@@ -1139,46 +1443,170 @@ export const dataService = {
     const localDb = getLocalDb();
     try {
       const db = checkSupabaseClient();
-      const { data, error } = await db.from('business_settings').select('*').limit(1).single();
-      if (error || !data) {
-        return localDb.settings || null;
+      const { data, error } = await db.from('business_settings').select('*').limit(1);
+      if (!error && data && data.length > 0) {
+        const settingsObj = data[0] as BusinessSettings;
+        localDb.settings = settingsObj;
+        saveLocalDb(localDb);
+        return settingsObj;
       }
-      localDb.settings = data as BusinessSettings;
-      saveLocalDb(localDb);
-      return data as BusinessSettings;
-    } catch {
-      return localDb.settings || null;
+    } catch (e) {
+      console.warn('Could not fetch business_settings from Supabase:', e);
     }
+    return localDb.settings || null;
   },
 
   async saveBusinessSettings(settings: Partial<BusinessSettings>): Promise<BusinessSettings> {
     const localDb = getLocalDb();
-    const updatedSettings = {
+    const existingObj = await this.getBusinessSettings();
+    const targetId = existingObj?.id || localDb.settings?.id || '00000000-0000-0000-0000-000000000001';
+
+    const updatedSettings: BusinessSettings = {
       ...localDb.settings,
       ...settings,
+      id: targetId,
       updated_at: new Date().toISOString(),
-    } as BusinessSettings;
+    };
 
-    if (!updatedSettings.id) {
-      updatedSettings.id = ensureValidUUID();
+    const db = checkSupabaseClient();
+    const { data, error } = await db
+      .from('business_settings')
+      .upsert(updatedSettings)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to save business_settings in Supabase:', error.message);
+      throw formatDbError('Shop Settings Save Failed', error);
     }
+
+    const result = (data || updatedSettings) as BusinessSettings;
+    localDb.settings = result;
+    saveLocalDb(localDb, 'settings', 'UPDATE', result);
+    syncEngine.notifyDataChange('business_settings', 'UPDATE', result);
+
+    await this.logAuditAction(
+      'update_settings',
+      'business_settings',
+      result.id,
+      { shop_name: result.shop_name, phone: result.phone, gstin: result.gstin }
+    );
+
+    return result;
+  },
+
+  // --------------------------------------------------------------------------
+  // AUDIT LOGS & WHATSAPP LOGS
+  // --------------------------------------------------------------------------
+  async getAuditLogs(): Promise<AuditLog[]> {
+    try {
+      const db = checkSupabaseClient();
+      const { data, error } = await db
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        return data as AuditLog[];
+      }
+    } catch (e) {
+      console.warn('Could not fetch audit_logs from Supabase:', e);
+    }
+    const localDb = getLocalDb();
+    return localDb.auditLogs || [];
+  },
+
+  async logAuditAction(
+    action: string,
+    entityType: string,
+    entityId?: string,
+    details?: Record<string, any>,
+    userName?: string
+  ): Promise<AuditLog> {
+    const validId = ensureValidUUID();
+    let currentUser = userName;
+    if (!currentUser && typeof localStorage !== 'undefined') {
+      try {
+        const u = JSON.parse(localStorage.getItem('sampath_auth_user') || '{}');
+        currentUser = u.full_name || u.email || 'Admin User';
+      } catch {
+        currentUser = 'Admin User';
+      }
+    }
+
+    const payload: AuditLog = {
+      id: validId,
+      user_name: currentUser || 'System User',
+      action,
+      entity_type: entityType,
+      entity_id: entityId || '',
+      details: details || {},
+      created_at: new Date().toISOString(),
+    };
 
     try {
       const db = checkSupabaseClient();
-      const { data, error } = await db.from('business_settings').upsert(updatedSettings).select().single();
-      if (error) {
-        console.warn('Supabase business_settings save error, updated localDb cache:', error.message);
-      } else if (data) {
-        localDb.settings = data as BusinessSettings;
-      }
-    } catch (err: any) {
-      console.warn('Supabase client error saving settings, updated localDb:', err?.message || err);
+      await db.from('audit_logs').insert(payload);
+    } catch (e) {
+      console.warn('Audit log insert warning:', e);
     }
 
-    localDb.settings = updatedSettings;
-    saveLocalDb(localDb, 'settings', 'UPDATE', updatedSettings);
-    syncEngine.notifyDataChange('business_settings', 'UPDATE', updatedSettings);
-    return updatedSettings;
+    const localDb = getLocalDb();
+    if (!localDb.auditLogs) localDb.auditLogs = [];
+    localDb.auditLogs.unshift(payload);
+    saveLocalDb(localDb);
+
+    syncEngine.notifyDataChange('audit_logs', 'INSERT', payload);
+    return payload;
+  },
+
+  async getWhatsAppLogs(): Promise<WhatsAppMessage[]> {
+    try {
+      const db = checkSupabaseClient();
+      const { data, error } = await db
+        .from('whatsapp_logs')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        return data as WhatsAppMessage[];
+      }
+    } catch (e) {
+      console.warn('Could not fetch whatsapp_logs from Supabase:', e);
+    }
+    const localDb = getLocalDb();
+    return (localDb as any).whatsAppLogs || [];
+  },
+
+  async logWhatsAppMessage(logData: Partial<WhatsAppMessage>): Promise<WhatsAppMessage> {
+    const validId = ensureValidUUID(logData.id);
+    const payload: WhatsAppMessage = {
+      id: validId,
+      message_id: logData.message_id || `WAM-${Date.now()}`,
+      customer_name: logData.customer_name || 'Customer',
+      phone: logData.phone || '',
+      template_type: logData.template_type || 'invoice',
+      message_body: logData.message_body || '',
+      status: logData.status || 'sent',
+      failure_reason: logData.failure_reason,
+      sent_at: logData.sent_at || new Date().toISOString(),
+      delivered_at: logData.delivered_at,
+      read_at: logData.read_at,
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      const db = checkSupabaseClient();
+      await db.from('whatsapp_logs').insert(payload);
+    } catch (e) {
+      console.warn('WhatsApp log insert warning:', e);
+    }
+
+    const localDb = getLocalDb();
+    if (!(localDb as any).whatsAppLogs) (localDb as any).whatsAppLogs = [];
+    (localDb as any).whatsAppLogs.unshift(payload);
+    saveLocalDb(localDb);
+
+    syncEngine.notifyDataChange('whatsapp_logs', 'INSERT', payload);
+    return payload;
   },
 
   // --------------------------------------------------------------------------

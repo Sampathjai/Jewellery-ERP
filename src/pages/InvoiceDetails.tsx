@@ -66,17 +66,32 @@ export const InvoiceDetails: React.FC = () => {
     }
   };
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteInvoice = async () => {
+    if (!invoice) return;
+    setIsDeleting(true);
+    try {
+      await dataService.deleteRetailInvoice(invoice.id);
+      navigate('/invoices');
+    } catch (err: any) {
+      alert(`Delete Invoice Failed: ${err?.message || 'Error deleting invoice'}`);
+      setIsDeleting(false);
+    }
+  };
+
   if (isLoading) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gold-500" />
+      <div className="p-12 text-center text-slate-500 font-bold">
+        Loading invoice details...
       </div>
     );
   }
 
   if (!invoice) {
     return (
-      <div className="p-8 text-center">
+      <div className="p-12 text-center">
         <p className="text-slate-500 font-bold text-sm">Invoice record not found.</p>
         <button
           onClick={() => navigate('/invoices')}
@@ -116,9 +131,44 @@ export const InvoiceDetails: React.FC = () => {
             >
               <MessageSquare className="h-4 w-4" /> WhatsApp Invoice
             </button>
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="flex items-center gap-1 rounded-xl bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700"
+            >
+              Delete Invoice
+            </button>
           </div>
         }
       />
+
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-charcoal-900 border border-slate-200 dark:border-charcoal-800">
+            <h3 className="font-serif text-lg font-bold text-red-600 mb-2">
+              Delete Invoice {invoice.invoice_number}?
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mb-4">
+              Are you sure you want to delete this invoice ({formatCurrency(invoice.total_amount)})? This will automatically restore sold quantities back to inventory stock.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeleting}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteInvoice}
+                disabled={isDeleting}
+                className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700"
+              >
+                {isDeleting ? 'Deleting...' : 'Confirm Delete & Restore Stock'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Invoice Document Box */}
       <div className="rounded-2xl border border-slate-200 bg-white p-8 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-lg space-y-6 max-w-4xl mx-auto">

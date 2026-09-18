@@ -231,10 +231,6 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Controls Section: Desktop Only */}
       <div className="hidden sm:flex items-center gap-2 sm:gap-2.5 shrink-0">
-        {/* Dynamic Welcome Back Banner */}
-        <div className="hidden lg:flex items-center gap-1 text-xs font-semibold text-charcoal-900 dark:text-slate-100 whitespace-nowrap">
-          <span>Welcome back, <strong className="font-bold text-amber-900 dark:text-gold-300">{displayName}</strong> 👋</span>
-        </div>
 
         {/* ENG / தமிழ் Language Toggle Button */}
         <button

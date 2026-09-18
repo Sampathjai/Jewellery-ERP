@@ -72,10 +72,16 @@ export const ProductsList: React.FC = () => {
 
   const handleDeleteProduct = async () => {
     if (!deletingProduct) return;
-    await dataService.deleteProduct(deletingProduct.id);
-    await loadProducts();
-    showToast(`Product "${deletingProduct.name}" deleted successfully.`);
-    setDeletingProduct(null);
+    try {
+      const res = await dataService.deleteProduct(deletingProduct.id);
+      await loadProducts();
+      showToast(res.message || `Product "${deletingProduct.name}" deleted successfully.`);
+    } catch (err: any) {
+      console.error('Error deleting product:', err);
+      showToast(`Error: ${err?.message || 'Failed to delete product.'}`);
+    } finally {
+      setDeletingProduct(null);
+    }
   };
 
   return (

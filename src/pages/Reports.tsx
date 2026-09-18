@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getLocalDb } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
+import { syncEngine } from '@/lib/syncEngine';
 import { formatCurrency, formatWeight, formatDate } from '@/lib/utils';
 import { MetalBadge } from '@/components/common/MetalBadge';
+import { RetailInvoice, Purchase, WholesaleIssue, WholesalePayment, Expense, Product, Customer } from '@/types';
 import {
   BarChart,
   Bar,
@@ -34,24 +36,70 @@ import {
   Truck,
   Receipt,
   Scale,
+  ShieldCheck,
+  FileText,
 } from 'lucide-react';
 
-export type DateFilterType = 'today' | 'this_week' | 'this_month' | 'last_month' | 'this_year' | 'custom';
+export type DateFilterType =
+  | 'today'
+  | 'this_week'
+  | 'this_month'
+  | 'last_month'
+  | 'this_year'
+  | 'fy_2025_26'
+  | 'fy_2024_25'
+  | 'custom';
 
 export const Reports: React.FC = () => {
-  const db = getLocalDb();
   const [reportType, setReportType] = useState<string>('overview');
   const [dateFilter, setDateFilter] = useState<DateFilterType>('this_month');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
 
-  const rawInvoices = db.retailInvoices || [];
-  const rawPurchases = db.purchases || [];
-  const rawWholesaleIssues = db.wholesaleIssues || [];
-  const rawWholesalePayments = db.wholesalePayments || [];
-  const rawExpenses = db.expenses || [];
-  const products = db.products || [];
-  const wholesaleCustomers = db.customers.filter((c) => c.customer_type === 'wholesale');
+  const [rawInvoices, setRawInvoices] = useState<RetailInvoice[]>([]);
+  const [rawPurchases, setRawPurchases] = useState<Purchase[]>([]);
+  const [rawWholesaleIssues, setRawWholesaleIssues] = useState<WholesaleIssue[]>([]);
+  const [rawWholesalePayments, setRawWholesalePayments] = useState<WholesalePayment[]>([]);
+  const [rawExpenses, setRawExpenses] = useState<Expense[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [invs, purchs, issues, payms, exps, prods, custs] = await Promise.all([
+        dataService.getRetailInvoices(),
+        dataService.getPurchases(),
+        dataService.getWholesaleIssues(),
+        dataService.getWholesalePayments(),
+        dataService.getExpenses(),
+        dataService.getProducts(),
+        dataService.getCustomers(),
+      ]);
+      setRawInvoices(invs);
+      setRawPurchases(purchs);
+      setRawWholesaleIssues(issues);
+      setRawWholesalePayments(payms);
+      setRawExpenses(exps);
+      setProducts(prods);
+      setCustomers(custs);
+    } catch (e) {
+      console.error('Failed to load live reports data:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+    const unsubscribe = syncEngine.subscribeDataChange(() => {
+      loadData();
+    });
+    return () => unsubscribe();
+  }, [loadData]);
+
+  const wholesaleCustomers = customers.filter((c) => c.customer_type === 'wholesale');
 
   // Date Filtering Helper
   const isDateInRange = (dateStr: string | undefined): boolean => {
@@ -75,6 +123,16 @@ export const Reports: React.FC = () => {
     }
     if (dateFilter === 'this_year') {
       return itemDate.getFullYear() === now.getFullYear();
+    }
+    if (dateFilter === 'fy_2025_26') {
+      const start = new Date('2025-04-01T00:00:00');
+      const end = new Date('2026-03-31T23:59:59');
+      return itemDate >= start && itemDate <= end;
+    }
+    if (dateFilter === 'fy_2024_25') {
+      const start = new Date('2024-04-01T00:00:00');
+      const end = new Date('2025-03-31T23:59:59');
+      return itemDate >= start && itemDate <= end;
     }
     if (dateFilter === 'custom') {
       if (!customStartDate && !customEndDate) return true;
@@ -132,8 +190,16 @@ export const Reports: React.FC = () => {
   const totalExpenses = expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
   const netSalesRevenue = totalRetailSales - totalExpenses;
 
+  // Indian Accounting & Tax Summaries
+  const grossTurnover = totalRetailSales + totalWholesalePaymentsReceived;
+  const cogsPurchases = totalPurchaseCost;
+  const grossProfit = grossTurnover - cogsPurchases;
+  const netProfitBeforeTax = grossProfit - totalExpenses;
+  const outputGstEstimated = grossTurnover * 0.03; // 3% GST on jewellery sales
+  const inputGstEstimated = totalPurchaseCost * 0.03; // 3% Input Tax Credit
+  const netGstPayable = Math.max(0, outputGstEstimated - inputGstEstimated);
+
   // Chart Dataset Generators
-  // 1. Purchase Trend Data (Date vs Purchase Cost ₹)
   const purchaseMap = new Map<string, { date: string; goldCost: number; silverCost: number; totalCost: number }>();
   purchases.forEach((p) => {
     const d = p.purchase_date;
@@ -147,7 +213,6 @@ export const Reports: React.FC = () => {
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
 
-  // 2. Purchase Weight Data (Date vs Gold g / Silver g)
   const purchaseWeightMap = new Map<string, { date: string; goldGrams: number; silverGrams: number }>();
   purchases.forEach((p) => {
     const d = p.purchase_date;
@@ -160,7 +225,6 @@ export const Reports: React.FC = () => {
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
 
-  // 3. Retail Sales Trend Data (Date vs Sales ₹)
   const salesMap = new Map<string, { date: string; sales: number; invoicesCount: number }>();
   retailInvoices.forEach((inv) => {
     const d = inv.invoice_date;
@@ -173,14 +237,12 @@ export const Reports: React.FC = () => {
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
 
-  // 4. Supplier Purchase Share Data
   const supplierShareMap = new Map<string, number>();
   purchases.forEach((p) => {
     supplierShareMap.set(p.supplier_name, (supplierShareMap.get(p.supplier_name) || 0) + p.total_cost);
   });
   const supplierShareData = Array.from(supplierShareMap.entries()).map(([name, value]) => ({ name, value }));
 
-  // 5. Stock Weight Mix Pie Data
   const stockMixData = [
     { name: '22K/24K Gold Stock', weight: totalGoldStockWeight, value: totalGoldStockValue },
     { name: '925 Silver Stock', weight: totalSilverStockWeight, value: totalSilverStockValue },
@@ -192,7 +254,23 @@ export const Reports: React.FC = () => {
     let rows: string[][] = [];
     let filename = `shankar_jewellery_${reportType}_report.csv`;
 
-    if (reportType === 'sales') {
+    if (reportType === 'tax_accounting') {
+      rows.push(['Shankar Jewellery - Indian Financial Year P&L & Tax Audit']);
+      rows.push(['Period / Filter', dateFilter]);
+      rows.push([]);
+      rows.push(['Metric Description', 'Amount (INR)']);
+      rows.push(['Gross Retail Turnover', String(totalRetailSales)]);
+      rows.push(['Wholesale Settlements Received', String(totalWholesalePaymentsReceived)]);
+      rows.push(['Total Gross Revenue', String(grossTurnover)]);
+      rows.push(['Cost of Goods (Raw Metal Purchases)', String(cogsPurchases)]);
+      rows.push(['Gross Profit', String(grossProfit)]);
+      rows.push(['Operating Expenses', String(totalExpenses)]);
+      rows.push(['Net Profit Before Tax (NPBT)', String(netProfitBeforeTax)]);
+      rows.push([]);
+      rows.push(['Estimated Output GST (3%)', String(outputGstEstimated)]);
+      rows.push(['Estimated Input GST Credit (3%)', String(inputGstEstimated)]);
+      rows.push(['Net GST Payable', String(netGstPayable)]);
+    } else if (reportType === 'sales') {
       rows.push(['Invoice Number', 'Customer Name', 'Date', 'Gross Wt (g)', 'Net Wt (g)', 'Grand Total (INR)']);
       retailInvoices.forEach((inv) => {
         const gross = inv.items?.reduce((sum, item) => sum + (item.gross_weight_g || 0), 0) || 0;
@@ -279,8 +357,8 @@ export const Reports: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Business Reports & Analytics"
-        subtitle="Comprehensive financial, sales, raw metal purchases, wholesale receivables, and stock valuation reports"
+        title="Business Reports & Income Tax Analytics"
+        subtitle="Comprehensive financial, sales, raw metal purchases, Indian Financial Year P&L, GST audit, and stock valuation reports"
         breadcrumb={['Home', 'Reports']}
         actionBtn={
           <div className="flex items-center gap-2">
@@ -305,7 +383,7 @@ export const Reports: React.FC = () => {
         <div className="flex items-center gap-2">
           <Calendar className="h-4 w-4 text-gold-600" />
           <span className="font-bold text-charcoal-900 dark:text-slate-100 uppercase tracking-wider text-[11px]">
-            Analytics Time Horizon Filter:
+            Analytics Horizon Filter:
           </span>
         </div>
 
@@ -316,6 +394,8 @@ export const Reports: React.FC = () => {
             { id: 'this_month', label: 'This Month' },
             { id: 'last_month', label: 'Last Month' },
             { id: 'this_year', label: 'This Year' },
+            { id: 'fy_2025_26', label: 'FY 2025-26 (Apr-Mar)' },
+            { id: 'fy_2024_25', label: 'FY 2024-25 (Apr-Mar)' },
             { id: 'custom', label: 'Custom Range' },
           ].map((f) => (
             <button
@@ -404,11 +484,12 @@ export const Reports: React.FC = () => {
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3 dark:border-charcoal-800 overflow-x-auto">
         {[
           { id: 'overview', label: 'Executive Analytics & Charts' },
-          { id: 'purchases', label: 'Gold & Silver Purchases Report' },
-          { id: 'sales', label: 'Retail Sales Report' },
+          { id: 'tax_accounting', label: 'Tax & Accounting (FY P&L & GST)' },
+          { id: 'purchases', label: 'Gold & Silver Purchases' },
+          { id: 'sales', label: 'Retail Sales' },
           { id: 'inventory', label: 'Stock Valuation Audit' },
-          { id: 'wholesale_pnl', label: 'Wholesale Receivables Ledger' },
-          { id: 'expenses', label: 'Operating Expenses Log' },
+          { id: 'wholesale_pnl', label: 'Wholesale Receivables' },
+          { id: 'expenses', label: 'Operating Expenses' },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -423,6 +504,102 @@ export const Reports: React.FC = () => {
           </button>
         ))}
       </div>
+
+      {/* Tax & Accounting P&L Report Tab */}
+      {reportType === 'tax_accounting' && (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-gold-300/80 bg-white p-6 dark:border-gold-800/40 dark:bg-charcoal-900 shadow-sm space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-charcoal-800">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gold-500/20 text-gold-600 font-bold">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-charcoal-900 dark:text-slate-100">
+                    Indian Financial Year Profit & Loss (P&L) Audit Statement
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Calculated for selected period horizon ({dateFilter}) • Income Tax & GST Compliance Ready
+                  </p>
+                </div>
+              </div>
+              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
+                FY Accounting Ready
+              </span>
+            </div>
+
+            {/* Income & Expenditure Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Income Section */}
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-charcoal-800 dark:bg-charcoal-800/30">
+                <h4 className="font-bold text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-400 border-b border-slate-200 pb-2 dark:border-charcoal-700">
+                  1. Business Income & Revenue
+                </h4>
+                <div className="flex justify-between text-xs py-1">
+                  <span className="text-slate-600 dark:text-slate-300">Retail Sales Turnover (GST Bills):</span>
+                  <strong className="font-mono text-charcoal-900 dark:text-slate-100">{formatCurrency(totalRetailSales)}</strong>
+                </div>
+                <div className="flex justify-between text-xs py-1">
+                  <span className="text-slate-600 dark:text-slate-300">Wholesale Consignment Realizations:</span>
+                  <strong className="font-mono text-charcoal-900 dark:text-slate-100">{formatCurrency(totalWholesalePaymentsReceived)}</strong>
+                </div>
+                <div className="flex justify-between text-xs pt-2 border-t border-slate-200 font-bold text-emerald-800 dark:text-emerald-300 dark:border-charcoal-700">
+                  <span>Gross Business Revenue (A):</span>
+                  <span className="font-mono text-sm">{formatCurrency(grossTurnover)}</span>
+                </div>
+              </div>
+
+              {/* Expenses & Cost Section */}
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-charcoal-800 dark:bg-charcoal-800/30">
+                <h4 className="font-bold text-xs uppercase tracking-wider text-red-700 dark:text-red-400 border-b border-slate-200 pb-2 dark:border-charcoal-700">
+                  2. Cost of Goods & Operating Outlays
+                </h4>
+                <div className="flex justify-between text-xs py-1">
+                  <span className="text-slate-600 dark:text-slate-300">Raw Gold/Silver Stock Purchases:</span>
+                  <strong className="font-mono text-charcoal-900 dark:text-slate-100">{formatCurrency(cogsPurchases)}</strong>
+                </div>
+                <div className="flex justify-between text-xs py-1">
+                  <span className="text-slate-600 dark:text-slate-300">Operating Expenses (Salary, Rent, Power):</span>
+                  <strong className="font-mono text-charcoal-900 dark:text-slate-100">{formatCurrency(totalExpenses)}</strong>
+                </div>
+                <div className="flex justify-between text-xs pt-2 border-t border-slate-200 font-bold text-red-800 dark:text-red-300 dark:border-charcoal-700">
+                  <span>Total Operational Cost (B):</span>
+                  <span className="font-mono text-sm">{formatCurrency(cogsPurchases + totalExpenses)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Profit Summary & GST Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-xl border border-gold-400 bg-gold-50/60 p-4 dark:border-gold-800 dark:bg-gold-950/40">
+                <span className="text-[11px] font-bold text-amber-900 dark:text-gold-300 uppercase">Gross Profit (Margin)</span>
+                <h4 className="font-serif text-xl font-bold text-amber-950 dark:text-gold-200 mt-1">
+                  {formatCurrency(grossProfit)}
+                </h4>
+                <p className="text-[10px] text-slate-500 mt-0.5">Gross Turnover minus Stock Purchases</p>
+              </div>
+
+              <div className="rounded-xl border border-emerald-400 bg-emerald-50/60 p-4 dark:border-emerald-800 dark:bg-emerald-950/40">
+                <span className="text-[11px] font-bold text-emerald-900 dark:text-emerald-300 uppercase">Net Profit Before Tax (NPBT)</span>
+                <h4 className="font-serif text-xl font-bold text-emerald-950 dark:text-emerald-200 mt-1">
+                  {formatCurrency(netProfitBeforeTax)}
+                </h4>
+                <p className="text-[10px] text-slate-500 mt-0.5">Gross Profit minus Operating Expenses</p>
+              </div>
+
+              <div className="rounded-xl border border-blue-400 bg-blue-50/60 p-4 dark:border-blue-800 dark:bg-blue-950/40">
+                <span className="text-[11px] font-bold text-blue-900 dark:text-blue-300 uppercase">Net GST Payable (3%)</span>
+                <h4 className="font-serif text-xl font-bold text-blue-950 dark:text-blue-200 mt-1">
+                  {formatCurrency(netGstPayable)}
+                </h4>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Output GST ({formatCurrency(outputGstEstimated)}) - Input GST ({formatCurrency(inputGstEstimated)})
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Overview Analytics Charts Dashboard */}
       {reportType === 'overview' && (

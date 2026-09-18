@@ -20,7 +20,9 @@ import {
   RotateCcw,
   CheckCircle2,
   AlertCircle,
-  FileText
+  FileText,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 export const WholesaleIssuesList: React.FC = () => {
@@ -36,6 +38,19 @@ export const WholesaleIssuesList: React.FC = () => {
   const [selectedIssueForPayment, setSelectedIssueForPayment] = useState<WholesaleIssue | null>(null);
   const [paymentCustomer, setPaymentCustomer] = useState<Customer | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [deletingWholesaleIssue, setDeletingWholesaleIssue] = useState<WholesaleIssue | null>(null);
+
+  const handleConfirmDeleteWholesaleIssue = async () => {
+    if (!deletingWholesaleIssue) return;
+    try {
+      await dataService.deleteWholesaleIssue(deletingWholesaleIssue.id);
+      await loadData();
+    } catch (err: any) {
+      alert(`Error deleting wholesale consignment: ${err?.message || 'Delete failed'}`);
+    } finally {
+      setDeletingWholesaleIssue(null);
+    }
+  };
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -355,6 +370,13 @@ export const WholesaleIssuesList: React.FC = () => {
                               <Coins className="h-4 w-4" />
                             </button>
                           )}
+                          <button
+                            onClick={() => setDeletingWholesaleIssue(i)}
+                            title="Delete Wholesale Consignment"
+                            className="rounded-lg p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -365,6 +387,40 @@ export const WholesaleIssuesList: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deletingWholesaleIssue && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-charcoal-900 border border-slate-200 dark:border-charcoal-800">
+            <div className="flex items-center gap-3 text-red-600 mb-3">
+              <AlertCircle className="h-6 w-6" />
+              <h3 className="font-serif text-lg font-bold text-charcoal-900 dark:text-slate-100">
+                Delete Wholesale Consignment
+              </h3>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mb-2">
+              Are you sure you want to delete Wholesale Issue <strong className="text-charcoal-900 dark:text-slate-100">{deletingWholesaleIssue.issue_number}</strong> ({deletingWholesaleIssue.customer_name})?
+            </p>
+            <div className="rounded-xl bg-amber-50 p-3 text-[11px] font-semibold text-amber-900 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800 mb-6">
+              ⚠️ <strong>Stock Reversal:</strong> Unreturned consignment stock will be automatically returned back to inventory and partner ledger balances will be updated.
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeletingWholesaleIssue(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDeleteWholesaleIssue}
+                className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-red-700"
+              >
+                Delete & Restore Stock
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Record Wholesale Payment Modal */}
       {isPaymentModalOpen && paymentCustomer && (
@@ -382,3 +438,4 @@ export const WholesaleIssuesList: React.FC = () => {
     </div>
   );
 };
+

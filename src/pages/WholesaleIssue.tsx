@@ -143,6 +143,19 @@ export const WholesaleIssuePage: React.FC = () => {
     const prod = productsList.find((p) => p.id === selectedProductId);
     if (!prod) return;
 
+    const availQty = prod.quantity ?? 0;
+    const existingIssued = issueItems.filter((i) => i.product_id === prod.id).reduce((sum, i) => sum + i.quantity_issued, 0);
+
+    if (availQty <= 0) {
+      alert(`Product "${prod.name}" is currently out of stock.`);
+      return;
+    }
+
+    if (existingIssued + issueQty > availQty) {
+      alert(`Cannot issue ${issueQty} Pcs. Available stock for "${prod.name}" is only ${availQty} Pcs.`);
+      return;
+    }
+
     const newItem: WholesaleIssueItem = {
       id: `witem-${Date.now()}-${Math.random()}`,
       product_id: prod.id,

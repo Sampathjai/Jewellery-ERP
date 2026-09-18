@@ -575,11 +575,16 @@ export interface NotificationItem {
 
 export interface WhatsAppMessage {
   id: string;
+  message_id?: string;
   customer_name: string;
   phone: string;
-  template_type: 'invoice' | 'payment_reminder' | 'wholesale_return' | 'settlement';
+  template_type: 'invoice' | 'payment_reminder' | 'wholesale_return' | 'settlement' | 'custom';
   message_body: string;
-  status: 'sent' | 'pending' | 'failed';
+  status: 'queued' | 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+  failure_reason?: string;
+  sent_at?: string;
+  delivered_at?: string;
+  read_at?: string;
   created_at: string;
 }
 

@@ -42,6 +42,7 @@ export const WholesaleCustomers: React.FC = () => {
   const wholesaleCustomers = customersList.filter(
     (c) =>
       c.customer_type === 'wholesale' &&
+      c.is_active !== false &&
       (c.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (c.shop_name && c.shop_name.toLowerCase().includes(searchTerm.toLowerCase())))
   );

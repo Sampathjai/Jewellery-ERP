@@ -75,7 +75,28 @@ export const RetailPOS: React.FC = () => {
 
   const selectedCustomer = customersList.find((c) => c.id === selectedCustomerId) || customersList[0];
 
+  const [stockError, setStockError] = useState<string | null>(null);
+
+  const showStockError = (msg: string) => {
+    setStockError(msg);
+    setTimeout(() => setStockError(null), 3500);
+  };
+
   const handleAddProductToCart = (prod: Product) => {
+    const availQty = prod.quantity ?? 0;
+    const existingItem = cartItems.find((item) => item.product_id === prod.id);
+    const currentCartQty = existingItem ? existingItem.quantity : 0;
+
+    if (availQty <= 0) {
+      showStockError(`Product "${prod.name}" is currently out of stock (0 units).`);
+      return;
+    }
+
+    if (currentCartQty + 1 > availQty) {
+      showStockError(`Insufficient stock for "${prod.name}". Only ${availQty} units are available.`);
+      return;
+    }
+
     const isGold = prod.metal_type === 'gold';
     const ratePerGram = isGold ? manualGoldRate : manualSilverRate;
     const metalVal = Number((prod.net_weight_g * ratePerGram).toFixed(2));
@@ -121,6 +142,16 @@ export const RetailPOS: React.FC = () => {
   };
 
   const handleUpdateQuantity = (itemId: string, delta: number) => {
+    const itemToUpdate = cartItems.find((i) => i.id === itemId);
+    if (itemToUpdate && delta > 0) {
+      const prod = productsList.find((p) => p.id === itemToUpdate.product_id);
+      const availQty = prod?.quantity ?? 999;
+      if (itemToUpdate.quantity + delta > availQty) {
+        showStockError(`Insufficient stock for "${prod?.name || 'this item'}". Available: ${availQty} units.`);
+        return;
+      }
+    }
+
     setCartItems((prevCart) =>
       prevCart
         .map((item) => {
@@ -266,6 +297,12 @@ export const RetailPOS: React.FC = () => {
           </button>
         }
       />
+
+      {stockError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-900 shadow-md dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300 flex items-center gap-2">
+          <span>⚠️</span> {stockError}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-w-0">
         {/* Left 7 Cols: Product Selector & Customer Select */}
