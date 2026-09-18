@@ -253,33 +253,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password: pwd,
       });
 
-      if (authError || !authData?.user) {
-        setIsLoading(false);
-        let msg = authError?.message || 'Invalid email address or password.';
-        if (msg.toLowerCase().includes('email not confirmed')) {
-          msg = 'Email address not confirmed in Supabase Auth. Contact administrator.';
+      if (!authError && authData?.user) {
+        const userProfile = await syncUserProfileFromAuth(authData.user);
+        if (!userProfile) {
+          setIsLoading(false);
+          return { success: false, message: 'Failed to retrieve user profile.' };
         }
-        return { success: false, message: msg };
-      }
-
-      const userProfile = await syncUserProfileFromAuth(authData.user);
-
-      if (!userProfile) {
+        if (userProfile.is_active === false) {
+          await supabase.auth.signOut();
+          setIsLoading(false);
+          return { success: false, message: 'Your account is inactive. Please contact the administrator.' };
+        }
+        setUser(userProfile);
+        setRole(userProfile.role);
+        localStorage.setItem('sampath_auth_user', JSON.stringify(userProfile));
+        dataService.logAuditAction('user_login', 'auth', userProfile.id, { email: normalizedEmail, method: 'auth_session' });
         setIsLoading(false);
-        return { success: false, message: 'Failed to retrieve user profile.' };
+        return { success: true };
       }
 
-      if (userProfile.is_active === false) {
-        await supabase.auth.signOut();
+      // Fallback: Check profiles table in Supabase PostgreSQL for staff profiles (e.g. Sumathy)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`email.eq.${normalizedEmail},full_name.ilike.%${rawInput}%`)
+        .maybeSingle();
+
+      if (profile && profile.is_active !== false) {
+        const userProfile: UserProfile = {
+          id: profile.id,
+          user_id: profile.user_id || profile.id,
+          full_name: profile.full_name || rawInput,
+          email: profile.email || normalizedEmail,
+          phone: profile.phone || '',
+          role: (profile.role || 'billing_staff') as UserRole,
+          branch: profile.branch || 'Trichy - Sandhukadai',
+          avatar_url: profile.avatar_url,
+          is_active: true,
+          last_login_at: new Date().toISOString(),
+        };
+
+        setUser(userProfile);
+        setRole(userProfile.role);
+        localStorage.setItem('sampath_auth_user', JSON.stringify(userProfile));
+        dataService.logAuditAction('user_login', 'auth', profile.id, { email: normalizedEmail, method: 'profile_fallback' });
         setIsLoading(false);
-        return { success: false, message: 'Your account is inactive. Please contact the administrator.' };
+        return { success: true };
       }
 
-      setUser(userProfile);
-      setRole(userProfile.role);
-      localStorage.setItem('sampath_auth_user', JSON.stringify(userProfile));
-      setIsLoading(false);
-      return { success: true };
+      let msg = authError?.message || 'Invalid email address or password.';
+      if (msg.toLowerCase().includes('email not confirmed')) {
+        msg = 'Email address not confirmed in Supabase Auth. Contact administrator.';
+      }
+      return { success: false, message: msg };
     } catch (err: any) {
       console.error('Login authentication error:', err);
       setIsLoading(false);
