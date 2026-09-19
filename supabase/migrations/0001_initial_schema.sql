@@ -117,12 +117,16 @@ CREATE TABLE IF NOT EXISTS business_settings (
     default_profit_sharing_percent NUMERIC(5,2) DEFAULT 40.00,
     inactivity_logout_enabled BOOLEAN DEFAULT true,
     inactivity_timeout_minutes INT DEFAULT 15,
+    max_concurrent_sessions INT DEFAULT 3,
+    force_logout_all_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS inactivity_logout_enabled BOOLEAN DEFAULT true;
 ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS inactivity_timeout_minutes INT DEFAULT 15;
+ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS max_concurrent_sessions INT DEFAULT 3;
+ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS force_logout_all_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS metal_rates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

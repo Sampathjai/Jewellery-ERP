@@ -1553,14 +1553,24 @@ export const dataService = {
     try {
       const db = checkSupabaseClient();
       const { data, error } = await db.from('business_settings').select('*').limit(1);
-      if (!error && data && data.length > 0) {
-        const settingsObj = data[0] as BusinessSettings;
+      if (error) {
+        console.error('Failed to fetch business_settings from Supabase:', error.message);
+        throw formatDbError('Fetch Business Settings Failed', error);
+      }
+      if (data && data.length > 0) {
+        const settingsObj = {
+          ...data[0],
+          inactivity_logout_enabled: data[0].inactivity_logout_enabled ?? true,
+          inactivity_timeout_minutes: Number(data[0].inactivity_timeout_minutes ?? 15),
+          max_concurrent_sessions: Number(data[0].max_concurrent_sessions ?? 3),
+        } as BusinessSettings;
         localDb.settings = settingsObj;
         saveLocalDb(localDb);
         return settingsObj;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Could not fetch business_settings from Supabase:', e);
+      throw e;
     }
     if (localDb.settings && !UUID_REGEX.test(localDb.settings.id)) {
       localDb.settings.id = '00000000-0000-0000-0000-000000000001';
@@ -1571,7 +1581,12 @@ export const dataService = {
 
   async saveBusinessSettings(settings: Partial<BusinessSettings>): Promise<BusinessSettings> {
     const localDb = getLocalDb();
-    const existingObj = await this.getBusinessSettings();
+    let existingObj: BusinessSettings | null = null;
+    try {
+      existingObj = await this.getBusinessSettings();
+    } catch {
+      existingObj = localDb.settings || null;
+    }
 
     let targetId = '00000000-0000-0000-0000-000000000001';
     if (existingObj?.id && UUID_REGEX.test(existingObj.id)) {
@@ -1582,6 +1597,7 @@ export const dataService = {
 
     const updatedSettings: BusinessSettings = {
       ...localDb.settings,
+      ...existingObj,
       ...settings,
       id: targetId,
       updated_at: new Date().toISOString(),
@@ -1617,28 +1633,46 @@ export const dataService = {
     const fullDbPayload: Record<string, any> = {
       ...baseDbPayload,
       inactivity_logout_enabled: updatedSettings.inactivity_logout_enabled ?? true,
-      inactivity_timeout_minutes: Number(updatedSettings.inactivity_timeout_minutes || 15),
+      inactivity_timeout_minutes: Number(updatedSettings.inactivity_timeout_minutes ?? 15),
+      max_concurrent_sessions: Number(updatedSettings.max_concurrent_sessions ?? 3),
+      force_logout_all_at: updatedSettings.force_logout_all_at || null,
+    };
+
+    const partialDbPayload: Record<string, any> = {
+      ...baseDbPayload,
+      inactivity_logout_enabled: updatedSettings.inactivity_logout_enabled ?? true,
+      inactivity_timeout_minutes: Number(updatedSettings.inactivity_timeout_minutes ?? 15),
     };
 
     const db = checkSupabaseClient();
     
-    // First try full payload with optional inactivity columns
+    // First try full payload with all session security columns
     let { data, error } = await db
       .from('business_settings')
       .upsert(fullDbPayload)
       .select()
       .single();
 
-    // If schema lacks inactivity columns, retry with base payload
+    // If schema lacks newer columns, retry with partial payload
     if (error && (error.message?.includes('column') || error.message?.includes('PGRST') || error.message?.includes('cache'))) {
-      const retry = await db
+      const retryPartial = await db
         .from('business_settings')
-        .upsert(baseDbPayload)
+        .upsert(partialDbPayload)
         .select()
         .single();
-      if (!retry.error) {
-        data = retry.data;
+      if (!retryPartial.error) {
+        data = retryPartial.data;
         error = null;
+      } else {
+        const retryBase = await db
+          .from('business_settings')
+          .upsert(baseDbPayload)
+          .select()
+          .single();
+        if (!retryBase.error) {
+          data = retryBase.data;
+          error = null;
+        }
       }
     }
 

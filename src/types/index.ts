@@ -140,6 +140,8 @@ export interface BusinessSettings {
   default_profit_sharing_percent: number;
   inactivity_logout_enabled?: boolean;
   inactivity_timeout_minutes?: number;
+  max_concurrent_sessions?: number;
+  force_logout_all_at?: string;
   updated_at?: string;
 }
 

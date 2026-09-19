@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserProfile, UserRole, PermissionCode } from '@/types';
 import { getLocalDb, supabase } from './supabase';
+import { syncEngine } from './syncEngine';
 import { dataService } from './dataService';
 import { hasPermission } from './utils';
 import { InactivityWarningModal } from '@/components/common/InactivityWarningModal';
@@ -13,7 +14,9 @@ interface AuthContextType {
   switchRole: (newRole: UserRole) => void;
   can: (permission: PermissionCode) => boolean;
   isLoading: boolean;
+  autoLogoutEnabled: boolean;
   inactivityTimeoutMinutes: number;
+  maxConcurrentSessions: number;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -35,10 +38,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [role, setRole] = useState<UserRole>(user?.role || 'admin');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Read inactivity settings from database
-  const db = getLocalDb();
-  const autoLogoutEnabled = db.settings.inactivity_logout_enabled ?? true;
-  const inactivityTimeoutMinutes = db.settings.inactivity_timeout_minutes ?? 15;
+  // Reactive settings state dynamically synced with Supabase business_settings
+  const [settings, setSettings] = useState(() => getLocalDb().settings);
+
+  const autoLogoutEnabled = settings.inactivity_logout_enabled ?? true;
+  const inactivityTimeoutMinutes = settings.inactivity_timeout_minutes ?? 15;
+  const maxConcurrentSessions = settings.max_concurrent_sessions ?? 3;
+
+  useEffect(() => {
+    // Fetch live settings on mount
+    dataService.getBusinessSettings().then((s) => {
+      if (s) setSettings(s);
+    }).catch((e) => console.warn('Could not load business settings in AuthProvider:', e));
+
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'business_settings') {
+        dataService.getBusinessSettings().then((s) => {
+          if (s) setSettings(s);
+        }).catch(() => {});
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const syncUserProfileFromAuth = async (sessionUser: any): Promise<UserProfile | null> => {
     if (!sessionUser || !sessionUser.email) return null;
@@ -338,7 +359,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         switchRole,
         can,
         isLoading,
+        autoLogoutEnabled,
         inactivityTimeoutMinutes,
+        maxConcurrentSessions,
       }}
     >
       {children}

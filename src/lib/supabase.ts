@@ -153,6 +153,7 @@ const defaultSeedStore: DbStore = {
     default_profit_sharing_percent: 40,
     inactivity_logout_enabled: true,
     inactivity_timeout_minutes: 15,
+    max_concurrent_sessions: 3,
   },
   metalRates: [
     {
