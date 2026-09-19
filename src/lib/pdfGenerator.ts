@@ -609,7 +609,7 @@ export function generateWholesaleSettlementPDF(
 
   autoTable(doc, {
     startY: 58,
-    head: [['Settlement Line Breakdown', 'Amount (INR)']],
+    head: [['Settlement Line Breakdown', 'Amount (₹)']],
     body: tableData,
     headStyles: { fillColor: [30, 31, 38], textColor: [212, 175, 55], font: 'Georgia' },
     styles: { font: 'Georgia' },
