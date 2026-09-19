@@ -175,6 +175,12 @@ export const dataService = {
       agreed_customer_touch: data.default_actual_touch ?? data.agreed_profit_percent ?? 40,
     } as Customer;
 
+    this.logAuditAction('create_customer', 'customer', result.id, {
+      full_name: result.full_name,
+      shop_name: result.shop_name,
+      customer_type: result.customer_type,
+    }).catch((e) => console.warn('Audit log failed for createCustomer:', e));
+
     syncEngine.notifyDataChange('customers', 'INSERT', result);
     return result;
   },
@@ -205,6 +211,11 @@ export const dataService = {
       ...data,
       agreed_customer_touch: data.default_actual_touch ?? data.agreed_profit_percent ?? 40,
     } as Customer;
+
+    this.logAuditAction('update_customer', 'customer', result.id, {
+      full_name: result.full_name,
+      shop_name: result.shop_name,
+    }).catch((e) => console.warn('Audit log failed for updateCustomer:', e));
 
     syncEngine.notifyDataChange('customers', 'UPDATE', result);
     return result;
@@ -356,6 +367,13 @@ export const dataService = {
       }
     }
 
+    this.logAuditAction('create_product', 'product', result.id, {
+      name: result.name,
+      sku: result.sku,
+      quantity: result.quantity,
+      gross_weight_g: result.gross_weight_g,
+    }).catch((e) => console.warn('Audit log failed for createProduct:', e));
+
     syncEngine.notifyDataChange('products', 'INSERT', result);
     return result;
   },
@@ -390,6 +408,11 @@ export const dataService = {
       category_name: category_name || (data.metal_type === 'silver' ? 'Silverware' : 'Gold Jewellery'),
       actual_touch: Number(data.actual_touch ?? updates.actual_touch ?? 37),
     } as Product;
+
+    this.logAuditAction('update_product', 'product', result.id, {
+      name: result.name,
+      sku: result.sku,
+    }).catch((e) => console.warn('Audit log failed for updateProduct:', e));
 
     syncEngine.notifyDataChange('products', 'UPDATE', result);
     return result;
@@ -1643,20 +1666,30 @@ export const dataService = {
   // AUDIT LOGS & WHATSAPP LOGS
   // --------------------------------------------------------------------------
   async getAuditLogs(): Promise<AuditLog[]> {
-    try {
-      const db = checkSupabaseClient();
-      const { data, error } = await db
-        .from('audit_logs')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (!error && data) {
-        return data as AuditLog[];
-      }
-    } catch (e) {
-      console.warn('Could not fetch audit_logs from Supabase:', e);
+    const db = checkSupabaseClient();
+    const { data, error } = await db
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Failed to fetch audit_logs from Supabase:', error.message);
+      throw formatDbError('Audit Logs Query Failed', error);
     }
+
+    if (data) {
+      return data.map((log: any) => ({
+        ...log,
+        user_name: log.user_name || log.details?.user_name || 'Admin User',
+        details: log.details || {},
+      })) as AuditLog[];
+    }
+
     const localDb = getLocalDb();
-    return localDb.auditLogs || [];
+    return (localDb.auditLogs || []).map((log: any) => ({
+      ...log,
+      user_name: log.user_name || log.details?.user_name || 'Admin User',
+    }));
   },
 
   async logAuditAction(
@@ -1677,30 +1710,65 @@ export const dataService = {
       }
     }
 
-    const payload: AuditLog = {
+    const nameToUse = currentUser || 'System User';
+    const mergedDetails = {
+      ...(details || {}),
+      user_name: nameToUse,
+    };
+
+    const payloadWithUserColumn: Record<string, any> = {
       id: validId,
-      user_name: currentUser || 'System User',
+      user_name: nameToUse,
       action,
       entity_type: entityType,
       entity_id: entityId || '',
-      details: details || {},
+      details: mergedDetails,
+      created_at: new Date().toISOString(),
+    };
+
+    const fallbackPayload: Record<string, any> = {
+      id: validId,
+      action,
+      entity_type: entityType,
+      entity_id: entityId || '',
+      details: mergedDetails,
       created_at: new Date().toISOString(),
     };
 
     try {
       const db = checkSupabaseClient();
-      await db.from('audit_logs').insert(payload);
+      const { error } = await db.from('audit_logs').insert(payloadWithUserColumn);
+      if (error) {
+        if (error.code === 'PGRST204' || error.message.includes('column') || error.message.includes('user_name')) {
+          const { error: fallbackError } = await db.from('audit_logs').insert(fallbackPayload);
+          if (fallbackError) {
+            console.error('Audit log fallback insert error:', fallbackError.message);
+          }
+        } else {
+          console.error('Audit log insert error:', error.message);
+        }
+      }
     } catch (e) {
-      console.warn('Audit log insert warning:', e);
+      console.warn('Audit log insert exception:', e);
     }
+
+    const returnLog: AuditLog = {
+      id: validId,
+      user_name: nameToUse,
+      action,
+      entity_type: entityType,
+      entity_id: entityId || '',
+      details: mergedDetails,
+      created_at: payloadWithUserColumn.created_at,
+    };
 
     const localDb = getLocalDb();
     if (!localDb.auditLogs) localDb.auditLogs = [];
-    localDb.auditLogs.unshift(payload);
+    localDb.auditLogs.unshift(returnLog);
     saveLocalDb(localDb);
 
-    syncEngine.notifyDataChange('audit_logs', 'INSERT', payload);
-    return payload;
+    syncEngine.notifyDataChange('audit_logs', 'INSERT', returnLog);
+    return returnLog;
   },
 
   async getWhatsAppLogs(): Promise<WhatsAppMessage[]> {
@@ -1846,6 +1914,7 @@ export const dataService = {
           is_active: fnData.user.is_active ?? true,
           created_at: fnData.user.created_at || new Date().toISOString(),
         };
+        this.logAuditAction('create_user', 'user_profile', created.id, { full_name: created.full_name, email: created.email, role: created.role }).catch(() => {});
         syncEngine.notifyDataChange('profiles', 'INSERT', created);
         return created;
       }
@@ -1935,6 +2004,7 @@ export const dataService = {
       created_at: data.created_at,
     };
 
+    this.logAuditAction('create_user', 'user_profile', created.id, { full_name: created.full_name, email: created.email, role: created.role }).catch(() => {});
     syncEngine.notifyDataChange('profiles', 'INSERT', created);
     return created;
   },
@@ -2016,6 +2086,7 @@ export const dataService = {
       created_at: data.created_at,
     };
 
+    this.logAuditAction('create_user', 'user_profile', created.id, { full_name: created.full_name, email: created.email, role: created.role }).catch(() => {});
     syncEngine.notifyDataChange('profiles', 'INSERT', created);
     return created;
   },
@@ -2059,6 +2130,7 @@ export const dataService = {
       created_at: data.created_at,
     };
 
+    this.logAuditAction('update_user', 'user_profile', updated.id, { full_name: updated.full_name, email: updated.email, role: updated.role }).catch(() => {});
     syncEngine.notifyDataChange('profiles', 'UPDATE', updated);
     return updated;
   },
@@ -2084,6 +2156,7 @@ export const dataService = {
       throw formatDbError('User Profile Deletion Failed', error);
     }
 
+    this.logAuditAction('delete_user', 'user_profile', id).catch(() => {});
     syncEngine.notifyDataChange('profiles', 'DELETE', { id });
   },
 

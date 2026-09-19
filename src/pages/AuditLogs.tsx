@@ -9,15 +9,18 @@ import { RefreshCw, Search, Shield } from 'lucide-react';
 export const AuditLogs: React.FC = () => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   const loadAuditLogs = useCallback(async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const data = await dataService.getAuditLogs();
       setLogs(data);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to load audit logs:', e);
+      setError(e?.message || 'Could not fetch audit logs from database.');
     } finally {
       setIsLoading(false);
     }
@@ -72,7 +75,7 @@ export const AuditLogs: React.FC = () => {
         </div>
       </div>
 
-      <AuditLogViewer logs={filteredLogs} />
+      <AuditLogViewer logs={filteredLogs} error={error} />
     </div>
   );
 };

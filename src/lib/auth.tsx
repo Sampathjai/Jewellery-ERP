@@ -162,6 +162,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = useCallback((reason?: string) => {
+    if (user) {
+      dataService.logAuditAction('user_logout', 'auth', user.id, { email: user.email, reason: reason || 'user_action' }).catch(() => {});
+    }
     if (supabase) {
       try {
         supabase.auth.signOut().catch((e) => console.warn('Supabase signout error:', e));
@@ -182,7 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       window.location.href = '/login';
     }
-  }, []);
+  }, [user]);
 
   const [showInactivityWarning, setShowInactivityWarning] = useState(false);
   const [warningCountdown, setWarningCountdown] = useState(60);

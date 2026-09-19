@@ -608,12 +608,15 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES profiles(id),
+    user_name TEXT,
     action TEXT NOT NULL,
     entity_type TEXT NOT NULL,
     entity_id TEXT,
     details JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_name TEXT;
 
 -- 11. GRANT PERMISSIONS TO ANON, AUTHENTICATED & SERVICE ROLES
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;

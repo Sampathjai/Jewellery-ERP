@@ -1,9 +1,9 @@
 import React from 'react';
 import { AuditLog } from '@/types';
 import { formatDateTime } from '@/lib/utils';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, AlertTriangle } from 'lucide-react';
 
-export const AuditLogViewer: React.FC<{ logs: AuditLog[] }> = ({ logs }) => {
+export const AuditLogViewer: React.FC<{ logs: AuditLog[]; error?: string | null }> = ({ logs, error }) => {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900">
       <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3 dark:border-charcoal-800">
@@ -14,7 +14,15 @@ export const AuditLogViewer: React.FC<{ logs: AuditLog[] }> = ({ logs }) => {
       </div>
 
       <div className="space-y-3">
-        {logs.length === 0 ? (
+        {error ? (
+          <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50/80 p-4 text-xs text-red-900 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+            <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold">Database Audit Logs Query Error</p>
+              <p className="mt-1">{error}</p>
+            </div>
+          </div>
+        ) : logs.length === 0 ? (
           <p className="text-xs text-slate-400">No recent audit activity recorded.</p>
         ) : (
           logs.map((log) => (

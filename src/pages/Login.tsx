@@ -98,7 +98,7 @@ export const Login: React.FC = () => {
                 autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. sumathy@shankarjewellery.com or ramesh_counter"
+                placeholder="Enter email or username"
                 className="w-full min-h-[42px] rounded-xl border border-charcoal-700 bg-charcoal-800 py-2.5 pl-10 pr-3 text-xs text-slate-100 focus:border-gold-500 focus:outline-none placeholder:text-slate-500 font-mono"
               />
             </div>
