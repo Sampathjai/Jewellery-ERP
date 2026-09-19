@@ -35,9 +35,10 @@ export const Settings: React.FC = () => {
       setSettings(saved);
       setToastMessage('Shop settings saved successfully to database!');
     } catch (err: any) {
-      setToastMessage(`Saved locally (${err?.message || 'DB Sync Warning'})`);
+      console.error('Settings Save Error:', err);
+      setToastMessage(`Save Failed: ${err?.message || 'Database connection error'}`);
     }
-    setTimeout(() => setToastMessage(null), 3500);
+    setTimeout(() => setToastMessage(null), 4000);
   };
 
   const handleConfirmCleanReset = () => {

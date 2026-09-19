@@ -46,7 +46,7 @@ export const RetailPOS: React.FC = () => {
   useEffect(() => {
     loadPosData();
     const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
-      if (tableName === 'customers' || tableName === 'products' || tableName === 'metal_rates' || tableName === 'general') {
+      if (tableName === 'customers' || tableName === 'products' || tableName === 'metal_rates' || tableName === 'business_settings' || tableName === 'general') {
         loadPosData();
       }
     });

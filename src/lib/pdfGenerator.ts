@@ -14,8 +14,13 @@ import { loadPdfFont } from './pdfFont';
 // Helper for shop header info
 function getShopHeaderDetails(settings?: BusinessSettings) {
   const name = settings?.shop_name || 'Shankar Jewellery';
-  const address = settings?.address || 'No.4 sandhukadai, bigbazzar street, Trichy - 620008';
-  const phoneStr = `Phone: ${settings?.phone || '+91 98765 43210'}`;
+  const addressParts = [
+    settings?.address,
+    settings?.city,
+    settings?.state && settings?.pin_code ? `${settings.state} - ${settings.pin_code}` : (settings?.state || settings?.pin_code)
+  ].filter(Boolean).join(', ');
+  const address = addressParts || 'No.4 sandhukadai, bigbazzar street, Trichy - 620008';
+  const phoneStr = `Phone: ${settings?.phone || '+91 98765 43210'}${settings?.gstin ? ` | GSTIN: ${settings.gstin}` : ''}`;
   return { name, address, phoneStr };
 }
 

@@ -1477,19 +1477,67 @@ export const dataService = {
       updated_at: new Date().toISOString(),
     };
 
+    const baseDbPayload: Record<string, any> = {
+      id: targetId,
+      shop_name: updatedSettings.shop_name || 'Shankar Jewellery',
+      owner_name: updatedSettings.owner_name || 'Sampath Kumar',
+      logo_url: updatedSettings.logo_url || null,
+      address: updatedSettings.address || '',
+      city: updatedSettings.city || '',
+      state: updatedSettings.state || 'Tamil Nadu',
+      country: updatedSettings.country || 'India',
+      pin_code: updatedSettings.pin_code || '',
+      phone: updatedSettings.phone || '',
+      whatsapp_number: updatedSettings.whatsapp_number || updatedSettings.phone || '',
+      email: updatedSettings.email || '',
+      gstin: updatedSettings.gstin || null,
+      pan: updatedSettings.pan || null,
+      bank_name: updatedSettings.bank_name || null,
+      bank_account_number: updatedSettings.bank_account_number || null,
+      bank_ifsc: updatedSettings.bank_ifsc || null,
+      upi_id: updatedSettings.upi_id || null,
+      signature_url: updatedSettings.signature_url || null,
+      invoice_prefix: updatedSettings.invoice_prefix || 'SJ-INV-',
+      next_invoice_number: Number(updatedSettings.next_invoice_number || 1005),
+      default_profit_sharing_model: updatedSettings.default_profit_sharing_model || 'model_a_profit_percent',
+      default_profit_sharing_percent: Number(updatedSettings.default_profit_sharing_percent || 40),
+      updated_at: new Date().toISOString(),
+    };
+
+    const fullDbPayload: Record<string, any> = {
+      ...baseDbPayload,
+      inactivity_logout_enabled: updatedSettings.inactivity_logout_enabled ?? true,
+      inactivity_timeout_minutes: Number(updatedSettings.inactivity_timeout_minutes || 15),
+    };
+
     const db = checkSupabaseClient();
-    const { data, error } = await db
+    
+    // First try full payload with optional inactivity columns
+    let { data, error } = await db
       .from('business_settings')
-      .upsert(updatedSettings)
+      .upsert(fullDbPayload)
       .select()
       .single();
+
+    // If schema lacks inactivity columns, retry with base payload
+    if (error && (error.message?.includes('column') || error.message?.includes('PGRST') || error.message?.includes('cache'))) {
+      const retry = await db
+        .from('business_settings')
+        .upsert(baseDbPayload)
+        .select()
+        .single();
+      if (!retry.error) {
+        data = retry.data;
+        error = null;
+      }
+    }
 
     if (error) {
       console.error('Failed to save business_settings in Supabase:', error.message);
       throw formatDbError('Shop Settings Save Failed', error);
     }
 
-    const result = (data || updatedSettings) as BusinessSettings;
+    const result = { ...updatedSettings, ...(data || {}) } as BusinessSettings;
     localDb.settings = result;
     saveLocalDb(localDb, 'settings', 'UPDATE', result);
     syncEngine.notifyDataChange('business_settings', 'UPDATE', result);
