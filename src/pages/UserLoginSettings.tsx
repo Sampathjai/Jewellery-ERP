@@ -5,10 +5,16 @@ import { useAuth } from '@/lib/auth';
 import { ShieldCheck, Clock, Lock, Power, RefreshCw, Save, CheckCircle, AlertTriangle } from 'lucide-react';
 import { GlobalLoader } from '@/components/common/GlobalLoader';
 
-export const UserLoginSettings: React.FC = () => {
-  const { role, user: currentUser } = useAuth();
+export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
+  const { role, can, user: currentUser } = useAuth();
 
-  const isAdmin = role === 'admin' || role === 'super_admin' || role === 'manager';
+  const isAdmin = Boolean(currentUser) && (
+    role === 'admin' ||
+    role === 'super_admin' ||
+    role === 'manager' ||
+    can('manage_users') ||
+    can('manage_settings')
+  );
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -119,20 +125,22 @@ export const UserLoginSettings: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      <PageHeader
-        title="User Login & Session Settings"
-        subtitle="Manage automatic inactivity timeout, login session rules, and authentication security"
-        breadcrumb={['Home', 'Administration', 'User Login Settings']}
-        actionBtn={
-          <button
-            type="button"
-            onClick={loadSettings}
-            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-charcoal-800 dark:bg-charcoal-900 dark:text-slate-300"
-          >
-            <RefreshCw className={`h-4 w-4 text-gold-600 ${isLoading ? 'animate-spin' : ''}`} /> Refresh Settings
-          </button>
-        }
-      />
+      {!embedded && (
+        <PageHeader
+          title="User Login & Session Settings"
+          subtitle="Manage automatic inactivity timeout, login session rules, and authentication security"
+          breadcrumb={['Home', 'Administration', 'User Login Settings']}
+          actionBtn={
+            <button
+              type="button"
+              onClick={loadSettings}
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-charcoal-800 dark:bg-charcoal-900 dark:text-slate-300"
+            >
+              <RefreshCw className={`h-4 w-4 text-gold-600 ${isLoading ? 'animate-spin' : ''}`} /> Refresh Settings
+            </button>
+          }
+        />
+      )}
 
       {loadError && (
         <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-xs font-bold text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300 flex items-center gap-3 shadow-sm">
@@ -226,7 +234,13 @@ export const UserLoginSettings: React.FC = () => {
                 <option value={15}>15 Minutes (Recommended Default)</option>
                 <option value={20}>20 Minutes</option>
                 <option value={30}>30 Minutes</option>
+                <option value={45}>45 Minutes</option>
                 <option value={60}>60 Minutes (1 Hour)</option>
+                <option value={90}>90 Minutes (1.5 Hours)</option>
+                <option value={120}>120 Minutes (2 Hours)</option>
+                {!([5, 10, 15, 20, 30, 45, 60, 90, 120].includes(timeoutMinutes)) && (
+                  <option value={timeoutMinutes}>{timeoutMinutes} Minutes</option>
+                )}
               </select>
               <p className="text-[11px] text-slate-500 mt-1">
                 Active setting: <strong className="text-gold-600 dark:text-gold-400">{timeoutMinutes} Minutes</strong> before automatic session termination.
@@ -259,7 +273,7 @@ export const UserLoginSettings: React.FC = () => {
                 min={1}
                 max={10}
                 value={maxSessions}
-                onChange={(e) => setMaxSessions(Number(e.target.value))}
+                onChange={(e) => setMaxSessions(Math.max(1, Number(e.target.value)))}
                 className="w-full rounded-xl border border-slate-200 p-2.5 text-xs font-bold text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-100"
               />
             </div>

@@ -1,18 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { SyncSettings } from './SyncSettings';
+import { UserLoginSettings } from './UserLoginSettings';
 import { getLocalDb, resetLocalDbToDemo, resetToCleanProductionData } from '@/lib/supabase';
 import { dataService } from '@/lib/dataService';
 import { BusinessSettings } from '@/types';
-import { Settings as SettingsIcon, Save, RefreshCw, Upload, ShieldCheck, AlertOctagon, Trash2, Wifi, Building2, Database } from 'lucide-react';
+import { Settings as SettingsIcon, Save, RefreshCw, Upload, ShieldCheck, AlertOctagon, Trash2, Wifi, Building2, Database, Lock } from 'lucide-react';
 
 export const Settings: React.FC = () => {
   const [db, setDb] = useState(getLocalDb());
   const [settings, setSettings] = useState<BusinessSettings>(db.settings);
-  const [activeTab, setActiveTab] = useState<'profile' | 'sync' | 'database'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'login-settings' | 'sync' | 'database'>('profile');
   const [showCleanModal, setShowCleanModal] = useState(false);
   const [showDemoModal, setShowDemoModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam === 'login-settings' || tabParam === 'login' || tabParam === 'security') {
+        setActiveTab('login-settings');
+      } else if (tabParam === 'sync') {
+        setActiveTab('sync');
+      } else if (tabParam === 'database') {
+        setActiveTab('database');
+      }
+    }
+  }, []);
 
   useEffect(() => {
     async function loadSettings() {
@@ -64,11 +79,11 @@ export const Settings: React.FC = () => {
       />
 
       {/* Settings Tab Header Navigation */}
-      <div className="flex border-b border-slate-200 dark:border-charcoal-800">
+      <div className="flex border-b border-slate-200 dark:border-charcoal-800 overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab('profile')}
-          className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-bold transition-colors ${
+          className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-bold transition-colors whitespace-nowrap ${
             activeTab === 'profile'
               ? 'border-gold-500 text-amber-900 dark:text-gold-300'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
@@ -78,8 +93,19 @@ export const Settings: React.FC = () => {
         </button>
         <button
           type="button"
+          onClick={() => setActiveTab('login-settings')}
+          className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-bold transition-colors whitespace-nowrap ${
+            activeTab === 'login-settings'
+              ? 'border-gold-500 text-amber-900 dark:text-gold-300'
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
+          }`}
+        >
+          <Lock className="h-4 w-4" /> User Login & Session Security
+        </button>
+        <button
+          type="button"
           onClick={() => setActiveTab('sync')}
-          className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-bold transition-colors ${
+          className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-bold transition-colors whitespace-nowrap ${
             activeTab === 'sync'
               ? 'border-gold-500 text-amber-900 dark:text-gold-300'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
@@ -90,7 +116,7 @@ export const Settings: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('database')}
-          className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-bold transition-colors ${
+          className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-bold transition-colors whitespace-nowrap ${
             activeTab === 'database'
               ? 'border-gold-500 text-amber-900 dark:text-gold-300'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
@@ -100,7 +126,9 @@ export const Settings: React.FC = () => {
         </button>
       </div>
 
-      {activeTab === 'sync' ? (
+      {activeTab === 'login-settings' ? (
+        <UserLoginSettings embedded />
+      ) : activeTab === 'sync' ? (
         <SyncSettings />
       ) : activeTab === 'database' ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm space-y-6 max-w-4xl">
