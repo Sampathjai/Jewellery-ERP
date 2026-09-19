@@ -380,9 +380,12 @@ export const WholesaleIssueDetails: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
               {effectiveItems.map((item, idx) => {
-                const actTouch = item.actual_touch || 37;
-                const profTouch = item.profit_touch || 10;
-                const billTouch = item.billing_touch || actTouch + profTouch;
+                const actTouch = item.actual_touch || (effectiveCustomer.default_actual_touch || 37);
+                const billTouch = item.billing_touch || (actTouch + (effectiveCustomer.default_profit_touch || 10));
+                const profTouch = (item.profit_touch !== undefined && item.profit_touch !== null && item.profit_touch !== 0)
+                  ? item.profit_touch
+                  : (billTouch > actTouch ? (billTouch - actTouch) : (effectiveCustomer.default_profit_touch || 10));
+                const profTouchStr = profTouch > 0 ? `+${profTouch}%` : `${profTouch}%`;
                 const fineGold = item.fine_gold_g || Number(((item.net_weight_g * billTouch) / 100).toFixed(3));
 
                 if (viewMode === 'customer') {
@@ -418,7 +421,7 @@ export const WholesaleIssueDetails: React.FC = () => {
                       <td className="p-3 text-right font-mono text-slate-500">{formatWeight(item.deduction_weight_g || 0)}</td>
                       <td className="p-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{formatWeight(item.net_weight_g)}</td>
                       <td className="p-3 text-right font-mono">{actTouch}%</td>
-                      <td className="p-3 text-right font-mono text-emerald-600">+{profTouch}%</td>
+                      <td className="p-3 text-right font-mono text-emerald-600">{profTouchStr}</td>
                       <td className="p-3 text-right font-mono font-bold text-gold-600">{billTouch}%</td>
                       <td className="p-3 text-right font-mono font-bold text-amber-900 dark:text-gold-300">{fineGold.toFixed(3)} g</td>
                       <td className="p-3 text-right font-serif font-bold text-charcoal-900 dark:text-slate-100 text-sm">

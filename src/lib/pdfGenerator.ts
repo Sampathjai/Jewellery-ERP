@@ -403,9 +403,12 @@ export function generateInternalWholesaleIssuePDF(
   // Table Data with complete Touch calculation breakdown
   const itemsList = issue.items && issue.items.length > 0 ? issue.items : [];
   const tableData = itemsList.map((item, idx) => {
-    const actTouch = item.actual_touch ?? 37;
-    const profTouch = item.profit_touch ?? 10;
-    const billTouch = item.billing_touch ?? (actTouch + profTouch);
+    const actTouch = item.actual_touch ?? customer?.default_actual_touch ?? 37;
+    const billTouch = item.billing_touch ?? (actTouch + (item.profit_touch ?? customer?.default_profit_touch ?? 10));
+    const profTouch = (item.profit_touch !== undefined && item.profit_touch !== null && item.profit_touch !== 0)
+      ? item.profit_touch
+      : (billTouch > actTouch ? (billTouch - actTouch) : (customer?.default_profit_touch ?? 10));
+    const profTouchStr = profTouch > 0 ? `+${profTouch}%` : `${profTouch}%`;
     const fineGold = item.fine_gold_g ?? Number((((item.net_weight_g || 0) * billTouch) / 100).toFixed(3));
     const val = item.total_issue_value ?? 0;
 
@@ -417,7 +420,7 @@ export function generateInternalWholesaleIssuePDF(
       formatWeight(item.deduction_weight_g || 0),
       formatWeight(item.net_weight_g || 0),
       `${actTouch}%`,
-      `+${profTouch}%`,
+      profTouchStr,
       `${billTouch}%`,
       `${fineGold.toFixed(3)} g`,
       formatCurrency(val),
@@ -425,7 +428,11 @@ export function generateInternalWholesaleIssuePDF(
   });
 
   if (tableData.length === 0 && (issue.total_items_issued > 0 || issue.total_net_weight_g > 0)) {
-    const defaultTouch = issue.agreed_profit_percent || 40;
+    const defaultProfit = customer?.default_profit_touch ?? issue.agreed_profit_percent ?? 10;
+    const defaultActual = customer?.default_actual_touch ?? 40;
+    const defaultBilling = customer?.default_billing_touch ?? (defaultActual + defaultProfit);
+    const profTouchStr = defaultProfit > 0 ? `+${defaultProfit}%` : `${defaultProfit}%`;
+
     tableData.push([
       1,
       'Consignment Jewellery Issue (Aggregated Item Row)',
@@ -433,9 +440,9 @@ export function generateInternalWholesaleIssuePDF(
       formatWeight(issue.total_gross_weight_g || 0),
       formatWeight(issue.total_deduction_weight_g || 0),
       formatWeight(issue.total_net_weight_g || 0),
-      `${defaultTouch}%`,
-      '+0%',
-      `${defaultTouch}%`,
+      `${defaultActual}%`,
+      profTouchStr,
+      `${defaultBilling}%`,
       `${(issue.total_fine_gold_g || 0).toFixed(3)} g`,
       formatCurrency(issue.total_valuation_amount || 0),
     ]);
