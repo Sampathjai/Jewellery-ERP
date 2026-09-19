@@ -266,6 +266,29 @@ export const InvoiceDetails: React.FC = () => {
               <span>Grand Total:</span>
               <span className="font-serif text-lg">{formatCurrency(invoice.total_amount)}</span>
             </div>
+
+            <div className="mt-3 rounded-xl border border-gold-300/60 bg-gold-50/40 p-3 space-y-1.5 dark:border-gold-800/50 dark:bg-gold-950/30">
+              <div className="flex justify-between text-xs">
+                <span className="font-bold text-slate-700 dark:text-slate-300">Total Paid:</span>
+                <span className="font-mono font-bold text-charcoal-900 dark:text-slate-100">{formatCurrency(invoice.paid_amount || 0)}</span>
+              </div>
+              <div className="flex justify-between text-xs border-t border-gold-200/60 pt-1.5 dark:border-gold-800/40">
+                <span className="font-serif font-bold text-red-700 dark:text-red-400">Remaining Balance Due:</span>
+                <span className="font-serif font-bold text-red-700 dark:text-red-400 text-sm">{formatCurrency(invoice.balance_due ?? Math.max(0, (invoice.total_amount || 0) - (invoice.paid_amount || 0)))}</span>
+              </div>
+              <div className="flex justify-between text-[11px] pt-1">
+                <span className="text-slate-500">Payment Status:</span>
+                <span className={`font-bold px-2 py-0.5 rounded text-[10px] uppercase ${
+                  invoice.payment_status === 'paid' || ((invoice.balance_due === 0 || invoice.balance_due === undefined) && (invoice.paid_amount || 0) > 0)
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                    : invoice.payment_status === 'partial' || (invoice.paid_amount || 0) > 0
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                    : 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
+                }`}>
+                  {invoice.payment_status === 'paid' || ((invoice.balance_due === 0 || invoice.balance_due === undefined) && (invoice.paid_amount || 0) > 0) ? 'STATUS: PAID' : invoice.payment_status === 'partial' || (invoice.paid_amount || 0) > 0 ? 'STATUS: PARTIALLY PAID' : 'STATUS: UNPAID'}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

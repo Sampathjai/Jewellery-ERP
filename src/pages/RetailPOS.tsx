@@ -70,7 +70,16 @@ export const RetailPOS: React.FC = () => {
   const [gstEnabled, setGstEnabled] = useState<boolean>(false); // Manual GST control
   const [manualGstPercent, setManualGstPercent] = useState<number>(3.0);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
+
+  // Payment State
   const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'card' | 'split'>('upi');
+  const [customPaidAmount, setCustomPaidAmount] = useState<number>(0);
+  const [isCustomPaid, setIsCustomPaid] = useState<boolean>(false);
+  const [splitCash, setSplitCash] = useState<number>(0);
+  const [splitUpi, setSplitUpi] = useState<number>(0);
+  const [splitCard, setSplitCard] = useState<number>(0);
+  const [splitBank, setSplitBank] = useState<number>(0);
+
   const [notes, setNotes] = useState('');
 
   const selectedCustomer = customersList.find((c) => c.id === selectedCustomerId) || customersList[0];
@@ -195,11 +204,39 @@ export const RetailPOS: React.FC = () => {
   const taxAmount = gstEnabled ? (taxableSubtotal * manualGstPercent) / 100 : 0;
   const grandTotal = Math.round(taxableSubtotal + taxAmount);
 
+  // Track paid amount defaults when grandTotal changes
+  useEffect(() => {
+    if (!isCustomPaid && paymentMode !== 'split') {
+      setCustomPaidAmount(grandTotal);
+    }
+  }, [grandTotal, isCustomPaid, paymentMode]);
+
+  // Payment Calculations
+  const totalPaidAmount = paymentMode === 'split'
+    ? (splitCash || 0) + (splitUpi || 0) + (splitCard || 0) + (splitBank || 0)
+    : (isCustomPaid ? customPaidAmount : grandTotal);
+
+  const remainingBalance = Math.max(0, grandTotal - totalPaidAmount);
+
+  let paymentStatus: 'paid' | 'partial' | 'unpaid' = 'unpaid';
+  if (remainingBalance === 0 && totalPaidAmount > 0) {
+    paymentStatus = 'paid';
+  } else if (totalPaidAmount > 0) {
+    paymentStatus = 'partial';
+  } else {
+    paymentStatus = 'unpaid';
+  }
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleFinalizeBill = async () => {
     if (cartItems.length === 0) {
       alert('Please add at least one product item to the bill before finalizing.');
+      return;
+    }
+
+    if (totalPaidAmount > grandTotal) {
+      alert(`Payment amount (${formatCurrency(totalPaidAmount)}) cannot exceed Grand Total (${formatCurrency(grandTotal)}).`);
       return;
     }
 
@@ -240,9 +277,9 @@ export const RetailPOS: React.FC = () => {
           tax_amount: taxAmount,
           round_off: 0,
           total_amount: grandTotal,
-          paid_amount: grandTotal,
-          balance_due: 0,
-          payment_status: 'paid',
+          paid_amount: totalPaidAmount,
+          balance_due: remainingBalance,
+          payment_status: paymentStatus,
           status: 'finalized',
           items: cartItems,
           notes: notes || (gstEnabled ? 'GST Invoice' : 'Bill without GST'),
@@ -252,7 +289,7 @@ export const RetailPOS: React.FC = () => {
           id: ensureValidUUID(),
           invoice_id: invoiceId,
           payment_date: new Date().toISOString().split('T')[0],
-          amount: grandTotal,
+          amount: totalPaidAmount,
           payment_mode: paymentMode,
           reference_number: `REF-${Date.now()}`,
         }
@@ -285,7 +322,7 @@ export const RetailPOS: React.FC = () => {
     <div className="space-y-6 min-w-0 max-w-full overflow-x-hidden">
       <PageHeader
         title="Retail POS Billing Counter"
-        subtitle="Fast checkout with customer-wise manual GST, wastage, சேதாரம் adjustments, and inventory stock sync"
+        subtitle="Fast checkout with customer-wise manual GST, wastage, சேதாரம் adjustments, real-time balance calculations, and inventory stock sync"
         breadcrumb={['Home', 'Retail POS']}
         actionBtn={
           <button
@@ -466,7 +503,7 @@ export const RetailPOS: React.FC = () => {
 
         {/* Right 5 Cols: Cart & Bill Summary */}
         <div className="lg:col-span-5 space-y-4 min-w-0">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-lg flex flex-col justify-between min-h-[520px] min-w-0">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-lg flex flex-col justify-between min-h-[560px] min-w-0">
             <div>
               <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-charcoal-800 min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
@@ -481,7 +518,7 @@ export const RetailPOS: React.FC = () => {
               </div>
 
               {/* Cart Table */}
-              <div className="mt-3 space-y-2 max-h-[220px] overflow-y-auto pr-1 min-w-0">
+              <div className="mt-3 space-y-2 max-h-[200px] overflow-y-auto pr-1 min-w-0">
                 {cartItems.length === 0 ? (
                   <div className="flex h-36 flex-col items-center justify-center text-slate-400 text-xs">
                     <ShoppingCart className="h-8 w-8 mb-2 opacity-30" />
@@ -553,7 +590,7 @@ export const RetailPOS: React.FC = () => {
                 <strong className="text-charcoal-900 dark:text-slate-100">{formatCurrency(combinedMakingAndWastage)}</strong>
               </div>
 
-              <div className="flex items-center justify-between gap-2 pt-1">
+              <div className="flex items-center justify-between gap-2 pt-0.5">
                 <span className="text-slate-600 dark:text-slate-400">Discount (INR):</span>
                 <input
                   type="number"
@@ -568,7 +605,7 @@ export const RetailPOS: React.FC = () => {
                 <strong className="text-charcoal-900 dark:text-slate-100">{formatCurrency(taxAmount)}</strong>
               </div>
 
-              <div className="flex justify-between items-center border-t border-slate-200 pt-3 dark:border-charcoal-800">
+              <div className="flex justify-between items-center border-t border-slate-200 pt-2.5 dark:border-charcoal-800">
                 <span className="font-serif text-base font-bold text-charcoal-900 dark:text-slate-100">Grand Total:</span>
                 <span className="font-serif text-2xl font-bold text-amber-900 dark:text-gold-300">
                   {formatCurrency(grandTotal)}
@@ -582,7 +619,13 @@ export const RetailPOS: React.FC = () => {
                   {(['cash', 'upi', 'card', 'split'] as const).map((mode) => (
                     <button
                       key={mode}
-                      onClick={() => setPaymentMode(mode)}
+                      type="button"
+                      onClick={() => {
+                        setPaymentMode(mode);
+                        if (mode !== 'split' && !isCustomPaid) {
+                          setCustomPaidAmount(grandTotal);
+                        }
+                      }}
                       className={`rounded-lg py-1.5 text-[10px] font-bold uppercase transition-all ${
                         paymentMode === mode
                           ? 'bg-gold-500 text-charcoal-950 shadow-gold'
@@ -595,9 +638,145 @@ export const RetailPOS: React.FC = () => {
                 </div>
               </div>
 
+              {/* Payment Mode Breakdown Inputs */}
+              {paymentMode === 'split' ? (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-2.5 space-y-2 dark:border-charcoal-800 dark:bg-charcoal-800/40 mt-2">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Split Payment Breakdown (₹)
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-semibold">Cash (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={splitCash || ''}
+                        onChange={(e) => setSplitCash(Math.max(0, Number(e.target.value)))}
+                        placeholder="0"
+                        className="w-full rounded-lg border border-slate-200 p-1.5 text-right font-mono text-xs font-bold dark:border-charcoal-700 dark:bg-charcoal-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-semibold">UPI (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={splitUpi || ''}
+                        onChange={(e) => setSplitUpi(Math.max(0, Number(e.target.value)))}
+                        placeholder="0"
+                        className="w-full rounded-lg border border-slate-200 p-1.5 text-right font-mono text-xs font-bold dark:border-charcoal-700 dark:bg-charcoal-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-semibold">Card (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={splitCard || ''}
+                        onChange={(e) => setSplitCard(Math.max(0, Number(e.target.value)))}
+                        placeholder="0"
+                        className="w-full rounded-lg border border-slate-200 p-1.5 text-right font-mono text-xs font-bold dark:border-charcoal-700 dark:bg-charcoal-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-semibold">Bank (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={splitBank || ''}
+                        onChange={(e) => setSplitBank(Math.max(0, Number(e.target.value)))}
+                        placeholder="0"
+                        className="w-full rounded-lg border border-slate-200 p-1.5 text-right font-mono text-xs font-bold dark:border-charcoal-700 dark:bg-charcoal-900"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="pt-2 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                      Payment Received ({paymentMode.toUpperCase()}):
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomPaidAmount(grandTotal);
+                          setIsCustomPaid(true);
+                        }}
+                        className="rounded bg-gold-100 px-2 py-0.5 text-[9px] font-bold text-amber-900 hover:bg-gold-200 dark:bg-gold-950/60 dark:text-gold-300"
+                      >
+                        Full ({formatCurrency(grandTotal)})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomPaidAmount(0);
+                          setIsCustomPaid(true);
+                        }}
+                        className="rounded bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600 hover:bg-slate-200 dark:bg-charcoal-800 dark:text-slate-400"
+                      >
+                        Clear (₹0)
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={customPaidAmount}
+                    onChange={(e) => {
+                      setCustomPaidAmount(Number(e.target.value));
+                      setIsCustomPaid(true);
+                    }}
+                    className="w-full rounded-xl border border-slate-200 p-2 text-right font-mono text-sm font-bold text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
+                  />
+                </div>
+              )}
+
+              {/* PROMINENT PAYMENT BALANCE & STATUS CARD */}
+              <div className="mt-3 rounded-2xl border border-gold-400/60 bg-gold-50/50 p-3.5 dark:border-gold-800/50 dark:bg-gold-950/30 space-y-2 shadow-sm">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Total Paid:</span>
+                  <span className="font-mono font-bold text-charcoal-900 dark:text-slate-100 text-sm">
+                    {formatCurrency(totalPaidAmount)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-xs border-t border-gold-200/80 pt-2 dark:border-gold-800/60">
+                  <span className="font-serif font-bold text-red-700 dark:text-red-400 text-sm">
+                    Remaining Balance Due:
+                  </span>
+                  <span className="font-serif font-extrabold text-red-700 dark:text-red-400 text-base">
+                    {formatCurrency(remainingBalance)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] pt-1 border-t border-gold-200/50 dark:border-gold-800/30">
+                  <span className="text-slate-500 font-semibold">Payment Status:</span>
+                  <span
+                    className={`font-bold px-2 py-0.5 rounded text-[10px] uppercase tracking-wider ${
+                      paymentStatus === 'paid'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                        : paymentStatus === 'partial'
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                        : 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
+                    }`}
+                  >
+                    {paymentStatus === 'paid' ? 'STATUS: PAID' : paymentStatus === 'partial' ? 'STATUS: PARTIALLY PAID' : 'STATUS: UNPAID'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Overpayment Warning */}
+              {totalPaidAmount > grandTotal && (
+                <div className="rounded-xl bg-red-100 p-2.5 text-center text-[11px] font-bold text-red-800 dark:bg-red-950 dark:text-red-300 border border-red-200">
+                  ⚠️ Payment amount ({formatCurrency(totalPaidAmount)}) cannot exceed Invoice Total ({formatCurrency(grandTotal)}).
+                </div>
+              )}
+
               <button
                 onClick={handleFinalizeBill}
-                disabled={cartItems.length === 0 || isSubmitting}
+                disabled={cartItems.length === 0 || isSubmitting || totalPaidAmount > grandTotal}
                 className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gold-500 py-3 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50 transition-all cursor-pointer"
               >
                 {isSubmitting ? (
