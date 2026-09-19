@@ -205,20 +205,34 @@ export function generateCustomerWholesaleIssuePDF(
   doc.text(`Expected Reconciliation: ${formatDate(issue.expected_return_date)}`, 125, 61);
 
   // Table Data (STRICTLY NO Actual Touch / Profit Touch / Final Touch columns!)
-  const tableData = issue.items.map((item, idx) => {
-    const fineGold = item.fine_gold_g || Number(((item.net_weight_g * (item.billing_touch || 47)) / 100).toFixed(3));
+  const itemsList = issue.items && issue.items.length > 0 ? issue.items : [];
+  const tableData = itemsList.map((item, idx) => {
+    const fineGold = item.fine_gold_g || Number((((item.net_weight_g || 0) * (item.billing_touch || 47)) / 100).toFixed(3));
 
     return [
       idx + 1,
       `${item.product_name || 'Jewellery Item'}\nSKU: ${item.sku || 'SKU-NA'}`,
-      `${item.quantity_issued} Pcs`,
-      formatWeight(item.gross_weight_g),
+      `${item.quantity_issued || 1} Pcs`,
+      formatWeight(item.gross_weight_g || 0),
       formatWeight(item.deduction_weight_g || 0),
-      formatWeight(item.net_weight_g),
+      formatWeight(item.net_weight_g || 0),
       `${fineGold.toFixed(3)} g`,
-      formatCurrency(item.total_issue_value),
+      formatCurrency(item.total_issue_value || 0),
     ];
   });
+
+  if (tableData.length === 0 && (issue.total_items_issued > 0 || issue.total_net_weight_g > 0)) {
+    tableData.push([
+      1,
+      'Consignment Jewellery Issue (Aggregated Item Row)',
+      `${issue.total_items_issued || 1} Pcs`,
+      formatWeight(issue.total_gross_weight_g || 0),
+      formatWeight(issue.total_deduction_weight_g || 0),
+      formatWeight(issue.total_net_weight_g || 0),
+      `${(issue.total_fine_gold_g || 0).toFixed(3)} g`,
+      formatCurrency(issue.total_valuation_amount || 0),
+    ]);
+  }
 
   autoTable(doc, {
     startY: 73,
@@ -387,26 +401,45 @@ export function generateInternalWholesaleIssuePDF(
   doc.text(`Shop: ${custShop || 'N/A'} | Phone: ${custPhone}`, 110, 50);
 
   // Table Data with complete Touch calculation breakdown
-  const tableData = issue.items.map((item, idx) => {
-    const actTouch = item.actual_touch || 37;
-    const profTouch = item.profit_touch || 10;
-    const billTouch = item.billing_touch || actTouch + profTouch;
-    const fineGold = item.fine_gold_g || Number(((item.net_weight_g * billTouch) / 100).toFixed(3));
+  const itemsList = issue.items && issue.items.length > 0 ? issue.items : [];
+  const tableData = itemsList.map((item, idx) => {
+    const actTouch = item.actual_touch ?? 37;
+    const profTouch = item.profit_touch ?? 10;
+    const billTouch = item.billing_touch ?? (actTouch + profTouch);
+    const fineGold = item.fine_gold_g ?? Number((((item.net_weight_g || 0) * billTouch) / 100).toFixed(3));
+    const val = item.total_issue_value ?? 0;
 
     return [
       idx + 1,
-      item.product_name || 'Jewellery Item',
-      item.quantity_issued,
-      formatWeight(item.gross_weight_g),
+      `${item.product_name || 'Jewellery Item'}${item.sku ? `\nSKU: ${item.sku}` : ''}`,
+      `${item.quantity_issued ?? 1} Pcs`,
+      formatWeight(item.gross_weight_g || 0),
       formatWeight(item.deduction_weight_g || 0),
-      formatWeight(item.net_weight_g),
+      formatWeight(item.net_weight_g || 0),
       `${actTouch}%`,
       `+${profTouch}%`,
       `${billTouch}%`,
       `${fineGold.toFixed(3)} g`,
-      formatCurrency(item.total_issue_value),
+      formatCurrency(val),
     ];
   });
+
+  if (tableData.length === 0 && (issue.total_items_issued > 0 || issue.total_net_weight_g > 0)) {
+    const defaultTouch = issue.agreed_profit_percent || 40;
+    tableData.push([
+      1,
+      'Consignment Jewellery Issue (Aggregated Item Row)',
+      `${issue.total_items_issued || 1} Pcs`,
+      formatWeight(issue.total_gross_weight_g || 0),
+      formatWeight(issue.total_deduction_weight_g || 0),
+      formatWeight(issue.total_net_weight_g || 0),
+      `${defaultTouch}%`,
+      '+0%',
+      `${defaultTouch}%`,
+      `${(issue.total_fine_gold_g || 0).toFixed(3)} g`,
+      formatCurrency(issue.total_valuation_amount || 0),
+    ]);
+  }
 
   autoTable(doc, {
     startY: 56,

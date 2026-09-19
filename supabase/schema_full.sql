@@ -452,8 +452,8 @@ CREATE TABLE IF NOT EXISTS wholesale_issue_items (
     product_name TEXT NOT NULL,
     sku TEXT,
     category TEXT,
-    metal_type metal_type NOT NULL,
-    purity metal_purity NOT NULL,
+    metal_type metal_type NOT NULL DEFAULT 'gold',
+    purity metal_purity NOT NULL DEFAULT '22k',
     quantity_issued INT NOT NULL DEFAULT 1,
     gross_weight_g NUMERIC(10,3) NOT NULL,
     deduction_weight_g NUMERIC(10,3) DEFAULT 0.000,
@@ -470,6 +470,9 @@ CREATE TABLE IF NOT EXISTS wholesale_issue_items (
     quantity_remaining INT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE wholesale_issue_items ALTER COLUMN metal_type SET DEFAULT 'gold';
+ALTER TABLE wholesale_issue_items ALTER COLUMN purity SET DEFAULT '22k';
 
 CREATE TABLE IF NOT EXISTS wholesale_sales (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

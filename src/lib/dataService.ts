@@ -830,37 +830,111 @@ export const dataService = {
   // WHOLESALE CONSIGNMENT & CREDIT ENGINE
   // --------------------------------------------------------------------------
   async getWholesaleIssues(): Promise<WholesaleIssue[]> {
-    const db = checkSupabaseClient();
-    const { data, error } = await db
-      .from('wholesale_issues')
-      .select('*, items:wholesale_issue_items(*)')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Failed to fetch wholesale issues from Supabase:', error.message);
-      const localDb = getLocalDb();
-      return localDb.wholesaleIssues || [];
-    }
-    return (data || []) as WholesaleIssue[];
-  },
-
-  async getWholesaleIssueById(id: string): Promise<WholesaleIssue | null> {
-    const validId = ensureValidUUID(id);
     const localDb = getLocalDb();
     try {
       const db = checkSupabaseClient();
       const { data, error } = await db
         .from('wholesale_issues')
         .select('*, items:wholesale_issue_items(*)')
-        .eq('id', validId)
-        .maybeSingle();
+        .order('created_at', { ascending: false });
 
       if (error || !data) {
-        return localDb.wholesaleIssues.find((w) => w.id === id || w.id === validId) || null;
+        console.error('Failed to fetch wholesale issues from Supabase:', error?.message);
+        return localDb.wholesaleIssues || [];
       }
-      return data as WholesaleIssue;
-    } catch {
-      return localDb.wholesaleIssues.find((w) => w.id === id || w.id === validId) || null;
+
+      const issues = data as WholesaleIssue[];
+      
+      // Perform batch items fallback for any issues missing items
+      const missingItemsIssues = issues.filter((i) => !i.items || i.items.length === 0);
+      if (missingItemsIssues.length > 0) {
+        const issueIds = missingItemsIssues.map((i) => i.id);
+        const { data: allItems } = await db
+          .from('wholesale_issue_items')
+          .select('*')
+          .in('issue_id', issueIds);
+
+        const itemsByIssueId = new Map<string, WholesaleIssueItem[]>();
+        if (allItems) {
+          for (const item of allItems as WholesaleIssueItem[]) {
+            const list = itemsByIssueId.get(item.issue_id!) || [];
+            list.push(item);
+            itemsByIssueId.set(item.issue_id!, list);
+          }
+        }
+
+        for (const issue of issues) {
+          if (!issue.items || issue.items.length === 0) {
+            const fetched = itemsByIssueId.get(issue.id);
+            if (fetched && fetched.length > 0) {
+              issue.items = fetched;
+            } else if (localDb.wholesaleIssues) {
+              const localMatch = localDb.wholesaleIssues.find((w) => w.id === issue.id || w.issue_number === issue.issue_number);
+              if (localMatch && localMatch.items && localMatch.items.length > 0) {
+                issue.items = localMatch.items;
+              }
+            }
+          }
+        }
+      }
+
+      return issues;
+    } catch (e) {
+      console.warn('Could not fetch wholesale issues from Supabase:', e);
+      return localDb.wholesaleIssues || [];
+    }
+  },
+
+  async getWholesaleIssueById(id: string): Promise<WholesaleIssue | null> {
+    const localDb = getLocalDb();
+    try {
+      const db = checkSupabaseClient();
+      const isUuid = UUID_REGEX.test(id);
+      
+      let query = db.from('wholesale_issues').select('*, items:wholesale_issue_items(*)');
+      if (isUuid) {
+        query = query.eq('id', id);
+      } else {
+        query = query.eq('issue_number', id);
+      }
+
+      const { data, error } = await query.maybeSingle();
+
+      if (error || !data) {
+        const localMatch = localDb.wholesaleIssues?.find((w) => w.id === id || w.issue_number === id);
+        if (localMatch) return localMatch;
+        return null;
+      }
+
+      let fetchedItems: WholesaleIssueItem[] = data.items || [];
+
+      // If embedded items is empty, perform a direct query on wholesale_issue_items by issue_id
+      if (fetchedItems.length === 0) {
+        const { data: directItems } = await db
+          .from('wholesale_issue_items')
+          .select('*')
+          .eq('issue_id', data.id);
+        if (directItems && directItems.length > 0) {
+          fetchedItems = directItems as WholesaleIssueItem[];
+        }
+      }
+
+      // If still empty, check localDb cache for items matching data.id or issue_number
+      if (fetchedItems.length === 0 && localDb.wholesaleIssues) {
+        const localMatch = localDb.wholesaleIssues.find((w) => w.id === data.id || w.issue_number === data.issue_number);
+        if (localMatch && localMatch.items && localMatch.items.length > 0) {
+          fetchedItems = localMatch.items;
+        }
+      }
+
+      return {
+        ...data,
+        items: fetchedItems,
+      } as WholesaleIssue;
+    } catch (e) {
+      console.warn('Could not fetch wholesale issue by id from Supabase:', e);
+      const localMatch = localDb.wholesaleIssues?.find((w) => w.id === id || w.issue_number === id);
+      return localMatch || null;
     }
   },
 
@@ -937,6 +1011,9 @@ export const dataService = {
         product_id: ensureValidUUID(item.product_id),
         product_name: item.product_name || '',
         sku: item.sku || '',
+        category: item.category || 'Jewellery',
+        metal_type: item.metal_type || 'gold',
+        purity: item.purity || '22k',
         quantity_issued: Number(item.quantity_issued || 1),
         gross_weight_g: Number(item.gross_weight_g || 0),
         deduction_weight_g: Number(item.deduction_weight_g || 0),

@@ -176,6 +176,31 @@ export const WholesaleIssueDetails: React.FC = () => {
     statusBadgeClass = 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-gold-300';
   }
 
+  const effectiveItems = (issue.items && issue.items.length > 0)
+    ? issue.items
+    : [
+        {
+          id: 'item-aggregated-fallback',
+          product_id: 'prod-fallback',
+          product_name: 'Consignment Jewellery Issue (Aggregated Item Row)',
+          sku: 'SKU-AGGREGATED',
+          quantity_issued: issue.total_items_issued || 1,
+          gross_weight_g: issue.total_gross_weight_g || 0,
+          deduction_weight_g: issue.total_deduction_weight_g || 0,
+          stone_weight_g: 0,
+          net_weight_g: issue.total_net_weight_g || 0,
+          actual_touch: issue.agreed_profit_percent || 40,
+          profit_touch: 0,
+          billing_touch: issue.agreed_profit_percent || 40,
+          fine_gold_g: issue.total_fine_gold_g || 0,
+          unit_cost_valuation: issue.gold_rate_per_gram || 0,
+          total_issue_value: issue.total_valuation_amount || 0,
+          quantity_sold: 0,
+          quantity_returned: 0,
+          quantity_remaining: issue.total_items_issued || 1,
+        }
+      ];
+
   return (
     <div className="space-y-6 pb-12">
       <PageHeader
@@ -354,7 +379,7 @@ export const WholesaleIssueDetails: React.FC = () => {
               )}
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
-              {issue.items.map((item, idx) => {
+              {effectiveItems.map((item, idx) => {
                 const actTouch = item.actual_touch || 37;
                 const profTouch = item.profit_touch || 10;
                 const billTouch = item.billing_touch || actTouch + profTouch;
