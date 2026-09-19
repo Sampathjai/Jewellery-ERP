@@ -34,8 +34,9 @@ export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded =
       const settings = await dataService.getBusinessSettings();
       if (settings) {
         setLogoutEnabled(settings.inactivity_logout_enabled ?? true);
-        setTimeoutMinutes(settings.inactivity_timeout_minutes ?? 15);
-        setMaxSessions(settings.max_concurrent_sessions ?? 3);
+        setTimeoutMinutes(Number(settings.inactivity_timeout_minutes ?? 15));
+        const numMax = Number(settings.max_concurrent_sessions);
+        setMaxSessions(isNaN(numMax) || numMax <= 0 ? 3 : numMax);
       }
     } catch (err: any) {
       console.error('Failed to load user login & session settings from Supabase:', err);
@@ -60,11 +61,15 @@ export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded =
     setSavedSuccess(false);
 
     try {
+      const targetMax = Number(maxSessions);
       const saved = await dataService.saveBusinessSettings({
         inactivity_logout_enabled: logoutEnabled,
-        inactivity_timeout_minutes: timeoutMinutes,
-        max_concurrent_sessions: maxSessions,
+        inactivity_timeout_minutes: Number(timeoutMinutes),
+        max_concurrent_sessions: targetMax,
       });
+
+      const confirmedMax = Number(saved.max_concurrent_sessions ?? targetMax);
+      setMaxSessions(confirmedMax);
 
       await dataService.logAuditAction(
         'update_user_login_settings',
@@ -73,7 +78,7 @@ export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded =
         {
           inactivity_logout_enabled: logoutEnabled,
           inactivity_timeout_minutes: timeoutMinutes,
-          max_concurrent_sessions: maxSessions,
+          max_concurrent_sessions: confirmedMax,
         }
       );
 

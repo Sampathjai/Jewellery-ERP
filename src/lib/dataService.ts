@@ -1558,11 +1558,17 @@ export const dataService = {
         throw formatDbError('Fetch Business Settings Failed', error);
       }
       if (data && data.length > 0) {
+        const row = data[0];
         const settingsObj = {
-          ...data[0],
-          inactivity_logout_enabled: data[0].inactivity_logout_enabled ?? true,
-          inactivity_timeout_minutes: Number(data[0].inactivity_timeout_minutes ?? 15),
-          max_concurrent_sessions: Number(data[0].max_concurrent_sessions ?? 3),
+          ...localDb.settings,
+          ...row,
+          inactivity_logout_enabled: row.inactivity_logout_enabled ?? localDb.settings?.inactivity_logout_enabled ?? true,
+          inactivity_timeout_minutes: row.inactivity_timeout_minutes !== null && row.inactivity_timeout_minutes !== undefined 
+            ? Number(row.inactivity_timeout_minutes) 
+            : (localDb.settings?.inactivity_timeout_minutes ?? 15),
+          max_concurrent_sessions: row.max_concurrent_sessions !== null && row.max_concurrent_sessions !== undefined 
+            ? Number(row.max_concurrent_sessions) 
+            : (localDb.settings?.max_concurrent_sessions ?? 3),
         } as BusinessSettings;
         localDb.settings = settingsObj;
         saveLocalDb(localDb);
@@ -1638,10 +1644,11 @@ export const dataService = {
       force_logout_all_at: updatedSettings.force_logout_all_at || null,
     };
 
-    const partialDbPayload: Record<string, any> = {
+    const sessionSecurityPayload: Record<string, any> = {
       ...baseDbPayload,
       inactivity_logout_enabled: updatedSettings.inactivity_logout_enabled ?? true,
       inactivity_timeout_minutes: Number(updatedSettings.inactivity_timeout_minutes ?? 15),
+      max_concurrent_sessions: Number(updatedSettings.max_concurrent_sessions ?? 3),
     };
 
     const db = checkSupabaseClient();
@@ -1653,15 +1660,15 @@ export const dataService = {
       .select()
       .single();
 
-    // If schema lacks newer columns, retry with partial payload
+    // If schema lacks force_logout_all_at column, retry with sessionSecurityPayload
     if (error && (error.message?.includes('column') || error.message?.includes('PGRST') || error.message?.includes('cache'))) {
-      const retryPartial = await db
+      const retrySessionSec = await db
         .from('business_settings')
-        .upsert(partialDbPayload)
+        .upsert(sessionSecurityPayload)
         .select()
         .single();
-      if (!retryPartial.error) {
-        data = retryPartial.data;
+      if (!retrySessionSec.error) {
+        data = retrySessionSec.data;
         error = null;
       } else {
         const retryBase = await db
@@ -1681,7 +1688,18 @@ export const dataService = {
       throw formatDbError('Shop Settings Save Failed', error);
     }
 
-    const result = { ...updatedSettings, ...(data || {}) } as BusinessSettings;
+    const result: BusinessSettings = {
+      ...updatedSettings,
+      ...(data || {}),
+      inactivity_logout_enabled: data?.inactivity_logout_enabled ?? updatedSettings.inactivity_logout_enabled ?? true,
+      inactivity_timeout_minutes: data?.inactivity_timeout_minutes !== null && data?.inactivity_timeout_minutes !== undefined
+        ? Number(data.inactivity_timeout_minutes)
+        : Number(updatedSettings.inactivity_timeout_minutes ?? 15),
+      max_concurrent_sessions: data?.max_concurrent_sessions !== null && data?.max_concurrent_sessions !== undefined
+        ? Number(data.max_concurrent_sessions)
+        : Number(updatedSettings.max_concurrent_sessions ?? 3),
+    };
+
     localDb.settings = result;
     saveLocalDb(localDb, 'settings', 'UPDATE', result);
     syncEngine.notifyDataChange('business_settings', 'UPDATE', result);
@@ -1690,7 +1708,11 @@ export const dataService = {
       'update_settings',
       'business_settings',
       result.id,
-      { shop_name: result.shop_name, phone: result.phone, gstin: result.gstin }
+      {
+        inactivity_logout_enabled: result.inactivity_logout_enabled,
+        inactivity_timeout_minutes: result.inactivity_timeout_minutes,
+        max_concurrent_sessions: result.max_concurrent_sessions,
+      }
     );
 
     return result;
