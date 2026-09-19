@@ -5,7 +5,10 @@ export function loadPdfFont(doc: any) {
   try {
     doc.addFileToVFS('Georgia.ttf', GEORGIA_FONT_BASE64);
     doc.addFont('Georgia.ttf', 'Georgia', 'normal');
-    doc.setFont('Georgia');
+    doc.addFont('Georgia.ttf', 'Georgia', 'bold');
+    doc.addFont('Georgia.ttf', 'Georgia', 'italic');
+    doc.addFont('Georgia.ttf', 'Georgia', 'bolditalic');
+    doc.setFont('Georgia', 'normal');
   } catch (e) {
     console.error('Error loading PDF font:', e);
   }

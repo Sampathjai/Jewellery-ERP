@@ -25,6 +25,133 @@ function getShopHeaderDetails(settings?: BusinessSettings) {
 }
 
 // ============================================================================
+// STANDARDIZED PAYMENT & SETTLEMENT SUMMARY CARD
+// ============================================================================
+export interface PaymentSummaryOptions {
+  doc: jsPDF;
+  startY: number;
+  title?: string;
+  totalBillAmountLabel?: string;
+  totalBillAmount: number;
+  prevPaid?: number;
+  currentPayment?: number;
+  totalPaid?: number;
+  remainingBalance?: number;
+  statusOverride?: 'PAID' | 'PARTIALLY PAID' | 'UNPAID';
+  gold916Details?: {
+    weightG: number;
+    rate: number;
+    value: number;
+  };
+  cashPaid?: number;
+}
+
+export function renderPaymentSummaryCard(options: PaymentSummaryOptions): number {
+  const {
+    doc,
+    startY,
+    title = 'PAYMENT & SETTLEMENT SUMMARY',
+    totalBillAmountLabel = 'Total Bill Amount:',
+    totalBillAmount,
+    prevPaid = 0,
+    currentPayment = 0,
+    gold916Details,
+    cashPaid = 0,
+  } = options;
+
+  const totalPaid = options.totalPaid ?? (prevPaid + currentPayment);
+  const remainingBal = options.remainingBalance ?? Math.max(0, totalBillAmount - totalPaid);
+
+  let statusText = options.statusOverride;
+  let statusColor: [number, number, number] = [180, 0, 0];
+
+  if (!statusText) {
+    if (remainingBal === 0 && totalPaid > 0) {
+      statusText = 'PAID';
+    } else if (totalPaid > 0) {
+      statusText = 'PARTIALLY PAID';
+    } else {
+      statusText = 'UNPAID';
+    }
+  }
+
+  if (statusText === 'PAID') {
+    statusColor = [0, 128, 0];
+  } else if (statusText === 'PARTIALLY PAID') {
+    statusColor = [180, 100, 0];
+  } else {
+    statusColor = [180, 0, 0];
+  }
+
+  const hasExtraInfo = (gold916Details && gold916Details.weightG > 0) || cashPaid > 0;
+  const boxHeight = hasExtraInfo ? 48 : 44;
+
+  // Cream/Light background & Gold border
+  doc.setFillColor(250, 248, 240);
+  doc.rect(14, startY, 182, boxHeight, 'F');
+  doc.setLineWidth(0.4);
+  doc.setDrawColor(212, 175, 55);
+  doc.rect(14, startY, 182, boxHeight, 'S');
+
+  // Header Title
+  doc.setFont('Georgia', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(184, 134, 11);
+  doc.text(title, 18, startY + 8);
+
+  // Status Badge
+  doc.setTextColor(...statusColor);
+  doc.text(`STATUS: ${statusText}`, 145, startY + 8);
+
+  // Left Column Labels & Values
+  doc.setFontSize(8);
+  doc.setFont('Georgia', 'normal');
+  doc.setTextColor(50, 50, 50);
+  doc.text(totalBillAmountLabel, 18, startY + 16);
+  doc.setFont('Georgia', 'bold');
+  doc.text(formatCurrency(totalBillAmount), 65, startY + 16);
+
+  doc.setFont('Georgia', 'normal');
+  doc.text('Previously Paid:', 18, startY + 22);
+  doc.text(formatCurrency(prevPaid), 65, startY + 22);
+
+  doc.text('Current Payment:', 18, startY + 28);
+  doc.text(formatCurrency(currentPayment), 65, startY + 28);
+
+  doc.setFont('Georgia', 'bold');
+  doc.setTextColor(30, 31, 38);
+  doc.text('Total Paid:', 18, startY + 35);
+  doc.text(formatCurrency(totalPaid), 65, startY + 35);
+
+  // Middle Optional Details (Gold / Cash)
+  if (gold916Details && gold916Details.weightG > 0) {
+    doc.setFont('Georgia', 'normal');
+    doc.setTextColor(50, 50, 50);
+    doc.text(
+      `916 Gold Recd: ${gold916Details.weightG} g @ ${formatCurrency(gold916Details.rate)}/g`,
+      112,
+      startY + 16
+    );
+    doc.text(`916 Gold Value: ${formatCurrency(gold916Details.value)}`, 112, startY + 22);
+  }
+  if (cashPaid > 0) {
+    doc.setFont('Georgia', 'normal');
+    doc.setTextColor(50, 50, 50);
+    const cashY = (gold916Details && gold916Details.weightG > 0) ? startY + 28 : startY + 16;
+    doc.text(`Cash Payment: ${formatCurrency(cashPaid)}`, 112, cashY);
+  }
+
+  // Right Side Prominent Balance Due
+  doc.setFontSize(9);
+  doc.setFont('Georgia', 'bold');
+  doc.setTextColor(180, 0, 0);
+  doc.text('Remaining Balance Due:', 112, startY + 35);
+  doc.text(formatCurrency(remainingBal), 162, startY + 35);
+
+  return startY + boxHeight;
+}
+
+// ============================================================================
 // 1. RETAIL INVOICE PDF (Shankar Jewellery Customer Invoice)
 // ============================================================================
 export function generateRetailInvoicePDF(invoice: RetailInvoice, settings?: BusinessSettings) {
@@ -97,11 +224,11 @@ export function generateRetailInvoicePDF(invoice: RetailInvoice, settings?: Busi
 
   const finalY = (doc as any).lastAutoTable.finalY || 120;
 
-  // Summary Card
+  // Summary Card (Subtotal metal, making, discount, tax, grand total)
   doc.setFillColor(248, 249, 250);
-  doc.rect(120, finalY + 5, 76, 48, 'F');
+  doc.rect(120, finalY + 5, 76, 46, 'F');
   doc.setDrawColor(220, 220, 220);
-  doc.rect(120, finalY + 5, 76, 48, 'S');
+  doc.rect(120, finalY + 5, 76, 46, 'S');
 
   doc.setFontSize(8);
   doc.setTextColor(50, 50, 50);
@@ -129,7 +256,7 @@ export function generateRetailInvoicePDF(invoice: RetailInvoice, settings?: Busi
   doc.text(`Grand Total:`, 124, finalY + 44);
   doc.text(formatCurrency(invoice.total_amount), 190, finalY + 44, { align: 'right' });
 
-  // Bank Info & Signatures
+  // Bank Info
   doc.setFontSize(7);
   doc.setTextColor(100, 100, 100);
   doc.setFont('Georgia', 'normal');
@@ -138,11 +265,43 @@ export function generateRetailInvoicePDF(invoice: RetailInvoice, settings?: Busi
   doc.text(`IFSC: ${settings?.bank_ifsc || 'SBIN0001234'} | UPI: ${settings?.upi_id || 'shankarjewels@upi'}`, 14, finalY + 26);
   doc.text('Terms: Goods certified under Hallmark standards. Return subject to shop policy.', 14, finalY + 35);
 
-  doc.text('Customer Signature', 14, finalY + 58);
-  doc.line(14, finalY + 56, 60, finalY + 56);
+  // Standardized Payment & Settlement Summary Card
+  const totalBillVal = invoice.total_amount || 0;
+  const currentPaid = invoice.paid_amount || 0;
+  const prevPaid = 0;
+  const totalPaid = currentPaid;
+  const remainingBal = invoice.balance_due ?? Math.max(0, totalBillVal - totalPaid);
 
-  doc.text('Authorized Shankar Jewellery Signature', 130, finalY + 58);
-  doc.line(130, finalY + 56, 190, finalY + 56);
+  let statusOverride: 'PAID' | 'PARTIALLY PAID' | 'UNPAID' = 'UNPAID';
+  if (invoice.payment_status === 'paid' || remainingBal === 0) {
+    statusOverride = 'PAID';
+  } else if (invoice.payment_status === 'partial' || currentPaid > 0) {
+    statusOverride = 'PARTIALLY PAID';
+  }
+
+  const payFinalY = renderPaymentSummaryCard({
+    doc,
+    startY: finalY + 54,
+    title: 'PAYMENT & SETTLEMENT SUMMARY',
+    totalBillAmountLabel: 'Total Bill Amount:',
+    totalBillAmount: totalBillVal,
+    prevPaid,
+    currentPayment: currentPaid,
+    totalPaid,
+    remainingBalance: remainingBal,
+    statusOverride,
+  });
+
+  // Signatures
+  doc.setFontSize(7);
+  doc.setTextColor(100, 100, 100);
+  doc.setFont('Georgia', 'normal');
+
+  doc.text('Customer Signature', 14, payFinalY + 16);
+  doc.line(14, payFinalY + 14, 60, payFinalY + 14);
+
+  doc.text('Authorized Shankar Jewellery Signature', 130, payFinalY + 16);
+  doc.line(130, payFinalY + 14, 190, payFinalY + 14);
 
   doc.save(`${invoice.invoice_number}.pdf`);
 }
@@ -272,89 +431,44 @@ export function generateCustomerWholesaleIssuePDF(
     finalY + 12
   );
 
-  // REDESIGNED PAYMENT SUMMARY CARD
+  // REDESIGNED STANDARDIZED PAYMENT SUMMARY CARD
   const cashPaid = issue.cash_paid || 0;
   const goldPaidVal = issue.gold_916_value_paid || 0;
   const currentPaid = cashPaid + goldPaidVal;
   const totalBillVal = issue.total_valuation_amount;
-  const prevPaid = 0; // Previously paid
+  const prevPaid = 0;
   const totalPaid = prevPaid + currentPaid;
   const remainingBal = issue.remaining_balance ?? Math.max(0, totalBillVal - totalPaid);
 
-  let statusText = 'UNPAID';
-  let statusColor: [number, number, number] = [180, 0, 0];
-  if (remainingBal === 0 && totalPaid > 0) {
-    statusText = 'PAID';
-    statusColor = [0, 128, 0];
-  } else if (totalPaid > 0) {
-    statusText = 'PARTIALLY PAID';
-    statusColor = [180, 100, 0];
-  }
-
-  const payStartY = finalY + 20;
-
-  doc.setFillColor(250, 248, 240);
-  doc.rect(14, payStartY, 182, 45, 'F');
-  doc.setDrawColor(212, 175, 55);
-  doc.rect(14, payStartY, 182, 45, 'S');
-
-  doc.setFontSize(9);
-  doc.setFont('Georgia', 'bold');
-  doc.setTextColor(184, 134, 11);
-  doc.text('PAYMENT & SETTLEMENT SUMMARY', 18, payStartY + 9);
-
-  doc.setTextColor(...statusColor);
-  doc.text(`STATUS: ${statusText}`, 145, payStartY + 9);
-
-  doc.setFontSize(8);
-  doc.setFont('Georgia', 'normal');
-  doc.setTextColor(50, 50, 50);
-
-  doc.text(`Total Bill Amount:`, 18, payStartY + 18);
-  doc.setFont('Georgia', 'bold');
-  doc.text(formatCurrency(totalBillVal), 70, payStartY + 18);
-
-  doc.setFont('Georgia', 'normal');
-  doc.text(`Previously Paid:`, 18, payStartY + 24);
-  doc.text(formatCurrency(prevPaid), 70, payStartY + 24);
-
-  doc.text(`Current Payment:`, 18, payStartY + 30);
-  doc.text(formatCurrency(currentPaid), 70, payStartY + 30);
-
-  doc.setFont('Georgia', 'bold');
-  doc.setTextColor(30, 31, 38);
-  doc.text(`Total Paid:`, 18, payStartY + 37);
-  doc.text(formatCurrency(totalPaid), 70, payStartY + 37);
-
-  if (issue.gold_916_weight_paid_g) {
-    doc.setFont('Georgia', 'normal');
-    doc.setTextColor(50, 50, 50);
-    doc.text(`916 Gold Received: ${issue.gold_916_weight_paid_g} g @ ${formatCurrency(issue.gold_916_rate)}/g`, 115, payStartY + 18);
-    doc.text(`916 Gold Value: ${formatCurrency(goldPaidVal)}`, 115, payStartY + 24);
-  }
-  if (cashPaid > 0) {
-    doc.setFont('Georgia', 'normal');
-    doc.setTextColor(50, 50, 50);
-    doc.text(`Cash Payment: ${formatCurrency(cashPaid)}`, 115, payStartY + 30);
-  }
-
-  doc.setFontSize(10);
-  doc.setFont('Georgia', 'bold');
-  doc.setTextColor(180, 0, 0);
-  doc.text(`Remaining Balance Due:`, 115, payStartY + 38);
-  doc.text(formatCurrency(remainingBal), 165, payStartY + 38);
+  const payFinalY = renderPaymentSummaryCard({
+    doc,
+    startY: finalY + 20,
+    title: 'PAYMENT & SETTLEMENT SUMMARY',
+    totalBillAmountLabel: 'Total Bill Amount:',
+    totalBillAmount: totalBillVal,
+    prevPaid,
+    currentPayment: currentPaid,
+    totalPaid,
+    remainingBalance: remainingBal,
+    gold916Details: issue.gold_916_weight_paid_g ? {
+      weightG: issue.gold_916_weight_paid_g,
+      rate: issue.gold_916_rate,
+      value: goldPaidVal,
+    } : undefined,
+    cashPaid,
+  });
 
   // Footer & Signatures
   doc.setFontSize(7);
   doc.setTextColor(100, 100, 100);
   doc.setFont('Georgia', 'normal');
-  doc.text('Thank you for your business with Shankar Jewellery. All jewellery manufactured under hallmark standard.', 14, payStartY + 52);
+  doc.text('Thank you for your business with Shankar Jewellery. All jewellery manufactured under hallmark standard.', 14, payFinalY + 10);
 
-  doc.text('Customer Signature', 14, payStartY + 66);
-  doc.line(14, payStartY + 64, 60, payStartY + 64);
+  doc.text('Customer Signature', 14, payFinalY + 24);
+  doc.line(14, payFinalY + 22, 60, payFinalY + 22);
 
-  doc.text('Authorized Shankar Jewellery Signature', 130, payStartY + 66);
-  doc.line(130, payStartY + 64, 190, payStartY + 64);
+  doc.text('Authorized Shankar Jewellery Signature', 130, payFinalY + 24);
+  doc.line(130, payFinalY + 22, 190, payFinalY + 22);
 
   doc.save(`Invoice_${issue.issue_number}.pdf`);
 }
@@ -497,51 +611,28 @@ export function generateInternalWholesaleIssuePDF(
   const totalPaid = prevPaid + currentPaid;
   const remainingBal = issue.remaining_balance ?? Math.max(0, totalBillVal - totalPaid);
 
-  let statusText = 'UNPAID';
-  if (remainingBal === 0 && totalPaid > 0) statusText = 'PAID';
-  else if (totalPaid > 0) statusText = 'PARTIALLY PAID';
-
-  const payStartY = finalY + 24;
-
-  doc.setFillColor(250, 248, 240);
-  doc.rect(14, payStartY, 182, 42, 'F');
-  doc.setDrawColor(212, 175, 55);
-  doc.rect(14, payStartY, 182, 42, 'S');
-
-  doc.setFontSize(9);
-  doc.setFont('Georgia', 'bold');
-  doc.setTextColor(184, 134, 11);
-  doc.text('INTERNAL PAYMENT & SETTLEMENT SUMMARY', 18, payStartY + 8);
-  doc.text(`STATUS: ${statusText}`, 145, payStartY + 8);
-
-  doc.setFontSize(8);
-  doc.setFont('Georgia', 'normal');
-  doc.setTextColor(50, 50, 50);
-
-  doc.text(`Total Valuation: ${formatCurrency(totalBillVal)}`, 18, payStartY + 16);
-  doc.text(`Previously Paid: ${formatCurrency(prevPaid)}`, 18, payStartY + 22);
-  doc.text(`Current Payment: ${formatCurrency(currentPaid)}`, 18, payStartY + 28);
-  doc.setFont('Georgia', 'bold');
-  doc.text(`Total Paid: ${formatCurrency(totalPaid)}`, 18, payStartY + 35);
-
-  if (issue.gold_916_weight_paid_g) {
-    doc.setFont('Georgia', 'normal');
-    doc.text(`916 Gold Received: ${issue.gold_916_weight_paid_g} g @ ${formatCurrency(issue.gold_916_rate)}/g = ${formatCurrency(goldPaidVal)}`, 100, payStartY + 16);
-  }
-  if (cashPaid > 0) {
-    doc.setFont('Georgia', 'normal');
-    doc.text(`Cash Payment: ${formatCurrency(cashPaid)}`, 100, payStartY + 22);
-  }
-
-  doc.setFontSize(10);
-  doc.setFont('Georgia', 'bold');
-  doc.setTextColor(180, 0, 0);
-  doc.text(`Remaining Balance Due: ${formatCurrency(remainingBal)}`, 100, payStartY + 35);
+  const payFinalY = renderPaymentSummaryCard({
+    doc,
+    startY: finalY + 24,
+    title: 'INTERNAL PAYMENT & SETTLEMENT SUMMARY',
+    totalBillAmountLabel: 'Total Valuation:',
+    totalBillAmount: totalBillVal,
+    prevPaid,
+    currentPayment: currentPaid,
+    totalPaid,
+    remainingBalance: remainingBal,
+    gold916Details: issue.gold_916_weight_paid_g ? {
+      weightG: issue.gold_916_weight_paid_g,
+      rate: issue.gold_916_rate,
+      value: goldPaidVal,
+    } : undefined,
+    cashPaid,
+  });
 
   doc.setFontSize(7);
   doc.setTextColor(100, 100, 100);
   doc.setFont('Georgia', 'normal');
-  doc.text('CONFIDENTIAL: Internal goldsmith voucher. Contains proprietary melting touch and profit calculation metrics.', 14, payStartY + 50);
+  doc.text('CONFIDENTIAL: Internal goldsmith voucher. Contains proprietary melting touch and profit calculation metrics.', 14, payFinalY + 10);
 
   doc.save(`InternalVoucher_${issue.issue_number}.pdf`);
 }
@@ -617,16 +708,29 @@ export function generateWholesaleSettlementPDF(
 
   const finalY = (doc as any).lastAutoTable.finalY || 120;
 
-  doc.setFontSize(10);
-  doc.setFont('Georgia', 'bold');
-  doc.setTextColor(184, 134, 11);
-  doc.text(`Final Outstanding Due to Shop: ${formatCurrency(settlement.balance_due)}`, 14, finalY + 15);
+  const totalBillVal = settlement.net_payable_to_shop || 0;
+  const currentPaid = settlement.amount_paid || 0;
+  const prevPaid = 0;
+  const totalPaid = currentPaid;
+  const remainingBal = settlement.balance_due ?? Math.max(0, totalBillVal - totalPaid);
+
+  const payFinalY = renderPaymentSummaryCard({
+    doc,
+    startY: finalY + 8,
+    title: 'SETTLEMENT PAYMENT SUMMARY',
+    totalBillAmountLabel: 'Total Net Payable:',
+    totalBillAmount: totalBillVal,
+    prevPaid,
+    currentPayment: currentPaid,
+    totalPaid,
+    remainingBalance: remainingBal,
+  });
 
   doc.setFontSize(8);
   doc.setTextColor(80, 80, 80);
   doc.setFont('Georgia', 'normal');
-  doc.text('Verified and Approved by Shop Management', 14, finalY + 35);
-  doc.line(14, finalY + 33, 75, finalY + 33);
+  doc.text('Verified and Approved by Shop Management', 14, payFinalY + 20);
+  doc.line(14, payFinalY + 18, 75, payFinalY + 18);
 
   doc.save(`${settlement.settlement_number}.pdf`);
 }
@@ -687,10 +791,26 @@ export function generateWholesaleCustomerStatementPDF(
 
   const finalY = (doc as any).lastAutoTable.finalY || 110;
 
-  doc.setFontSize(10);
-  doc.setFont('Georgia', 'bold');
-  doc.setTextColor(184, 134, 11);
-  doc.text(`Account Statement Generated for ${customer.full_name}`, 14, finalY + 15);
+  const totalIssuesValuation = issues.reduce((sum, i) => sum + (i.total_valuation_amount || 0), 0);
+  const totalPaymentsMade = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const remainingBal = Math.max(0, totalIssuesValuation - totalPaymentsMade);
+
+  const payFinalY = renderPaymentSummaryCard({
+    doc,
+    startY: finalY + 8,
+    title: 'WHOLESALE ACCOUNT LEDGER SUMMARY',
+    totalBillAmountLabel: 'Total Consignment Debits:',
+    totalBillAmount: totalIssuesValuation,
+    prevPaid: 0,
+    currentPayment: totalPaymentsMade,
+    totalPaid: totalPaymentsMade,
+    remainingBalance: remainingBal,
+  });
+
+  doc.setFontSize(8);
+  doc.setTextColor(80, 80, 80);
+  doc.setFont('Georgia', 'normal');
+  doc.text(`Account Statement Generated for ${customer.full_name}`, 14, payFinalY + 12);
 
   doc.save(`Ledger-${customer.full_name.replace(/\s+/g, '_')}.pdf`);
 }
