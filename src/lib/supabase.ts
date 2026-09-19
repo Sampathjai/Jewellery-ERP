@@ -130,7 +130,7 @@ interface DbStore {
 
 const defaultSeedStore: DbStore = {
   settings: {
-    id: 'set-1',
+    id: '00000000-0000-0000-0000-000000000001',
     shop_name: 'Shankar Jewellery',
     owner_name: 'Sampath Kumar',
     address: 'No.4 sandhukadai, bigbazzar street',

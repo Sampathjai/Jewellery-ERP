@@ -1462,13 +1462,23 @@ export const dataService = {
     } catch (e) {
       console.warn('Could not fetch business_settings from Supabase:', e);
     }
+    if (localDb.settings && !UUID_REGEX.test(localDb.settings.id)) {
+      localDb.settings.id = '00000000-0000-0000-0000-000000000001';
+      saveLocalDb(localDb);
+    }
     return localDb.settings || null;
   },
 
   async saveBusinessSettings(settings: Partial<BusinessSettings>): Promise<BusinessSettings> {
     const localDb = getLocalDb();
     const existingObj = await this.getBusinessSettings();
-    const targetId = existingObj?.id || localDb.settings?.id || '00000000-0000-0000-0000-000000000001';
+
+    let targetId = '00000000-0000-0000-0000-000000000001';
+    if (existingObj?.id && UUID_REGEX.test(existingObj.id)) {
+      targetId = existingObj.id;
+    } else if (localDb.settings?.id && UUID_REGEX.test(localDb.settings.id)) {
+      targetId = localDb.settings.id;
+    }
 
     const updatedSettings: BusinessSettings = {
       ...localDb.settings,
