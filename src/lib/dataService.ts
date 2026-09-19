@@ -562,16 +562,25 @@ export const dataService = {
     const custPhone = (invoiceData.customer_phone || '').trim();
 
     // Stock Validation Guard
+    // Pre-flight Server-Side Stock Validation Guard (Accumulates duplicate product items)
     if (invoiceData.items && invoiceData.items.length > 0) {
+      const productTotalsMap = new Map<string, { name: string; requestedQty: number }>();
       for (const item of invoiceData.items) {
         if (!item.product_id) continue;
         const validProdId = ensureValidUUID(item.product_id);
+        const reqQty = Number(item.quantity || 1);
+        const name = item.product_name_snapshot || 'Item';
+        const existing = productTotalsMap.get(validProdId) || { name, requestedQty: 0 };
+        existing.requestedQty += reqQty;
+        productTotalsMap.set(validProdId, existing);
+      }
+
+      for (const [validProdId, info] of productTotalsMap.entries()) {
         const { data: prodData } = await db.from('products').select('name, quantity').eq('id', validProdId).maybeSingle();
         if (prodData) {
           const availQty = prodData.quantity ?? 0;
-          const reqQty = Number(item.quantity || 1);
-          if (reqQty > availQty) {
-            throw new Error(`Insufficient stock for "${prodData.name}". Available: ${availQty} Pcs, Requested: ${reqQty} Pcs.`);
+          if (info.requestedQty > availQty) {
+            throw new Error(`Insufficient stock for "${prodData.name || info.name}". Available: ${availQty} Pcs, Requested: ${info.requestedQty} Pcs.`);
           }
         }
       }
