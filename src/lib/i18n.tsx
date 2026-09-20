@@ -65,6 +65,16 @@ export interface Translations {
   pending_payments: string;
   pending_retail_payments: string;
   pending_wholesale_payments: string;
+  section_retail_sales: string;
+  subtitle_retail_sales: string;
+  section_wholesale_business: string;
+  subtitle_wholesale_business: string;
+  section_inventory_stock: string;
+  subtitle_inventory_stock: string;
+  section_monthly_financial: string;
+  subtitle_monthly_financial: string;
+  section_analytics_charts: string;
+  subtitle_analytics_charts: string;
   quick_actions: string;
   new_retail_bill: string;
   add_product: string;
@@ -181,6 +191,16 @@ const translations: Record<Language, Translations> = {
     pending_payments: 'Pending Payments',
     pending_retail_payments: 'Pending Retail Payments',
     pending_wholesale_payments: 'Pending Wholesale Payments',
+    section_retail_sales: 'Retail Sales',
+    subtitle_retail_sales: 'Retail sales, counter billing, and customer payment overview',
+    section_wholesale_business: 'Wholesale Business',
+    subtitle_wholesale_business: 'Wholesale sales, consignment partners, credit and receivables',
+    section_inventory_stock: 'Inventory & Stock',
+    subtitle_inventory_stock: 'Showroom stock, gold & silver weights, and valuation',
+    section_monthly_financial: 'Monthly & Financial Overview',
+    subtitle_monthly_financial: 'Track monthly expenses, revenue, and overall profitability',
+    section_analytics_charts: 'Analytics & Insights',
+    subtitle_analytics_charts: 'Detailed sales breakdown, category shares, and stock alerts',
     quick_actions: 'Quick Business Actions',
     new_retail_bill: 'Retail Bill (POS)',
     add_product: 'Add Product',
@@ -293,6 +313,16 @@ const translations: Record<Language, Translations> = {
     pending_payments: 'பெறவேண்டிய பாக்கித் தொகை',
     pending_retail_payments: 'சில்லறை பில் பாக்கிகள்',
     pending_wholesale_payments: 'மொத்த வியாபார பாக்கிகள்',
+    section_retail_sales: 'சில்லறை விற்பனை (Retail)',
+    subtitle_retail_sales: 'கடை ரொக்க விற்பனை மற்றும் வாடிக்கையாளர் பில் விவரங்கள்',
+    section_wholesale_business: 'மொத்த வியாபாரம் (Wholesale)',
+    subtitle_wholesale_business: 'மொத்த வியாபாரிகள், கணக்குகள் மற்றும் வரவுகள்',
+    section_inventory_stock: 'நகை இருப்பு மற்றும் மதிப்பு (Inventory)',
+    subtitle_inventory_stock: 'கடையிலுள்ள தங்க, வெள்ளி இருப்பு எடைகள்',
+    section_monthly_financial: 'மாதாந்திர நிதி நிலவரம் (Financials)',
+    subtitle_monthly_financial: 'மாதாந்திர கடைச் செலவுகள் மற்றும் நிகர லாபம்',
+    section_analytics_charts: 'விற்பனைப் பகுப்பாய்வு மற்றும் வரைபடங்கள்',
+    subtitle_analytics_charts: 'தினசரி விற்பனை வரைபடம் மற்றும் எச்சரிக்கைகள்',
     quick_actions: 'வேகமான செயல்பாடுகள்',
     new_retail_bill: 'புதிய பில் போட',
     add_product: 'நகை சேர்க்க',
