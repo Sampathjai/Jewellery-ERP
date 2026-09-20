@@ -230,3 +230,4 @@ export const revokePasskey = async (credentialId: string): Promise<{ success: bo
     return { success: false, message: err?.message || 'Failed to revoke passkey.' };
   }
 };
+
