@@ -24,6 +24,7 @@ import {
   WhatsAppMessage,
   Purchase,
   PurchasePayment,
+  UserPasskey,
 } from '@/types';
 
 const getEnvVar = (key: string): string => {
@@ -126,6 +127,7 @@ interface DbStore {
   auditLogs: AuditLog[];
   notifications: NotificationItem[];
   whatsappMessages: WhatsAppMessage[];
+  passkeys?: UserPasskey[];
 }
 
 const defaultSeedStore: DbStore = {

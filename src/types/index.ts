@@ -145,6 +145,18 @@ export interface BusinessSettings {
   updated_at?: string;
 }
 
+export interface UserPasskey {
+  id: string;
+  user_id: string;
+  credential_id: string;
+  public_key: string;
+  counter: number;
+  transports?: string[];
+  device_name: string;
+  created_at: string;
+  last_used_at: string;
+}
+
 export interface MetalRate {
   id: string;
   rate_date: string;

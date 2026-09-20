@@ -10,6 +10,7 @@ interface AuthContextType {
   user: UserProfile | null;
   role: UserRole;
   login: (email: string, password?: string) => Promise<{ success: boolean; message?: string }>;
+  loginWithProfile: (profile: UserProfile) => void;
   logout: (reason?: string) => void;
   switchRole: (newRole: UserRole) => void;
   can: (permission: PermissionCode) => boolean;
@@ -281,28 +282,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [user, role, settings.force_logout_all_at, logout]);
 
-  // Centralized Inactivity Auto Logout Tracker with Warning Modal
+  // Centralized Inactivity Auto Logout Tracker with Warning Modal (Desktop & Mobile Unified)
   useEffect(() => {
     if (!user || !autoLogoutEnabled) return;
 
-    recordActivity();
+    const timeoutMs = (inactivityTimeoutMinutes || 15) * 60 * 1000;
+    const warningMs = Math.max(0, timeoutMs - 60000); // Trigger warning 60s before timeout
+    let lastThrottledWrite = 0;
 
-    const updateActivity = () => {
-      recordActivity();
+    const checkAndRecordActivity = () => {
+      const now = Date.now();
+      const storedLast = Number(localStorage.getItem(LAST_ACTIVITY_KEY) || now);
+      const elapsed = now - storedLast;
+
+      // If session is already expired, trigger logout immediately without updating timestamp
+      if (storedLast > 0 && elapsed >= timeoutMs) {
+        logout('inactive');
+        return;
+      }
+
+      // Throttle rapid mousemove/scroll event writes to once per second
+      if (now - lastThrottledWrite >= 1000) {
+        lastThrottledWrite = now;
+        recordActivity();
+      }
+
       if (showInactivityWarning) {
         setShowInactivityWarning(false);
       }
     };
 
-    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
-    events.forEach((evt) => window.addEventListener(evt, updateActivity, { passive: true }));
+    const events = [
+      'mousemove',
+      'mousedown',
+      'mouseup',
+      'keydown',
+      'scroll',
+      'wheel',
+      'pointerdown',
+      'pointermove',
+      'pointerup',
+      'click',
+      'touchstart',
+      'touchmove',
+      'touchend',
+      'focus',
+    ];
 
-    const timeoutMs = (inactivityTimeoutMinutes || 15) * 60 * 1000;
-    const warningMs = Math.max(0, timeoutMs - 60000); // Trigger warning 60s before timeout
+    events.forEach((evt) => window.addEventListener(evt, checkAndRecordActivity, { passive: true }));
+    document.addEventListener('visibilitychange', checkAndRecordActivity);
 
     const checkInterval = setInterval(() => {
-      const storedLast = Number(localStorage.getItem(LAST_ACTIVITY_KEY) || Date.now());
       const now = Date.now();
+      const storedLast = Number(localStorage.getItem(LAST_ACTIVITY_KEY) || now);
       const elapsed = now - storedLast;
 
       if (elapsed >= timeoutMs) {
@@ -320,7 +352,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, 1000);
 
     return () => {
-      events.forEach((evt) => window.removeEventListener(evt, updateActivity));
+      events.forEach((evt) => window.removeEventListener(evt, checkAndRecordActivity));
+      document.removeEventListener('visibilitychange', checkAndRecordActivity);
       clearInterval(checkInterval);
     };
   }, [user, autoLogoutEnabled, inactivityTimeoutMinutes, logout, showInactivityWarning]);
@@ -409,6 +442,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginWithProfile = (profile: UserProfile) => {
+    setUser(profile);
+    setRole(profile.role);
+    localStorage.setItem('sampath_auth_user', JSON.stringify(profile));
+    recordActivity();
+  };
+
   const switchRole = (newRole: UserRole) => {
     if (user) {
       const updated = { ...user, role: newRole };
@@ -427,6 +467,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         role,
         login,
+        loginWithProfile,
         logout,
         switchRole,
         can,

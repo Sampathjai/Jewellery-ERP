@@ -26,6 +26,7 @@ import {
   AuditLog,
   NotificationItem,
   WhatsAppMessage,
+  UserPasskey,
 } from '@/types';
 
 // ============================================================================
@@ -1757,6 +1758,127 @@ export const dataService = {
     syncEngine.notifyDataChange('business_settings', 'UPDATE', result);
 
     return result;
+  },
+
+  // --------------------------------------------------------------------------
+  // WEBAUTHN PASSKEY DATA SERVICES
+  // --------------------------------------------------------------------------
+  async getUserProfileById(userId: string): Promise<UserProfile | null> {
+    const db = checkSupabaseClient();
+    try {
+      const { data } = await db.from('profiles').select('*').or(`id.eq.${userId},user_id.eq.${userId}`).maybeSingle();
+      if (data) return data as UserProfile;
+    } catch (e) {
+      console.warn('Could not fetch user profile by ID from Supabase:', e);
+    }
+    const profiles = await this.getUsers();
+    return profiles.find((p: UserProfile) => p.id === userId || p.user_id === userId) || null;
+  },
+
+  async getAllRegisteredPasskeys(): Promise<UserPasskey[]> {
+    const db = checkSupabaseClient();
+    const passkeyMap = new Map<string, UserPasskey>();
+
+    try {
+      const { data: pkTableData } = await db.from('user_passkeys').select('*');
+      if (pkTableData && pkTableData.length > 0) {
+        pkTableData.forEach((pk: any) => {
+          passkeyMap.set(pk.credential_id, pk as UserPasskey);
+        });
+      }
+    } catch {}
+
+    try {
+      const { data: logs } = await db
+        .from('audit_logs')
+        .select('*')
+        .eq('entity_type', 'user_passkeys')
+        .order('created_at', { ascending: true });
+
+      if (logs && logs.length > 0) {
+        logs.forEach((log: any) => {
+          const credId = log.entity_id || log.details?.credential_id;
+          if (!credId) return;
+
+          if (log.action === 'passkey_registered') {
+            const details = log.details || {};
+            const pkRecord: UserPasskey = {
+              id: credId,
+              user_id: log.user_id || details.user_id,
+              credential_id: credId,
+              public_key: details.public_key || '',
+              counter: Number(details.counter || 0),
+              transports: details.transports || ['internal'],
+              device_name: details.device_name || 'Passkey Device',
+              created_at: details.created_at || log.created_at,
+              last_used_at: details.last_used_at || log.created_at,
+            };
+            passkeyMap.set(credId, pkRecord);
+          } else if (log.action === 'passkey_removed') {
+            passkeyMap.delete(credId);
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Could not fetch passkey logs from Supabase:', e);
+    }
+
+    const localDb = getLocalDb() as any;
+    if (localDb.passkeys && Array.isArray(localDb.passkeys)) {
+      localDb.passkeys.forEach((pk: UserPasskey) => {
+        if (!passkeyMap.has(pk.credential_id)) {
+          passkeyMap.set(pk.credential_id, pk);
+        }
+      });
+    }
+
+    return Array.from(passkeyMap.values());
+  },
+
+  async getUserPasskeys(userId: string): Promise<UserPasskey[]> {
+    const all = await this.getAllRegisteredPasskeys();
+    return all.filter((p) => p.user_id === userId);
+  },
+
+  async savePasskeyCredential(passkey: UserPasskey): Promise<UserPasskey> {
+    const db = checkSupabaseClient();
+    try {
+      await db.from('user_passkeys').upsert({
+        id: passkey.id,
+        user_id: passkey.user_id,
+        credential_id: passkey.credential_id,
+        public_key: passkey.public_key,
+        counter: passkey.counter || 0,
+        transports: passkey.transports || ['internal'],
+        device_name: passkey.device_name || 'Passkey Device',
+        created_at: passkey.created_at,
+        last_used_at: passkey.last_used_at,
+      });
+    } catch {}
+
+    const localDb = getLocalDb() as any;
+    if (!localDb.passkeys) localDb.passkeys = [];
+    const idx = localDb.passkeys.findIndex((p: UserPasskey) => p.credential_id === passkey.credential_id);
+    if (idx >= 0) {
+      localDb.passkeys[idx] = passkey;
+    } else {
+      localDb.passkeys.push(passkey);
+    }
+    saveLocalDb(localDb);
+    return passkey;
+  },
+
+  async deletePasskeyCredential(credentialId: string): Promise<void> {
+    const db = checkSupabaseClient();
+    try {
+      await db.from('user_passkeys').delete().eq('credential_id', credentialId);
+    } catch {}
+
+    const localDb = getLocalDb() as any;
+    if (localDb.passkeys) {
+      localDb.passkeys = localDb.passkeys.filter((p: UserPasskey) => p.credential_id !== credentialId);
+      saveLocalDb(localDb);
+    }
   },
 
   // --------------------------------------------------------------------------

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { Sparkles, Lock, Mail, Eye, EyeOff, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Sparkles, Lock, Mail, Eye, EyeOff, AlertTriangle, ShieldCheck, KeyRound, RefreshCw } from 'lucide-react';
 import { BrandLogo } from '@/components/common/BrandLogo';
+import { isWebAuthnSupported, authenticateWithPasskey } from '@/lib/webauthn';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -11,12 +12,16 @@ export const Login: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [inactiveBanner, setInactiveBanner] = useState(false);
+  const [isAuthenticatingPasskey, setIsAuthenticatingPasskey] = useState(false);
+  const [passkeySupported, setPasskeySupported] = useState(false);
 
-  const { login, isLoading, user } = useAuth();
+  const { login, loginWithProfile, isLoading, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
+    setPasskeySupported(isWebAuthnSupported());
+
     // Check if redirected due to inactivity
     const searchParams = new URLSearchParams(location.search);
     if (searchParams.get('reason') === 'inactive') {
@@ -48,6 +53,24 @@ export const Login: React.FC = () => {
     }
   };
 
+  const handlePasskeySignIn = async () => {
+    setErrorMessage(null);
+    setIsAuthenticatingPasskey(true);
+    try {
+      const res = await authenticateWithPasskey();
+      if (res.success && res.userProfile) {
+        loginWithProfile(res.userProfile);
+        navigate('/dashboard', { replace: true });
+      } else {
+        setErrorMessage(res.message || 'Passkey authentication failed.');
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Biometric authentication failed.');
+    } finally {
+      setIsAuthenticatingPasskey(false);
+    }
+  };
+
   return (
     <div className="flex h-full w-full items-center justify-center bg-slate-950 px-4 py-12 dark:bg-charcoal-950 relative overflow-y-auto">
       {/* Background Decorative Glow */}
@@ -74,7 +97,7 @@ export const Login: React.FC = () => {
             <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
             <div>
               <strong className="block text-amber-300 font-bold">Session Expired</strong>
-              <span>Your session has expired due to 15 minutes of inactivity. Please log in again to continue.</span>
+              <span>Your session has expired due to inactivity. Please log in again to continue.</span>
             </div>
           </div>
         )}
@@ -144,19 +167,52 @@ export const Login: React.FC = () => {
 
           <button
             type="submit"
-            disabled={isLoading}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold-500 py-3 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 transition-all active:scale-[0.98]"
+            disabled={isLoading || isAuthenticatingPasskey}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold-500 py-3 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 transition-all active:scale-[0.98] disabled:opacity-50"
           >
             <Sparkles className="h-4 w-4" />
             {isLoading ? 'Signing In...' : 'Sign In to Dashboard'}
           </button>
         </form>
 
+        {/* OR Divider & Passkey Biometric Login */}
+        {passkeySupported && (
+          <div className="space-y-4 pt-1">
+            <div className="relative flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-charcoal-800" />
+              </div>
+              <div className="relative bg-charcoal-900/95 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                OR
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handlePasskeySignIn}
+              disabled={isLoading || isAuthenticatingPasskey}
+              className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-gold-400/40 bg-charcoal-800/80 py-3 text-xs font-bold text-slate-100 hover:border-gold-400 hover:bg-charcoal-800 transition-all active:scale-[0.98] disabled:opacity-50"
+            >
+              {isAuthenticatingPasskey ? (
+                <RefreshCw className="h-4 w-4 animate-spin text-gold-400" />
+              ) : (
+                <KeyRound className="h-4 w-4 text-gold-400" />
+              )}
+              <span>
+                {isAuthenticatingPasskey
+                  ? 'Verifying Touch ID / Face ID / Passkey...'
+                  : 'Sign in with Passkey (Touch ID / Face ID)'}
+              </span>
+            </button>
+          </div>
+        )}
+
         <div className="border-t border-charcoal-800 pt-4 text-center text-[11px] text-slate-500 flex items-center justify-center gap-1.5">
           <ShieldCheck className="h-3.5 w-3.5 text-gold-500" />
-          <span>Shankar Jewellery ERP v1.0 • 15-Min Session Protection Active</span>
+          <span>Shankar Jewellery ERP • Session Protection & Passkey Security Active</span>
         </div>
       </div>
     </div>
   );
 };
+
