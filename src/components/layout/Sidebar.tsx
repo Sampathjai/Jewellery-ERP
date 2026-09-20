@@ -30,6 +30,7 @@ import {
   Lock,
   PackageCheck,
   Database,
+  LogOut,
 } from 'lucide-react';
 
 import { BrandLogo } from '@/components/common/BrandLogo';
@@ -53,7 +54,7 @@ interface NavGroup {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
-  const { can } = useAuth();
+  const { user, role, logout, can } = useAuth();
   const { t } = useLanguage();
 
   const navGroups: NavGroup[] = [
@@ -172,6 +173,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               </div>
             );
           })}
+        </div>
+
+        {/* Footer Area: User Profile & Sign Out for Mobile Drawer */}
+        <div className="shrink-0 border-t border-slate-200 bg-slate-50/60 p-3 dark:border-charcoal-800 dark:bg-charcoal-900/80">
+          <div className="flex items-center justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-charcoal-900 dark:text-slate-100 truncate">
+                {user?.full_name || 'Sampath Kumar'}
+              </p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="rounded bg-gold-500/20 px-1.5 py-0.5 text-[9px] font-extrabold text-amber-900 dark:text-gold-300 uppercase border border-gold-400/30">
+                  {role}
+                </span>
+                <span className="text-[10px] text-slate-500 truncate">{user?.email || 'admin@erp.com'}</span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                onClose();
+                logout();
+              }}
+              aria-label="Sign out of ERP"
+              title="Sign Out"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300 transition-colors"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </aside>
     </>
