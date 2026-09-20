@@ -28,6 +28,8 @@ export const RecordWholesalePaymentModal: React.FC<RecordWholesalePaymentModalPr
   const [goldWeightG, setGoldWeightG] = useState<number>(2.0);
   const [goldRate, setGoldRate] = useState<number>(6830);
 
+  const [customerOutstandingDue, setCustomerOutstandingDue] = useState<number | null>(null);
+
   useEffect(() => {
     if (isOpen) {
       dataService.getMetalRates().then((rates) => {
@@ -35,8 +37,15 @@ export const RecordWholesalePaymentModal: React.FC<RecordWholesalePaymentModalPr
           setGoldRate(rates[0].gold_22k_per_gram || 6830);
         }
       });
+
+      if (!issue && customer?.id) {
+        dataService.getWholesaleCustomerOutstandingBalance(customer.id).then((bal) => {
+          setCustomerOutstandingDue(bal);
+        });
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, customer?.id, issue]);
+
   const [referenceNumber, setReferenceNumber] = useState('NEFT/891237');
   const [notes, setNotes] = useState('Payment settlement received');
 
@@ -51,7 +60,9 @@ export const RecordWholesalePaymentModal: React.FC<RecordWholesalePaymentModalPr
   const issuePaid = issue ? Number(issue.cash_paid || 0) + Number(issue.gold_916_value_paid || 0) : 0;
   const currentDue = issue
     ? (issue.remaining_balance ?? Math.max(0, Number(issue.total_valuation_amount || issue.total_cash_value || 0) - issuePaid))
-    : 0;
+    : (customerOutstandingDue ?? 0);
+
+  const isOverpaying = currentDue > 0 && totalPaymentValue > currentDue;
   const newRemainingBalance = Math.max(0, currentDue - totalPaymentValue);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -215,6 +226,13 @@ export const RecordWholesalePaymentModal: React.FC<RecordWholesalePaymentModalPr
           </div>
         )}
 
+        {/* Overpayment Warning */}
+        {isOverpaying && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-center text-xs font-bold text-red-800 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
+            ⚠️ Payment value ({formatCurrency(totalPaymentValue)}) exceeds Current Outstanding Balance ({formatCurrency(currentDue)}).
+          </div>
+        )}
+
         {/* Calculation Summary Footer */}
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-charcoal-800 dark:bg-charcoal-800/40 space-y-2 text-xs">
           <div className="flex justify-between">
@@ -241,7 +259,8 @@ export const RecordWholesalePaymentModal: React.FC<RecordWholesalePaymentModalPr
           </button>
           <button
             type="submit"
-            className="flex items-center gap-2 rounded-xl bg-gold-500 px-6 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600"
+            disabled={isOverpaying || totalPaymentValue <= 0}
+            className="flex items-center gap-2 rounded-xl bg-gold-500 px-6 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50 transition-all cursor-pointer"
           >
             <Save className="h-4 w-4" /> Confirm Payment & Update Ledger
           </button>

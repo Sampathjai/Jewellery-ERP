@@ -8,6 +8,8 @@ import { RecordWholesalePaymentModal } from '@/components/common/RecordWholesale
 import { generateWholesaleCustomerStatementPDF } from '@/lib/pdfGenerator';
 import { MessageSquare, Download, Coins, Scale } from 'lucide-react';
 
+import { syncEngine } from '@/lib/syncEngine';
+
 export const WholesaleLedger: React.FC = () => {
   const [wholesaleCustomers, setWholesaleCustomers] = useState<Customer[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
@@ -40,6 +42,19 @@ export const WholesaleLedger: React.FC = () => {
 
   useEffect(() => {
     loadLedgerData();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (
+        !tableName ||
+        tableName === 'all_tables' ||
+        tableName === 'wholesale_issues' ||
+        tableName === 'wholesale_payments' ||
+        tableName === 'wholesale_returns' ||
+        tableName === 'customers'
+      ) {
+        loadLedgerData();
+      }
+    });
+    return () => unsubscribe();
   }, [loadLedgerData]);
 
   const customer = wholesaleCustomers.find((c) => c.id === selectedCustomerId) || wholesaleCustomers[0];

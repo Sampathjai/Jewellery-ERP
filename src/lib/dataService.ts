@@ -1272,14 +1272,55 @@ export const dataService = {
     return (data || []) as WholesalePayment[];
   },
 
+  async getWholesaleCustomerOutstandingBalance(customerId: string): Promise<number> {
+    const validCustId = ensureValidUUID(customerId);
+    const [allIssues, allPayments, allSettlements] = await Promise.all([
+      this.getWholesaleIssues(),
+      this.getWholesalePayments(),
+      this.getWholesaleSettlements(),
+    ]);
+
+    const custIssues = (allIssues || []).filter(
+      (i) => i.customer_id === validCustId && i.status !== 'cancelled' && i.status !== 'settled'
+    );
+    const custPayments = (allPayments || []).filter((p) => p.customer_id === validCustId);
+    const custSettlements = (allSettlements || []).filter(
+      (s) => s.customer_id === validCustId && s.status !== 'paid' && s.status !== 'cancelled'
+    );
+
+    let issuesDue = 0;
+    for (const issue of custIssues) {
+      const val = Number(issue.total_valuation_amount || issue.total_cash_value || 0);
+      const directPaid = Number(issue.cash_paid || 0) + Number(issue.gold_916_value_paid || 0);
+      const linkedPayments = custPayments
+        .filter((p) => p.issue_id === issue.id)
+        .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      const due = issue.remaining_balance !== undefined && issue.remaining_balance !== null
+        ? Math.max(0, Math.min(Number(issue.remaining_balance), val - linkedPayments))
+        : Math.max(0, val - (directPaid + linkedPayments));
+      issuesDue += due;
+    }
+
+    let settlementsDue = 0;
+    for (const s of custSettlements) {
+      const due = s.balance_due !== undefined && s.balance_due !== null
+        ? Number(s.balance_due)
+        : Math.max(0, Number(s.net_payable_to_shop || 0) - Number(s.amount_paid || 0));
+      settlementsDue += due;
+    }
+
+    return Math.max(0, issuesDue + settlementsDue);
+  },
+
   async createWholesalePayment(paymentData: Partial<WholesalePayment>): Promise<WholesalePayment> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(paymentData.id);
     const validIssueId = paymentData.issue_id ? ensureValidUUID(paymentData.issue_id) : undefined;
+    const validCustId = ensureValidUUID(paymentData.customer_id);
 
     const payload: WholesalePayment = {
       id: validId,
-      customer_id: ensureValidUUID(paymentData.customer_id),
+      customer_id: validCustId,
       settlement_id: paymentData.settlement_id ? ensureValidUUID(paymentData.settlement_id) : undefined,
       issue_id: validIssueId,
       payment_date: paymentData.payment_date || new Date().toISOString().split('T')[0],
@@ -1300,12 +1341,12 @@ export const dataService = {
     if (!localDb.wholesalePayments) localDb.wholesalePayments = [];
     localDb.wholesalePayments.unshift(result);
 
-    // If payment is linked to a specific wholesale issue, update the issue balance & status in DB and local store
+    // If payment is linked to a specific wholesale issue, update that issue's balance & status
     if (validIssueId) {
       try {
         let issue = (localDb.wholesaleIssues || []).find((w) => w.id === validIssueId);
         if (!issue) {
-          issue = await this.getWholesaleIssueById(validIssueId) || undefined;
+          issue = (await this.getWholesaleIssueById(validIssueId)) || undefined;
         }
         if (issue) {
           const currentPaid = Number(issue.cash_paid || 0) + Number(issue.gold_916_value_paid || 0);
@@ -1332,6 +1373,56 @@ export const dataService = {
         }
       } catch (err) {
         console.warn('Could not update wholesale issue balance on payment creation:', err);
+      }
+    } else if (validCustId) {
+      // If payment is recorded at customer/ledger level, allocate payment amount FIFO across active unpaid issues
+      try {
+        const allIssues = await this.getWholesaleIssues();
+        const activeIssues = allIssues
+          .filter((i) => i.customer_id === validCustId && i.status !== 'cancelled' && i.status !== 'settled')
+          .sort((a, b) => new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime());
+
+        let amountToAllocate = result.amount;
+
+        for (const issue of activeIssues) {
+          if (amountToAllocate <= 0) break;
+          const valuation = Number(issue.total_valuation_amount || issue.total_cash_value || 0);
+          const currentPaid = Number(issue.cash_paid || 0) + Number(issue.gold_916_value_paid || 0);
+          const currentDue = issue.remaining_balance ?? Math.max(0, valuation - currentPaid);
+
+          if (currentDue > 0) {
+            const allocateAmt = Math.min(amountToAllocate, currentDue);
+            amountToAllocate -= allocateAmt;
+
+            const newPaid = currentPaid + allocateAmt;
+            const newRemaining = Math.max(0, valuation - newPaid);
+            const newStatus = newRemaining === 0 ? 'settled' : 'partially_settled';
+
+            if (!result.issue_id) {
+              result.issue_id = issue.id;
+              payload.issue_id = issue.id;
+              await db.from('wholesale_payments').update({ issue_id: issue.id }).eq('id', result.id);
+            }
+
+            await db.from('wholesale_issues').update({
+              cash_paid: newPaid,
+              remaining_balance: newRemaining,
+              status: newStatus,
+            }).eq('id', issue.id);
+
+            if (localDb.wholesaleIssues) {
+              const lIssue = localDb.wholesaleIssues.find((w) => w.id === issue.id);
+              if (lIssue) {
+                lIssue.cash_paid = newPaid;
+                lIssue.remaining_balance = newRemaining;
+                lIssue.status = newStatus;
+              }
+            }
+            syncEngine.notifyDataChange('wholesale_issues', 'UPDATE', { id: issue.id, cash_paid: newPaid, remaining_balance: newRemaining, status: newStatus });
+          }
+        }
+      } catch (err) {
+        console.warn('Could not allocate customer wholesale payment across active issues:', err);
       }
     }
 
