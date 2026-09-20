@@ -6,7 +6,8 @@ import { syncEngine } from '@/lib/syncEngine';
 import { WholesaleIssue, Customer, BusinessSettings } from '@/types';
 import { formatCurrency, formatWeight, formatDate } from '@/lib/utils';
 import { openWhatsAppClickToChat, buildWhatsAppWholesaleIssueMessage } from '@/lib/whatsapp';
-import { generateWholesaleIssuePDF } from '@/lib/pdfGenerator';
+import { generateWholesaleIssuePDF, buildCustomerWholesaleIssuePDFDoc } from '@/lib/pdfGenerator';
+import { sharePdfDocument } from '@/lib/pdfSharing';
 import { RecordWholesalePaymentModal } from '@/components/common/RecordWholesalePaymentModal';
 import {
   HandCoins,
@@ -14,6 +15,7 @@ import {
   Eye,
   MessageSquare,
   Download,
+  Share2,
   Filter,
   Coins,
   Building,
@@ -165,6 +167,38 @@ export const WholesaleIssuesList: React.FC = () => {
       is_active: true,
     };
     generateWholesaleIssuePDF(issue, cust as Customer, settings || undefined);
+  };
+
+  const handleSharePDF = async (issue: WholesaleIssue) => {
+    const cust = customersList.find((c) => c.id === issue.customer_id) || {
+      id: issue.customer_id || 'cust-fallback',
+      customer_code: 'CUST-WS',
+      full_name: issue.customer_name || 'Wholesale Partner',
+      shop_name: issue.customer_shop || 'Dealer Store',
+      customer_type: 'wholesale',
+      phone: '',
+      whatsapp_number: '',
+      email: '',
+      address: '',
+      city: 'Trichy',
+      state: 'Tamil Nadu',
+      pin_code: '620008',
+      credit_limit: 0,
+      agreed_profit_percent: issue.agreed_profit_percent || 40,
+      profit_sharing_model: issue.agreed_profit_model || 'model_a_profit_percent',
+      default_actual_touch: 40,
+      default_profit_touch: 10,
+      default_billing_touch: 50,
+      payment_terms: '30 Days',
+      is_active: true,
+    };
+    const doc = buildCustomerWholesaleIssuePDFDoc(issue, cust as Customer, settings || undefined);
+    await sharePdfDocument({
+      doc,
+      filename: `Shankar-Jewellery-Invoice-${issue.issue_number}.pdf`,
+      title: `Shankar Jewellery Invoice ${issue.issue_number}`,
+      text: `Shankar Jewellery Invoice ${issue.issue_number} for ${cust.full_name}`,
+    });
   };
 
   return (
@@ -348,9 +382,17 @@ export const WholesaleIssuesList: React.FC = () => {
                             <Eye className="h-4 w-4" />
                           </button>
                           <button
+                            onClick={() => handleSharePDF(i)}
+                            title="Share as PDF"
+                            aria-label="Share invoice as PDF"
+                            className="rounded-lg p-1.5 text-gold-600 hover:bg-gold-50 dark:hover:bg-gold-950/40"
+                          >
+                            <Share2 className="h-4 w-4" />
+                          </button>
+                          <button
                             onClick={() => handleDownloadPDF(i)}
                             title="Download PDF Invoice"
-                            className="rounded-lg p-1.5 text-gold-600 hover:bg-gold-50 dark:hover:bg-gold-950/40"
+                            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-charcoal-800"
                           >
                             <Download className="h-4 w-4" />
                           </button>

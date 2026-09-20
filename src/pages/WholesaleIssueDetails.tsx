@@ -8,7 +8,9 @@ import { formatCurrency, formatWeight, formatDate } from '@/lib/utils';
 import {
   generateCustomerWholesaleIssuePDF,
   generateInternalWholesaleIssuePDF,
+  buildCustomerWholesaleIssuePDFDoc,
 } from '@/lib/pdfGenerator';
+import { sharePdfDocument } from '@/lib/pdfSharing';
 import { openWhatsAppClickToChat, buildWhatsAppWholesaleIssueMessage } from '@/lib/whatsapp';
 import {
   ArrowLeft,
@@ -22,6 +24,7 @@ import {
   Printer,
   ShieldAlert,
   Loader2,
+  Share2,
 } from 'lucide-react';
 
 import { useAuth } from '@/lib/auth';
@@ -37,6 +40,8 @@ export const WholesaleIssueDetails: React.FC = () => {
   const [settings, setSettings] = useState<BusinessSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'customer' | 'internal'>('customer');
+  const [isSharingPDF, setIsSharingPDF] = useState(false);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
 
   const isAdmin = role === 'admin' || role === 'manager';
 
@@ -145,6 +150,29 @@ export const WholesaleIssueDetails: React.FC = () => {
     is_active: true,
   };
 
+  const handleShareCustomerPDF = async () => {
+    if (!issue || isSharingPDF) return;
+    setIsSharingPDF(true);
+    setShareNotice(null);
+    try {
+      const doc = buildCustomerWholesaleIssuePDFDoc(issue, effectiveCustomer, settings || undefined);
+      const res = await sharePdfDocument({
+        doc,
+        filename: `Shankar-Jewellery-Invoice-${issue.issue_number}.pdf`,
+        title: `Shankar Jewellery Invoice ${issue.issue_number}`,
+        text: `Shankar Jewellery Invoice ${issue.issue_number} for ${effectiveCustomer.full_name}`,
+      });
+      if (res.message) {
+        setShareNotice(res.message);
+        setTimeout(() => setShareNotice(null), 7000);
+      }
+    } catch (err) {
+      console.error('Share PDF error:', err);
+    } finally {
+      setIsSharingPDF(false);
+    }
+  };
+
   const handleDownloadCustomerPDF = () => {
     generateCustomerWholesaleIssuePDF(issue, effectiveCustomer, settings || undefined);
   };
@@ -217,17 +245,31 @@ export const WholesaleIssueDetails: React.FC = () => {
             </button>
 
             <button
-              onClick={() => window.print()}
-              className="flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300"
+              onClick={handleShareCustomerPDF}
+              disabled={isSharingPDF}
+              aria-label="Share invoice as PDF"
+              className="flex items-center gap-1.5 rounded-xl bg-gold-500 px-4 py-2 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50"
             >
-              <Printer className="h-4 w-4" /> Print Invoice
+              {isSharingPDF ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Share2 className="h-4 w-4" />
+              )}
+              {isSharingPDF ? 'Preparing PDF...' : 'Share as PDF'}
             </button>
 
             <button
               onClick={handleDownloadCustomerPDF}
-              className="flex items-center gap-1.5 rounded-xl bg-gold-500 px-4 py-2 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600"
+              className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300"
             >
-              <Download className="h-4 w-4" /> Customer PDF Invoice
+              <Download className="h-4 w-4" /> Download PDF
+            </button>
+
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300"
+            >
+              <Printer className="h-4 w-4" /> Print
             </button>
 
             {isAdmin && (
@@ -248,6 +290,13 @@ export const WholesaleIssueDetails: React.FC = () => {
           </div>
         }
       />
+
+      {shareNotice && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-gold-300 max-w-5xl mx-auto flex items-center justify-between shadow-sm">
+          <span>{shareNotice}</span>
+          <button onClick={() => setShareNotice(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold ml-2">✕</button>
+        </div>
+      )}
 
       {/* View Switcher Tabs (Customer View vs Internal Admin View) */}
       <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-3 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm max-w-5xl mx-auto">

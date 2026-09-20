@@ -4,9 +4,10 @@ import { dataService, ensureValidUUID } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
 import { WholesaleSettlement, Customer, BusinessSettings } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { generateWholesaleSettlementPDF } from '@/lib/pdfGenerator';
+import { generateWholesaleSettlementPDF, buildWholesaleSettlementPDFDoc } from '@/lib/pdfGenerator';
+import { sharePdfDocument } from '@/lib/pdfSharing';
 import { openWhatsAppClickToChat, buildWhatsAppSettlementMessage } from '@/lib/whatsapp';
-import { BadgePercent, Plus, Download, MessageSquare, Check, Save } from 'lucide-react';
+import { BadgePercent, Plus, Download, MessageSquare, Check, Save, RefreshCw, FileText, Share2 } from 'lucide-react';
 
 export const WholesaleSettlements: React.FC = () => {
   const [customersList, setCustomersList] = useState<Customer[]>([]);
@@ -86,6 +87,17 @@ export const WholesaleSettlements: React.FC = () => {
 
     await loadData();
     generateWholesaleSettlementPDF(newSettlement, selectedCustomer, settings || undefined);
+  };
+
+  const handleShareSettlementPDF = async (s: WholesaleSettlement, targetCust?: Customer) => {
+    const cust = targetCust || selectedCustomer || undefined;
+    const doc = buildWholesaleSettlementPDFDoc(s, cust, settings || undefined);
+    await sharePdfDocument({
+      doc,
+      filename: `Shankar-Jewellery-Settlement-${s.settlement_number}.pdf`,
+      title: `Shankar Jewellery Settlement ${s.settlement_number}`,
+      text: `Shankar Jewellery Wholesale Settlement Statement ${s.settlement_number}`,
+    });
   };
 
   const handleWhatsApp = (s: WholesaleSettlement) => {
@@ -223,13 +235,23 @@ export const WholesaleSettlements: React.FC = () => {
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-2">
                           {targetCust && (
-                            <button
-                              onClick={() => generateWholesaleSettlementPDF(s, targetCust)}
-                              className="text-slate-700 hover:text-gold-600 dark:text-slate-300"
-                              title="Download PDF"
-                            >
-                              <Download className="h-4 w-4" />
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleShareSettlementPDF(s, targetCust)}
+                                className="text-gold-600 hover:text-gold-700"
+                                title="Share as PDF"
+                                aria-label="Share invoice as PDF"
+                              >
+                                <Share2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => generateWholesaleSettlementPDF(s, targetCust)}
+                                className="text-slate-500 hover:text-slate-700 dark:text-slate-300"
+                                title="Download PDF"
+                              >
+                                <Download className="h-4 w-4" />
+                              </button>
+                            </>
                           )}
                         <button
                           onClick={() => handleWhatsApp(s)}

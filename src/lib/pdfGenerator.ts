@@ -154,7 +154,7 @@ export function renderPaymentSummaryCard(options: PaymentSummaryOptions): number
 // ============================================================================
 // 1. RETAIL INVOICE PDF (Shankar Jewellery Customer Invoice)
 // ============================================================================
-export function generateRetailInvoicePDF(invoice: RetailInvoice, settings?: BusinessSettings) {
+export function buildRetailInvoicePDFDoc(invoice: RetailInvoice, settings?: BusinessSettings): jsPDF {
   const doc = new jsPDF();
   loadPdfFont(doc);
 
@@ -303,17 +303,22 @@ export function generateRetailInvoicePDF(invoice: RetailInvoice, settings?: Busi
   doc.text('Authorized Shankar Jewellery Signature', 130, payFinalY + 16);
   doc.line(130, payFinalY + 14, 190, payFinalY + 14);
 
-  doc.save(`${invoice.invoice_number}.pdf`);
+  return doc;
+}
+
+export function generateRetailInvoicePDF(invoice: RetailInvoice, settings?: BusinessSettings) {
+  const doc = buildRetailInvoicePDFDoc(invoice, settings);
+  doc.save(`Shankar-Jewellery-Retail-Invoice-${invoice.invoice_number}.pdf`);
 }
 
 // ============================================================================
 // 2. CUSTOMER-FACING WHOLESALE INVOICE PDF (Strictly NO Touch percentages)
 // ============================================================================
-export function generateCustomerWholesaleIssuePDF(
+export function buildCustomerWholesaleIssuePDFDoc(
   issue: WholesaleIssue,
   customer?: Customer,
   settings?: BusinessSettings
-) {
+): jsPDF {
   const doc = new jsPDF();
   loadPdfFont(doc);
 
@@ -479,17 +484,26 @@ export function generateCustomerWholesaleIssuePDF(
   doc.text('Authorized Shankar Jewellery Signature', 130, payFinalY + 24);
   doc.line(130, payFinalY + 22, 190, payFinalY + 22);
 
-  doc.save(`Invoice_${issue.issue_number}.pdf`);
+  return doc;
+}
+
+export function generateCustomerWholesaleIssuePDF(
+  issue: WholesaleIssue,
+  customer?: Customer,
+  settings?: BusinessSettings
+) {
+  const doc = buildCustomerWholesaleIssuePDFDoc(issue, customer, settings);
+  doc.save(`Shankar-Jewellery-Invoice-${issue.issue_number}.pdf`);
 }
 
 // ============================================================================
 // 3. INTERNAL ADMIN VOUCHER PDF (Includes full Touch & Profit calculations)
 // ============================================================================
-export function generateInternalWholesaleIssuePDF(
+export function buildInternalWholesaleIssuePDFDoc(
   issue: WholesaleIssue,
   customer?: Customer,
   settings?: BusinessSettings
-) {
+): jsPDF {
   const doc = new jsPDF();
   loadPdfFont(doc);
 
@@ -643,6 +657,15 @@ export function generateInternalWholesaleIssuePDF(
   doc.setFont('Georgia', 'normal');
   doc.text('CONFIDENTIAL: Internal goldsmith voucher. Contains proprietary melting touch and profit calculation metrics.', 14, payFinalY + 10);
 
+  return doc;
+}
+
+export function generateInternalWholesaleIssuePDF(
+  issue: WholesaleIssue,
+  customer?: Customer,
+  settings?: BusinessSettings
+) {
+  const doc = buildInternalWholesaleIssuePDFDoc(issue, customer, settings);
   doc.save(`InternalVoucher_${issue.issue_number}.pdf`);
 }
 
@@ -663,11 +686,11 @@ export function generateWholesaleIssuePDF(
 // ============================================================================
 // 4. WHOLESALE SETTLEMENT PDF
 // ============================================================================
-export function generateWholesaleSettlementPDF(
+export function buildWholesaleSettlementPDFDoc(
   settlement: WholesaleSettlement,
   customer?: Customer,
   settings?: BusinessSettings
-) {
+): jsPDF {
   const doc = new jsPDF();
   loadPdfFont(doc);
 
@@ -741,18 +764,27 @@ export function generateWholesaleSettlementPDF(
   doc.text('Verified and Approved by Shop Management', 14, payFinalY + 20);
   doc.line(14, payFinalY + 18, 75, payFinalY + 18);
 
-  doc.save(`${settlement.settlement_number}.pdf`);
+  return doc;
+}
+
+export function generateWholesaleSettlementPDF(
+  settlement: WholesaleSettlement,
+  customer?: Customer,
+  settings?: BusinessSettings
+) {
+  const doc = buildWholesaleSettlementPDFDoc(settlement, customer, settings);
+  doc.save(`Shankar-Jewellery-Settlement-${settlement.settlement_number}.pdf`);
 }
 
 // ============================================================================
 // 5. CUSTOMER STATEMENT / LEDGER PDF
 // ============================================================================
-export function generateWholesaleCustomerStatementPDF(
+export function buildWholesaleCustomerStatementPDFDoc(
   customer: Customer,
   payments: WholesalePayment[],
   issues: WholesaleIssue[],
   settings?: BusinessSettings
-) {
+): jsPDF {
   const doc = new jsPDF();
   loadPdfFont(doc);
 
@@ -821,5 +853,15 @@ export function generateWholesaleCustomerStatementPDF(
   doc.setFont('Georgia', 'normal');
   doc.text(`Account Statement Generated for ${customer.full_name}`, 14, payFinalY + 12);
 
+  return doc;
+}
+
+export function generateWholesaleCustomerStatementPDF(
+  customer: Customer,
+  payments: WholesalePayment[],
+  issues: WholesaleIssue[],
+  settings?: BusinessSettings
+) {
+  const doc = buildWholesaleCustomerStatementPDFDoc(customer, payments, issues, settings);
   doc.save(`Ledger-${customer.full_name.replace(/\s+/g, '_')}.pdf`);
 }

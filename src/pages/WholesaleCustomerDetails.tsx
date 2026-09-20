@@ -13,7 +13,12 @@ import {
 } from '@/types';
 import { formatCurrency, formatWeight, formatDate } from '@/lib/utils';
 import { RecordWholesalePaymentModal } from '@/components/common/RecordWholesalePaymentModal';
-import { generateWholesaleCustomerStatementPDF, generateWholesaleIssuePDF } from '@/lib/pdfGenerator';
+import {
+  generateWholesaleCustomerStatementPDF,
+  generateWholesaleIssuePDF,
+  buildCustomerWholesaleIssuePDFDoc,
+} from '@/lib/pdfGenerator';
+import { sharePdfDocument } from '@/lib/pdfSharing';
 import { openWhatsAppClickToChat, buildWhatsAppPaymentReminder, buildWhatsAppWholesaleIssueMessage } from '@/lib/whatsapp';
 import {
   ArrowLeft,
@@ -23,6 +28,7 @@ import {
   Eye,
   Coins,
   Download,
+  Share2,
   Scale,
   MessageSquare,
   PackageCheck,
@@ -244,6 +250,17 @@ export const WholesaleCustomerDetails: React.FC = () => {
   const handleDownloadLedger = () => {
     if (!customer) return;
     generateWholesaleCustomerStatementPDF(customer, payments, issues, settings || undefined);
+  };
+
+  const handleShareIssuePDF = async (i: WholesaleIssue) => {
+    if (!customer) return;
+    const doc = buildCustomerWholesaleIssuePDFDoc(i, customer, settings || undefined);
+    await sharePdfDocument({
+      doc,
+      filename: `Shankar-Jewellery-Invoice-${i.issue_number}.pdf`,
+      title: `Shankar Jewellery Invoice ${i.issue_number}`,
+      text: `Shankar Jewellery Invoice ${i.issue_number} for ${customer.full_name}`,
+    });
   };
 
   const handleSendWhatsAppReminder = () => {
@@ -667,8 +684,16 @@ export const WholesaleCustomerDetails: React.FC = () => {
                               <Eye className="h-4 w-4" />
                             </button>
                             <button
-                              onClick={() => generateWholesaleIssuePDF(i, customer, settings || undefined)}
+                              onClick={() => handleShareIssuePDF(i)}
                               className="rounded p-1 text-gold-600 hover:bg-gold-50"
+                              title="Share as PDF"
+                              aria-label="Share invoice as PDF"
+                            >
+                              <Share2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => generateWholesaleIssuePDF(i, customer, settings || undefined)}
+                              className="rounded p-1 text-slate-500 hover:bg-slate-100"
                               title="Download PDF"
                             >
                               <Download className="h-4 w-4" />

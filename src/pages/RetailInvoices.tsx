@@ -6,7 +6,9 @@ import { syncEngine } from '@/lib/syncEngine';
 import { useAuth } from '@/lib/auth';
 import { RetailInvoice } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { ShoppingCart, Eye, FileText, Search, Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { buildRetailInvoicePDFDoc } from '@/lib/pdfGenerator';
+import { sharePdfDocument } from '@/lib/pdfSharing';
+import { ShoppingCart, Eye, FileText, Search, Plus, Trash2, AlertTriangle, Share2 } from 'lucide-react';
 
 export const RetailInvoices: React.FC = () => {
   const navigate = useNavigate();
@@ -51,6 +53,24 @@ export const RetailInvoices: React.FC = () => {
       inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (inv.customer_name && inv.customer_name.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const handleShareRetailPDF = async (inv: RetailInvoice) => {
+    try {
+      const settings = await dataService.getBusinessSettings();
+      const doc = buildRetailInvoicePDFDoc(inv, settings || undefined);
+      const res = await sharePdfDocument({
+        doc,
+        filename: `Shankar-Jewellery-Retail-Invoice-${inv.invoice_number}.pdf`,
+        title: `Shankar Jewellery Retail Invoice ${inv.invoice_number}`,
+        text: `Shankar Jewellery Retail Invoice ${inv.invoice_number} for ${inv.customer_name || 'Customer'}`,
+      });
+      if (res.message) {
+        showToast(res.message);
+      }
+    } catch (err) {
+      console.error('Error sharing retail invoice:', err);
+    }
+  };
 
   const handleDeleteInvoice = async () => {
     if (!deletingInvoice) return;
@@ -156,6 +176,14 @@ export const RetailInvoices: React.FC = () => {
                         >
                           <Eye className="h-4 w-4" /> View
                         </Link>
+                        <button
+                          onClick={() => handleShareRetailPDF(inv)}
+                          className="inline-flex items-center gap-1 rounded-lg p-1.5 text-xs font-bold text-gold-600 hover:bg-gold-50 dark:hover:bg-gold-950/40"
+                          title="Share Invoice as PDF"
+                          aria-label="Share invoice as PDF"
+                        >
+                          <Share2 className="h-4 w-4" /> Share
+                        </button>
                         {canDelete && (
                           <button
                             onClick={() => setDeletingInvoice(inv)}

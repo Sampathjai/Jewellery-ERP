@@ -4,10 +4,11 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { dataService } from '@/lib/dataService';
 import { formatCurrency, formatWeight, formatDate } from '@/lib/utils';
-import { generateRetailInvoicePDF } from '@/lib/pdfGenerator';
+import { generateRetailInvoicePDF, buildRetailInvoicePDFDoc } from '@/lib/pdfGenerator';
+import { sharePdfDocument } from '@/lib/pdfSharing';
 import { openWhatsAppClickToChat, buildWhatsAppInvoiceMessage } from '@/lib/whatsapp';
 import { RetailInvoice, BusinessSettings } from '@/types';
-import { ArrowLeft, Printer, MessageSquare, Download, CheckCircle, Building, Loader2 } from 'lucide-react';
+import { ArrowLeft, Printer, MessageSquare, Download, CheckCircle, Building, Loader2, Share2 } from 'lucide-react';
 
 export const InvoiceDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +16,8 @@ export const InvoiceDetails: React.FC = () => {
   const [invoice, setInvoice] = useState<RetailInvoice | null>(null);
   const [settings, setSettings] = useState<BusinessSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSharingPDF, setIsSharingPDF] = useState(false);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -54,6 +57,29 @@ export const InvoiceDetails: React.FC = () => {
     };
     fetchData();
   }, [id]);
+
+  const handleShareAsPDF = async () => {
+    if (!invoice || isSharingPDF) return;
+    setIsSharingPDF(true);
+    setShareNotice(null);
+    try {
+      const doc = buildRetailInvoicePDFDoc(invoice, settings || undefined);
+      const res = await sharePdfDocument({
+        doc,
+        filename: `Shankar-Jewellery-Retail-Invoice-${invoice.invoice_number}.pdf`,
+        title: `Shankar Jewellery Retail Invoice ${invoice.invoice_number}`,
+        text: `Shankar Jewellery Retail Invoice ${invoice.invoice_number} for ${invoice.customer_name}`,
+      });
+      if (res.message) {
+        setShareNotice(res.message);
+        setTimeout(() => setShareNotice(null), 7000);
+      }
+    } catch (err) {
+      console.error('Share PDF error:', err);
+    } finally {
+      setIsSharingPDF(false);
+    }
+  };
 
   const handleDownloadPDF = () => {
     if (invoice) generateRetailInvoicePDF(invoice, settings || undefined);
@@ -112,7 +138,7 @@ export const InvoiceDetails: React.FC = () => {
         subtitle={`Retail Checkout • Date: ${formatDate(invoice.invoice_date)}`}
         breadcrumb={['Home', 'Invoices', invoice.invoice_number]}
         actionBtn={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => navigate('/invoices')}
               className="flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300"
@@ -120,10 +146,29 @@ export const InvoiceDetails: React.FC = () => {
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
             <button
+              onClick={handleShareAsPDF}
+              disabled={isSharingPDF}
+              aria-label="Share invoice as PDF"
+              className="flex items-center gap-1.5 rounded-xl bg-gold-500 px-4 py-2 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50"
+            >
+              {isSharingPDF ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Share2 className="h-4 w-4" />
+              )}
+              {isSharingPDF ? 'Preparing PDF...' : 'Share as PDF'}
+            </button>
+            <button
               onClick={handleDownloadPDF}
-              className="flex items-center gap-1 rounded-xl bg-gold-500 px-4 py-2 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600"
+              className="flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300"
             >
               <Download className="h-4 w-4" /> Download PDF
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300"
+            >
+              <Printer className="h-4 w-4" /> Print
             </button>
             <button
               onClick={handleShareWhatsApp}
@@ -140,6 +185,13 @@ export const InvoiceDetails: React.FC = () => {
           </div>
         }
       />
+
+      {shareNotice && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-gold-300 max-w-5xl mx-auto flex items-center justify-between shadow-sm">
+          <span>{shareNotice}</span>
+          <button onClick={() => setShareNotice(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold ml-2">✕</button>
+        </div>
+      )}
 
       {showDeleteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
