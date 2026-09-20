@@ -33,7 +33,7 @@ export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded =
     try {
       const settings = await dataService.getBusinessSettings();
       if (settings) {
-        setLogoutEnabled(settings.inactivity_logout_enabled ?? true);
+        setLogoutEnabled(Boolean(settings.inactivity_logout_enabled ?? true));
         setTimeoutMinutes(Number(settings.inactivity_timeout_minutes ?? 15));
         const numMax = Number(settings.max_concurrent_sessions);
         setMaxSessions(isNaN(numMax) || numMax <= 0 ? 3 : numMax);
@@ -62,25 +62,17 @@ export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded =
 
     try {
       const targetMax = Number(maxSessions);
+      const targetTimeout = Number(timeoutMinutes);
       const saved = await dataService.saveBusinessSettings({
         inactivity_logout_enabled: logoutEnabled,
-        inactivity_timeout_minutes: Number(timeoutMinutes),
+        inactivity_timeout_minutes: targetTimeout,
         max_concurrent_sessions: targetMax,
       });
 
+      setLogoutEnabled(Boolean(saved.inactivity_logout_enabled ?? logoutEnabled));
+      setTimeoutMinutes(Number(saved.inactivity_timeout_minutes ?? targetTimeout));
       const confirmedMax = Number(saved.max_concurrent_sessions ?? targetMax);
       setMaxSessions(confirmedMax);
-
-      await dataService.logAuditAction(
-        'update_user_login_settings',
-        'business_settings',
-        saved.id,
-        {
-          inactivity_logout_enabled: logoutEnabled,
-          inactivity_timeout_minutes: timeoutMinutes,
-          max_concurrent_sessions: confirmedMax,
-        }
-      );
 
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 5000);

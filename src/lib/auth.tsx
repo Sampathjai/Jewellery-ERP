@@ -211,12 +211,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [showInactivityWarning, setShowInactivityWarning] = useState(false);
   const [warningCountdown, setWarningCountdown] = useState(60);
 
-  // Centralized 15-Minute Inactivity Auto Logout Tracker with 60s Warning Modal
+  // Centralized Force Logout All Staff Sessions Listener
+  useEffect(() => {
+    if (!user || role === 'admin' || (role as string) === 'super_admin') return;
+
+    if (settings.force_logout_all_at) {
+      const forceTime = new Date(settings.force_logout_all_at).getTime();
+      const userLoginTime = user.last_login_at ? new Date(user.last_login_at).getTime() : 0;
+      if (forceTime > userLoginTime) {
+        logout('forced');
+      }
+    }
+  }, [user, role, settings.force_logout_all_at, logout]);
+
+  // Centralized Inactivity Auto Logout Tracker with Warning Modal
   useEffect(() => {
     if (!user || !autoLogoutEnabled) return;
 
     const timeoutMs = (inactivityTimeoutMinutes || 15) * 60 * 1000;
-    const warningMs = timeoutMs - 60000; // Trigger warning 60s before timeout
+    const warningMs = Math.max(0, timeoutMs - 60000); // Trigger warning 60s before timeout
     let lastActivity = Date.now();
 
     const updateActivity = () => {
@@ -236,7 +249,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (elapsed >= timeoutMs) {
         clearInterval(checkInterval);
         logout('inactive');
-      } else if (elapsed >= warningMs) {
+      } else if (warningMs > 0 && elapsed >= warningMs) {
         setShowInactivityWarning(true);
         const remainingSec = Math.max(0, Math.ceil((timeoutMs - elapsed) / 1000));
         setWarningCountdown(remainingSec);

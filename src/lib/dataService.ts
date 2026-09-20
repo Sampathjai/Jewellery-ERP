@@ -1552,24 +1552,61 @@ export const dataService = {
     const localDb = getLocalDb();
     try {
       const db = checkSupabaseClient();
-      const { data, error } = await db.from('business_settings').select('*').limit(1);
-      if (error) {
+      const { data: bData, error } = await db.from('business_settings').select('*').order('updated_at', { ascending: false }).limit(1);
+
+      let auditDetails: Record<string, any> = {};
+      try {
+        const { data: auditData } = await db
+          .from('audit_logs')
+          .select('*')
+          .eq('action', 'update_user_login_settings')
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (auditData && auditData.length > 0 && auditData[0].details) {
+          auditDetails = auditData[0].details;
+        }
+      } catch (auditErr) {
+        console.warn('Could not query audit_logs for session settings:', auditErr);
+      }
+
+      if (error && !auditDetails.updated_at) {
         console.error('Failed to fetch business_settings from Supabase:', error.message);
         throw formatDbError('Fetch Business Settings Failed', error);
       }
-      if (data && data.length > 0) {
-        const row = data[0];
+
+      if ((bData && bData.length > 0) || Object.keys(auditDetails).length > 0) {
+        const row = bData && bData.length > 0 ? bData[0] : {};
+
+        const logoutEnabled = row.inactivity_logout_enabled !== undefined && row.inactivity_logout_enabled !== null
+          ? Boolean(row.inactivity_logout_enabled)
+          : auditDetails.inactivity_logout_enabled !== undefined && auditDetails.inactivity_logout_enabled !== null
+            ? Boolean(auditDetails.inactivity_logout_enabled)
+            : (localDb.settings?.inactivity_logout_enabled ?? true);
+
+        const timeoutMins = row.inactivity_timeout_minutes !== undefined && row.inactivity_timeout_minutes !== null
+          ? Number(row.inactivity_timeout_minutes)
+          : auditDetails.inactivity_timeout_minutes !== undefined && auditDetails.inactivity_timeout_minutes !== null
+            ? Number(auditDetails.inactivity_timeout_minutes)
+            : Number(localDb.settings?.inactivity_timeout_minutes ?? 15);
+
+        const maxSessions = row.max_concurrent_sessions !== undefined && row.max_concurrent_sessions !== null
+          ? Number(row.max_concurrent_sessions)
+          : auditDetails.max_concurrent_sessions !== undefined && auditDetails.max_concurrent_sessions !== null
+            ? Number(auditDetails.max_concurrent_sessions)
+            : Number(localDb.settings?.max_concurrent_sessions ?? 3);
+
+        const forceLogoutAt = row.force_logout_all_at || auditDetails.force_logout_all_at || localDb.settings?.force_logout_all_at || null;
+
         const settingsObj = {
           ...localDb.settings,
           ...row,
-          inactivity_logout_enabled: row.inactivity_logout_enabled ?? localDb.settings?.inactivity_logout_enabled ?? true,
-          inactivity_timeout_minutes: row.inactivity_timeout_minutes !== null && row.inactivity_timeout_minutes !== undefined 
-            ? Number(row.inactivity_timeout_minutes) 
-            : (localDb.settings?.inactivity_timeout_minutes ?? 15),
-          max_concurrent_sessions: row.max_concurrent_sessions !== null && row.max_concurrent_sessions !== undefined 
-            ? Number(row.max_concurrent_sessions) 
-            : (localDb.settings?.max_concurrent_sessions ?? 3),
+          inactivity_logout_enabled: logoutEnabled,
+          inactivity_timeout_minutes: timeoutMins,
+          max_concurrent_sessions: maxSessions,
+          force_logout_all_at: forceLogoutAt,
         } as BusinessSettings;
+
         localDb.settings = settingsObj;
         saveLocalDb(localDb);
         return settingsObj;
@@ -1698,22 +1735,26 @@ export const dataService = {
       max_concurrent_sessions: data?.max_concurrent_sessions !== null && data?.max_concurrent_sessions !== undefined
         ? Number(data.max_concurrent_sessions)
         : Number(updatedSettings.max_concurrent_sessions ?? 3),
+      force_logout_all_at: data?.force_logout_all_at || updatedSettings.force_logout_all_at || null,
     };
 
-    localDb.settings = result;
-    saveLocalDb(localDb, 'settings', 'UPDATE', result);
-    syncEngine.notifyDataChange('business_settings', 'UPDATE', result);
-
+    // Always log session settings audit entry into Supabase database for persistent fallback recovery across devices & sessions
     await this.logAuditAction(
-      'update_settings',
+      'update_user_login_settings',
       'business_settings',
       result.id,
       {
         inactivity_logout_enabled: result.inactivity_logout_enabled,
         inactivity_timeout_minutes: result.inactivity_timeout_minutes,
         max_concurrent_sessions: result.max_concurrent_sessions,
+        force_logout_all_at: result.force_logout_all_at,
+        updated_at: new Date().toISOString(),
       }
     );
+
+    localDb.settings = result;
+    saveLocalDb(localDb, 'settings', 'UPDATE', result);
+    syncEngine.notifyDataChange('business_settings', 'UPDATE', result);
 
     return result;
   },
