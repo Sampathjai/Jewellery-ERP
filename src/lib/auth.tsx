@@ -21,6 +21,24 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const LAST_ACTIVITY_KEY = 'sampath_last_activity_time';
+
+const recordActivity = () => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString());
+  }
+};
+
+const isSessionExpired = (timeoutMinutes: number): boolean => {
+  if (typeof localStorage === 'undefined') return false;
+  const stored = localStorage.getItem(LAST_ACTIVITY_KEY);
+  if (!stored) return false;
+  const lastTime = Number(stored);
+  if (isNaN(lastTime) || lastTime <= 0) return false;
+  const elapsedMinutes = (Date.now() - lastTime) / (60 * 1000);
+  return elapsedMinutes >= timeoutMinutes;
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(() => {
     if (typeof localStorage === 'undefined') return null;
@@ -127,6 +145,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const resolveInitialSession = async () => {
       try {
+        const localDbSettings = getLocalDb().settings;
+        const isAutoLogout = localDbSettings?.inactivity_logout_enabled ?? true;
+        const timeoutMins = localDbSettings?.inactivity_timeout_minutes ?? 15;
+
+        // Check if session has expired due to inactivity across page reloads / tab closures
+        if (user && isAutoLogout && isSessionExpired(timeoutMins)) {
+          console.warn('Session expired due to inactivity timeout upon initial app load.');
+          if (supabase) {
+            supabase.auth.signOut().catch(() => {});
+          }
+          dataService.logAuditAction('session_expired', 'auth', user.id, {
+            email: user.email,
+            reason: 'inactivity_timeout',
+          }).catch(() => {});
+          localStorage.removeItem('sampath_auth_user');
+          localStorage.removeItem(LAST_ACTIVITY_KEY);
+          if (isMounted) {
+            setUser(null);
+          }
+          return;
+        }
+
         if (supabase) {
           const { data } = await supabase.auth.getSession();
           const session = data?.session;
@@ -137,13 +177,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setUser(profile);
                 setRole(profile.role);
                 localStorage.setItem('sampath_auth_user', JSON.stringify(profile));
+                recordActivity();
               } else {
                 setUser(null);
                 localStorage.removeItem('sampath_auth_user');
+                localStorage.removeItem(LAST_ACTIVITY_KEY);
               }
             } else {
               setUser(null);
               localStorage.removeItem('sampath_auth_user');
+              localStorage.removeItem(LAST_ACTIVITY_KEY);
             }
           }
         }
@@ -164,12 +207,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (event === 'SIGNED_OUT' || !session) {
           setUser(null);
           localStorage.removeItem('sampath_auth_user');
+          localStorage.removeItem(LAST_ACTIVITY_KEY);
         } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
           const profile = await syncUserProfileFromAuth(session.user);
           if (profile && profile.is_active !== false) {
             setUser(profile);
             setRole(profile.role);
             localStorage.setItem('sampath_auth_user', JSON.stringify(profile));
+            recordActivity();
           }
         }
       });
@@ -180,6 +225,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isMounted = false;
       if (authSubscription) authSubscription.unsubscribe();
     };
+  }, []);
+
+  // Multi-tab logout synchronization
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'sampath_auth_user' && !e.newValue) {
+        setUser(null);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   const logout = useCallback((reason?: string) => {
@@ -196,6 +252,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setRole('admin');
     localStorage.removeItem('sampath_auth_user');
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
     try {
       sessionStorage.clear();
     } catch (e) {
@@ -228,12 +285,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (!user || !autoLogoutEnabled) return;
 
-    const timeoutMs = (inactivityTimeoutMinutes || 15) * 60 * 1000;
-    const warningMs = Math.max(0, timeoutMs - 60000); // Trigger warning 60s before timeout
-    let lastActivity = Date.now();
+    recordActivity();
 
     const updateActivity = () => {
-      lastActivity = Date.now();
+      recordActivity();
       if (showInactivityWarning) {
         setShowInactivityWarning(false);
       }
@@ -242,9 +297,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
     events.forEach((evt) => window.addEventListener(evt, updateActivity, { passive: true }));
 
+    const timeoutMs = (inactivityTimeoutMinutes || 15) * 60 * 1000;
+    const warningMs = Math.max(0, timeoutMs - 60000); // Trigger warning 60s before timeout
+
     const checkInterval = setInterval(() => {
+      const storedLast = Number(localStorage.getItem(LAST_ACTIVITY_KEY) || Date.now());
       const now = Date.now();
-      const elapsed = now - lastActivity;
+      const elapsed = now - storedLast;
 
       if (elapsed >= timeoutMs) {
         clearInterval(checkInterval);
