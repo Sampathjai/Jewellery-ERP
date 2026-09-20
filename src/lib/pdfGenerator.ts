@@ -363,10 +363,12 @@ export function generateCustomerWholesaleIssuePDF(
   doc.text(`Invoice Date: ${formatDate(issue.issue_date)}`, 125, 55);
   doc.text(`Expected Reconciliation: ${formatDate(issue.expected_return_date)}`, 125, 61);
 
-  // Table Data (STRICTLY NO Actual Touch / Profit Touch / Final Touch columns!)
+  // Table Data (Customer-facing: Includes Billing Touch; Internal Actual Touch & Profit Touch hidden)
   const itemsList = issue.items && issue.items.length > 0 ? issue.items : [];
   const tableData = itemsList.map((item, idx) => {
-    const fineGold = item.fine_gold_g || Number((((item.net_weight_g || 0) * (item.billing_touch || 47)) / 100).toFixed(3));
+    const actTouch = item.actual_touch ?? customer?.default_actual_touch ?? 37;
+    const billTouch = item.billing_touch ?? (actTouch + (item.profit_touch ?? customer?.default_profit_touch ?? 10));
+    const fineGold = item.fine_gold_g || Number((((item.net_weight_g || 0) * billTouch) / 100).toFixed(3));
 
     return [
       idx + 1,
@@ -375,12 +377,17 @@ export function generateCustomerWholesaleIssuePDF(
       formatWeight(item.gross_weight_g || 0),
       formatWeight(item.deduction_weight_g || 0),
       formatWeight(item.net_weight_g || 0),
+      `${billTouch}%`,
       `${fineGold.toFixed(3)} g`,
       formatCurrency(item.total_issue_value || 0),
     ];
   });
 
   if (tableData.length === 0 && (issue.total_items_issued > 0 || issue.total_net_weight_g > 0)) {
+    const defaultProfit = customer?.default_profit_touch ?? issue.agreed_profit_percent ?? 10;
+    const defaultActual = customer?.default_actual_touch ?? 40;
+    const defaultBilling = customer?.default_billing_touch ?? (defaultActual + defaultProfit);
+
     tableData.push([
       1,
       'Consignment Jewellery Issue (Aggregated Item Row)',
@@ -388,6 +395,7 @@ export function generateCustomerWholesaleIssuePDF(
       formatWeight(issue.total_gross_weight_g || 0),
       formatWeight(issue.total_deduction_weight_g || 0),
       formatWeight(issue.total_net_weight_g || 0),
+      `${defaultBilling}%`,
       `${(issue.total_fine_gold_g || 0).toFixed(3)} g`,
       formatCurrency(issue.total_valuation_amount || 0),
     ]);
@@ -403,6 +411,7 @@ export function generateCustomerWholesaleIssuePDF(
         'Gross Wt',
         'Deduction',
         'Net Wt',
+        'Billing Touch',
         'Fine Gold',
         'Total Amount',
       ],
