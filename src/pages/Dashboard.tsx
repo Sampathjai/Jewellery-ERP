@@ -129,9 +129,23 @@ export const Dashboard: React.FC = () => {
   const grossProfit = retailGrossProfit + wholesaleGrossProfit;
   const netProfit = Math.max(0, grossProfit - totalExpenses);
 
-  const pendingPayments = (invoicesList || [])
-    .filter((i) => i.payment_status !== 'paid')
-    .reduce((sum, i) => sum + (i.balance_due || 0), 0);
+  const pendingRetailPayments = (invoicesList || [])
+    .filter((i) => i.status !== 'cancelled' && i.status !== 'refunded' && i.payment_status !== 'paid')
+    .reduce((sum, i) => {
+      const due = i.balance_due !== undefined && i.balance_due !== null
+        ? Number(i.balance_due)
+        : Math.max(0, Number(i.total_amount || 0) - Number(i.paid_amount || 0));
+      return sum + Math.max(0, due);
+    }, 0);
+
+  const pendingWholesalePayments = (wholesaleSettlementsList || [])
+    .filter((s) => s.status !== 'paid')
+    .reduce((sum, s) => {
+      const due = s.balance_due !== undefined && s.balance_due !== null
+        ? Number(s.balance_due)
+        : Math.max(0, Number(s.net_payable_to_shop || 0) - Number(s.amount_paid || 0));
+      return sum + Math.max(0, due);
+    }, 0);
 
   // Dynamic Stock & Settlement Alerts from Database
   const lowStockProducts = (productsList || []).filter((p) => (p.quantity || 0) <= (p.minimum_stock || 5));
@@ -234,7 +248,7 @@ export const Dashboard: React.FC = () => {
           </button>
           <button
             onClick={() => navigate('/wholesale-issues/new')}
-            className="flex flex-col items-center justify-center rounded-xl border border-gold-400/40 bg-gold-50/50 p-2.5 text-center text-xs font-semibold text-amber-900 hover:bg-gold-100 dark:border-gold-800 dark:bg-gold-950/40 dark:text-gold-300"
+            className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-800 hover:border-gold-500 hover:bg-gold-50/50 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-200"
           >
             <HandCoins className="h-4 w-4 text-gold-600 mb-1" />
             {t('new_wholesale_issue')}
@@ -277,7 +291,6 @@ export const Dashboard: React.FC = () => {
           value={formatCurrency(todaySales)}
           subtitle={language === 'ta' ? 'கடை ரொக்க விற்பனை' : 'Shop counter billing'}
           icon={ShoppingCart}
-          highlight
           trend={{ value: todaySales > 0 ? 'Live' : '0%', isPositive: true }}
         />
         <StatCard
@@ -315,7 +328,6 @@ export const Dashboard: React.FC = () => {
           value={`${totalWholesaleIssuedItems} ${t('pcs')}`}
           subtitle={language === 'ta' ? 'வியாபாரிகளுக்குக் கொடுத்தவை' : 'Jewellery issued on credit'}
           icon={HandCoins}
-          highlight
         />
         <StatCard
           title={t('pending_returns')}
@@ -324,11 +336,18 @@ export const Dashboard: React.FC = () => {
           icon={RotateCcw}
         />
         <StatCard
-          title={t('wholesale_receivables')}
-          value={formatCurrency(outstandingWholesaleBalances)}
-          subtitle={language === 'ta' ? 'வரவேண்டிய லாப பாக்கி' : 'Pending settlement balance'}
+          title={t('pending_wholesale_payments')}
+          value={formatCurrency(pendingWholesalePayments)}
+          subtitle={
+            pendingWholesalePayments > 0
+              ? language === 'ta'
+                ? 'வரவேண்டிய மொத்த வியாபார பாக்கி'
+                : 'Outstanding wholesale receivables'
+              : language === 'ta'
+              ? 'பாக்கிகள் ஏதுமில்லை'
+              : 'No outstanding wholesale receivables'
+          }
           icon={BadgePercent}
-          highlight
         />
         <StatCard
           title={t('total_expenses')}
@@ -341,12 +360,19 @@ export const Dashboard: React.FC = () => {
           value={formatCurrency(netProfit)}
           subtitle={language === 'ta' ? 'செலவு போக நிகர லாபம்' : 'Gross profit minus shop expenses'}
           icon={Sparkles}
-          highlight
         />
         <StatCard
-          title={t('pending_payments')}
-          value={formatCurrency(pendingPayments)}
-          subtitle={language === 'ta' ? 'சில்லறை பில் பாக்கிகள்' : 'Uncollected retail invoice dues'}
+          title={t('pending_retail_payments')}
+          value={formatCurrency(pendingRetailPayments)}
+          subtitle={
+            pendingRetailPayments > 0
+              ? language === 'ta'
+                ? 'கடை வாடிக்கையாளர்களின் சில்லறை பாக்கி'
+                : 'Outstanding customer retail dues'
+              : language === 'ta'
+              ? 'பாக்கிகள் ஏதுமில்லை'
+              : 'No outstanding retail payments'
+          }
           icon={DollarSign}
         />
       </div>

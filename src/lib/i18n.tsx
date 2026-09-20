@@ -63,6 +63,8 @@ export interface Translations {
   total_expenses: string;
   net_profit: string;
   pending_payments: string;
+  pending_retail_payments: string;
+  pending_wholesale_payments: string;
   quick_actions: string;
   new_retail_bill: string;
   add_product: string;
@@ -177,6 +179,8 @@ const translations: Record<Language, Translations> = {
     total_expenses: 'Total Monthly Expenses',
     net_profit: 'Estimated Net Profit',
     pending_payments: 'Pending Payments',
+    pending_retail_payments: 'Pending Retail Payments',
+    pending_wholesale_payments: 'Pending Wholesale Payments',
     quick_actions: 'Quick Business Actions',
     new_retail_bill: 'Retail Bill (POS)',
     add_product: 'Add Product',
@@ -287,6 +291,8 @@ const translations: Record<Language, Translations> = {
     total_expenses: 'மாதாந்திர கடைச் செலவுகள்',
     net_profit: 'நிகர லாபம்',
     pending_payments: 'பெறவேண்டிய பாக்கித் தொகை',
+    pending_retail_payments: 'சில்லறை பில் பாக்கிகள்',
+    pending_wholesale_payments: 'மொத்த வியாபார பாக்கிகள்',
     quick_actions: 'வேகமான செயல்பாடுகள்',
     new_retail_bill: 'புதிய பில் போட',
     add_product: 'நகை சேர்க்க',
