@@ -86,7 +86,6 @@ export const WholesaleSettlements: React.FC = () => {
     });
 
     await loadData();
-    generateWholesaleSettlementPDF(newSettlement, selectedCustomer, settings || undefined);
   };
 
   const handleShareSettlementPDF = async (s: WholesaleSettlement, targetCust?: Customer) => {

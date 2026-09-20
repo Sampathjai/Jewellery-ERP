@@ -243,7 +243,6 @@ export const WholesaleIssuePage: React.FC = () => {
       created_at: new Date().toISOString(),
     });
 
-    generateWholesaleIssuePDF(createdIssue, selectedCustomer, settings || undefined);
     navigate(`/wholesale-issues/${createdIssue.id}`);
   };
 

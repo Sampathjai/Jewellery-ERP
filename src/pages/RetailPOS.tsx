@@ -6,8 +6,7 @@ import { dataService, ensureValidUUID } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
 import { Product, Customer, RetailInvoiceItem, RetailInvoice, BusinessSettings, MetalRate } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
-import { generateRetailInvoicePDF } from '@/lib/pdfGenerator';
-import { ShoppingCart, Search, Plus, Minus, Trash2, Printer, Barcode, UserCheck, Percent, Sliders, ShieldCheck } from 'lucide-react';
+import { ShoppingCart, Search, Plus, Minus, Trash2, Printer, Barcode, UserCheck, Percent, Sliders, ShieldCheck, CheckCircle } from 'lucide-react';
 
 export const RetailPOS: React.FC = () => {
   const navigate = useNavigate();
@@ -294,13 +293,6 @@ export const RetailPOS: React.FC = () => {
           reference_number: `REF-${Date.now()}`,
         }
       );
-
-      // Auto PDF Generation & Download
-      try {
-        generateRetailInvoicePDF(createdInvoice, settings || undefined);
-      } catch (pdfErr) {
-        console.error('PDF Generation Error:', pdfErr);
-      }
 
       navigate(`/invoices/${createdInvoice.id}`);
     } catch (err: any) {
@@ -782,11 +774,11 @@ export const RetailPOS: React.FC = () => {
                 {isSubmitting ? (
                   <>
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-charcoal-950 border-t-transparent" />
-                    <span>Finalizing Invoice & Printing...</span>
+                    <span>Finalizing Invoice...</span>
                   </>
                 ) : (
                   <>
-                    <Printer className="h-4 w-4" /> <span>Finalize Bill & Print PDF Invoice</span>
+                    <CheckCircle className="h-4 w-4" /> <span>Finalize & Generate Invoice</span>
                   </>
                 )}
               </button>
