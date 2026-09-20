@@ -1779,65 +1779,96 @@ export const dataService = {
     const db = checkSupabaseClient();
     const passkeyMap = new Map<string, UserPasskey>();
 
+    // 1. Fetch from Supabase user_passkeys table
     try {
-      const { data: pkTableData } = await db.from('user_passkeys').select('*');
-      if (pkTableData && pkTableData.length > 0) {
+      const { data: pkTableData, error: pkErr } = await db.from('user_passkeys').select('*');
+      if (!pkErr && pkTableData && pkTableData.length > 0) {
         pkTableData.forEach((pk: any) => {
-          passkeyMap.set(pk.credential_id, pk as UserPasskey);
+          if (pk.credential_id) {
+            passkeyMap.set(pk.credential_id, {
+              id: pk.id || pk.credential_id,
+              user_id: pk.user_id,
+              credential_id: pk.credential_id,
+              public_key: pk.public_key || '',
+              counter: Number(pk.counter || 0),
+              transports: pk.transports || ['internal'],
+              device_name: pk.device_name || 'Passkey Device',
+              created_at: pk.created_at || new Date().toISOString(),
+              last_used_at: pk.last_used_at || pk.created_at || new Date().toISOString(),
+            });
+          }
         });
       }
-    } catch {}
+    } catch (e) {
+      console.warn('Could not fetch user_passkeys table from Supabase:', e);
+    }
 
+    // 2. Fetch from Supabase audit_logs table (entity_type = 'user_passkeys')
     try {
-      const { data: logs } = await db
+      const { data: logs, error: logErr } = await db
         .from('audit_logs')
         .select('*')
         .eq('entity_type', 'user_passkeys')
         .order('created_at', { ascending: true });
 
-      if (logs && logs.length > 0) {
+      if (!logErr && logs && logs.length > 0) {
         logs.forEach((log: any) => {
           const credId = log.entity_id || log.details?.credential_id;
           if (!credId) return;
 
           if (log.action === 'passkey_registered') {
             const details = log.details || {};
-            const pkRecord: UserPasskey = {
-              id: credId,
-              user_id: log.user_id || details.user_id,
-              credential_id: credId,
-              public_key: details.public_key || '',
-              counter: Number(details.counter || 0),
-              transports: details.transports || ['internal'],
-              device_name: details.device_name || 'Passkey Device',
-              created_at: details.created_at || log.created_at,
-              last_used_at: details.last_used_at || log.created_at,
-            };
-            passkeyMap.set(credId, pkRecord);
+            const userId = details.user_id || log.user_id;
+            if (userId) {
+              const pkRecord: UserPasskey = {
+                id: credId,
+                user_id: userId,
+                credential_id: credId,
+                public_key: details.public_key || '',
+                counter: Number(details.counter || 0),
+                transports: details.transports || ['internal'],
+                device_name: details.device_name || 'Passkey Device',
+                created_at: details.created_at || log.created_at || new Date().toISOString(),
+                last_used_at: details.last_used_at || log.created_at || new Date().toISOString(),
+              };
+              passkeyMap.set(credId, pkRecord);
+            }
           } else if (log.action === 'passkey_removed') {
             passkeyMap.delete(credId);
           }
         });
       }
     } catch (e) {
-      console.warn('Could not fetch passkey logs from Supabase:', e);
+      console.warn('Could not fetch passkey audit logs from Supabase:', e);
     }
 
-    const localDb = getLocalDb() as any;
-    if (localDb.passkeys && Array.isArray(localDb.passkeys)) {
-      localDb.passkeys.forEach((pk: UserPasskey) => {
-        if (!passkeyMap.has(pk.credential_id)) {
-          passkeyMap.set(pk.credential_id, pk);
+    // 3. Fetch from localStorage fallback ('sampath_passkey_credentials')
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sampath_passkey_credentials');
+        if (stored) {
+          const localList: UserPasskey[] = JSON.parse(stored);
+          if (Array.isArray(localList)) {
+            localList.forEach((pk: UserPasskey) => {
+              if (pk.credential_id && !passkeyMap.has(pk.credential_id)) {
+                passkeyMap.set(pk.credential_id, pk);
+              }
+            });
+          }
         }
-      });
+      } catch (e) {
+        console.warn('Could not parse passkeys from localStorage:', e);
+      }
     }
 
     return Array.from(passkeyMap.values());
   },
 
   async getUserPasskeys(userId: string): Promise<UserPasskey[]> {
+    if (!userId) return [];
     const all = await this.getAllRegisteredPasskeys();
-    return all.filter((p) => p.user_id === userId);
+    const targetIdNorm = userId.trim().toLowerCase();
+    return all.filter((p) => p.user_id && p.user_id.trim().toLowerCase() === targetIdNorm);
   },
 
   async savePasskeyCredential(passkey: UserPasskey): Promise<UserPasskey> {
@@ -1854,17 +1885,48 @@ export const dataService = {
         created_at: passkey.created_at,
         last_used_at: passkey.last_used_at,
       });
-    } catch {}
-
-    const localDb = getLocalDb() as any;
-    if (!localDb.passkeys) localDb.passkeys = [];
-    const idx = localDb.passkeys.findIndex((p: UserPasskey) => p.credential_id === passkey.credential_id);
-    if (idx >= 0) {
-      localDb.passkeys[idx] = passkey;
-    } else {
-      localDb.passkeys.push(passkey);
+    } catch (e) {
+      console.warn('Failed to upsert user_passkeys in Supabase:', e);
     }
-    saveLocalDb(localDb);
+
+    // Log to audit logs with complete metadata for resilient fallback
+    try {
+      await this.logAuditAction(
+        'passkey_registered',
+        'user_passkeys',
+        passkey.credential_id,
+        {
+          user_id: passkey.user_id,
+          credential_id: passkey.credential_id,
+          public_key: passkey.public_key,
+          counter: passkey.counter || 0,
+          transports: passkey.transports || ['internal'],
+          device_name: passkey.device_name || 'Passkey Device',
+          created_at: passkey.created_at,
+          last_used_at: passkey.last_used_at,
+        }
+      );
+    } catch (e) {
+      console.warn('Failed to log passkey_registered audit action:', e);
+    }
+
+    // Save to localStorage
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sampath_passkey_credentials');
+        const list: UserPasskey[] = stored ? JSON.parse(stored) : [];
+        const idx = list.findIndex((p: UserPasskey) => p.credential_id === passkey.credential_id);
+        if (idx >= 0) {
+          list[idx] = passkey;
+        } else {
+          list.push(passkey);
+        }
+        localStorage.setItem('sampath_passkey_credentials', JSON.stringify(list));
+      } catch (e) {
+        console.warn('Failed to save passkey to localStorage:', e);
+      }
+    }
+
     return passkey;
   },
 
@@ -1872,12 +1934,32 @@ export const dataService = {
     const db = checkSupabaseClient();
     try {
       await db.from('user_passkeys').delete().eq('credential_id', credentialId);
-    } catch {}
+    } catch (e) {
+      console.warn('Failed to delete user_passkeys from Supabase:', e);
+    }
 
-    const localDb = getLocalDb() as any;
-    if (localDb.passkeys) {
-      localDb.passkeys = localDb.passkeys.filter((p: UserPasskey) => p.credential_id !== credentialId);
-      saveLocalDb(localDb);
+    try {
+      await this.logAuditAction(
+        'passkey_removed',
+        'user_passkeys',
+        credentialId,
+        { credential_id: credentialId }
+      );
+    } catch (e) {
+      console.warn('Failed to log passkey_removed audit action:', e);
+    }
+
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sampath_passkey_credentials');
+        if (stored) {
+          const list: UserPasskey[] = JSON.parse(stored);
+          const updated = list.filter((p: UserPasskey) => p.credential_id !== credentialId);
+          localStorage.setItem('sampath_passkey_credentials', JSON.stringify(updated));
+        }
+      } catch (e) {
+        console.warn('Failed to delete passkey from localStorage:', e);
+      }
     }
   },
 

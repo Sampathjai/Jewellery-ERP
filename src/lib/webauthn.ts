@@ -51,24 +51,27 @@ export const registerPasskey = async (
 
     const userIdBytes = new TextEncoder().encode(user.id);
     const domain = window.location.hostname || 'localhost';
+    const rpId = domain === 'localhost' || domain === '127.0.0.1' ? undefined : domain;
 
     const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
       challenge,
       rp: {
         name: 'Shankar Jewellery ERP',
-        id: domain === 'localhost' || domain === '127.0.0.1' ? undefined : domain,
+        id: rpId,
       },
       user: {
         id: userIdBytes,
-        name: user.email || user.full_name,
-        displayName: user.full_name || user.email,
+        name: user.email || user.full_name || 'user',
+        displayName: user.full_name || user.email || 'ERP User',
       },
       pubKeyCredParams: [
         { alg: -7, type: 'public-key' },  // ES256
         { alg: -257, type: 'public-key' }, // RS256
+        { alg: -8, type: 'public-key' },   // Ed25519
       ],
       authenticatorSelection: {
         userVerification: 'preferred',
+        residentKey: 'preferred',
       },
       timeout: 60000,
     };
@@ -97,6 +100,15 @@ export const registerPasskey = async (
         ? 'Apple Touch ID / Face ID'
         : 'Passkey Security Device');
 
+    // Duplicate check
+    const existing = await dataService.getUserPasskeys(user.id);
+    if (existing.some((p) => p.credential_id === credentialId)) {
+      return {
+        success: false,
+        message: 'This device passkey is already registered on your account.',
+      };
+    }
+
     const passkeyRecord: UserPasskey = {
       id: credentialId,
       user_id: user.id,
@@ -111,23 +123,16 @@ export const registerPasskey = async (
 
     await dataService.savePasskeyCredential(passkeyRecord);
 
-    await dataService.logAuditAction(
-      'passkey_registered',
-      'user_passkeys',
-      credentialId,
-      {
-        device_name: defaultDeviceName,
-        user_email: user.email,
-        user_name: user.full_name,
-      }
-    );
-
     return { success: true, passkey: passkeyRecord };
   } catch (err: any) {
     console.error('Passkey registration error:', err);
     let msg = err?.message || 'Failed to register device passkey.';
-    if (msg.includes('NotAllowedError') || msg.includes('cancelled')) {
+    if (err?.name === 'NotAllowedError' || msg.includes('cancelled') || msg.includes('NotAllowedError')) {
       msg = 'Passkey registration was cancelled or timed out.';
+    } else if (err?.name === 'InvalidStateError') {
+      msg = 'This passkey is already registered on this device.';
+    } else if (err?.name === 'NotSupportedError') {
+      msg = 'Passkeys are not supported on this browser or device.';
     }
     return { success: false, message: msg };
   }
@@ -163,9 +168,13 @@ export const authenticateWithPasskey = async (): Promise<{
     const challenge = new Uint8Array(32);
     window.crypto.getRandomValues(challenge);
 
+    const domain = window.location.hostname || 'localhost';
+    const rpId = domain === 'localhost' || domain === '127.0.0.1' ? undefined : domain;
+
     const assertion = (await navigator.credentials.get({
       publicKey: {
         challenge,
+        rpId,
         allowCredentials,
         userVerification: 'preferred',
         timeout: 60000,
@@ -211,7 +220,7 @@ export const authenticateWithPasskey = async (): Promise<{
   } catch (err: any) {
     console.error('Passkey authentication error:', err);
     let msg = err?.message || 'Passkey authentication failed.';
-    if (msg.includes('NotAllowedError') || msg.includes('cancelled')) {
+    if (err?.name === 'NotAllowedError' || msg.includes('cancelled') || msg.includes('NotAllowedError')) {
       msg = 'Passkey authentication was cancelled or timed out.';
     }
     return { success: false, message: msg };
@@ -221,9 +230,6 @@ export const authenticateWithPasskey = async (): Promise<{
 export const revokePasskey = async (credentialId: string): Promise<{ success: boolean; message?: string }> => {
   try {
     await dataService.deletePasskeyCredential(credentialId);
-    await dataService.logAuditAction('passkey_removed', 'user_passkeys', credentialId, {
-      credential_id: credentialId,
-    });
     return { success: true };
   } catch (err: any) {
     console.error('Passkey revocation error:', err);

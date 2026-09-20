@@ -69,11 +69,27 @@ export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded =
   const handleRegisterDevicePasskey = async () => {
     if (!currentUser) return;
     setPasskeyMessage(null);
+
+    const defaultSuggest = navigator.userAgent.includes('Mac')
+      ? 'MacBook Touch ID'
+      : navigator.userAgent.includes('Win')
+      ? 'Windows Hello PC'
+      : navigator.userAgent.includes('Android')
+      ? 'Android Biometric Device'
+      : navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad')
+      ? 'iPhone / iPad Touch ID / Face ID'
+      : 'Passkey Security Device';
+
+    const customName = window.prompt('Enter a nickname for this device (or keep default):', defaultSuggest);
+    if (customName === null) return; // User clicked Cancel
+
+    const deviceName = customName.trim() || defaultSuggest;
     setIsRegisteringPasskey(true);
+
     try {
-      const res = await registerPasskey(currentUser);
-      if (res.success) {
-        setPasskeyMessage({ type: 'success', text: 'Passkey registered successfully for this device!' });
+      const res = await registerPasskey(currentUser, deviceName);
+      if (res.success && res.passkey) {
+        setPasskeyMessage({ type: 'success', text: `Passkey "${res.passkey.device_name}" registered successfully!` });
         const updatedList = await dataService.getUserPasskeys(currentUser.id);
         setPasskeys(updatedList);
       } else {
@@ -421,9 +437,19 @@ export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded =
                         <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
                           {pk.device_name}
                         </p>
-                        <p className="text-[11px] text-slate-500">
-                          Registered: {new Date(pk.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                          <span>
+                            Registered: {new Date(pk.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                          <span className="hidden sm:inline">•</span>
+                          <span>
+                            Last used: {pk.last_used_at ? (
+                              Math.abs(Date.now() - new Date(pk.last_used_at).getTime()) < 60000
+                                ? 'Just now'
+                                : new Date(pk.last_used_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                            ) : 'Never'}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
