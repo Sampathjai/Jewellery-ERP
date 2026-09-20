@@ -1275,11 +1275,13 @@ export const dataService = {
   async createWholesalePayment(paymentData: Partial<WholesalePayment>): Promise<WholesalePayment> {
     const db = checkSupabaseClient();
     const validId = ensureValidUUID(paymentData.id);
+    const validIssueId = paymentData.issue_id ? ensureValidUUID(paymentData.issue_id) : undefined;
 
     const payload: WholesalePayment = {
       id: validId,
       customer_id: ensureValidUUID(paymentData.customer_id),
       settlement_id: paymentData.settlement_id ? ensureValidUUID(paymentData.settlement_id) : undefined,
+      issue_id: validIssueId,
       payment_date: paymentData.payment_date || new Date().toISOString().split('T')[0],
       amount: Number(paymentData.amount || 0),
       payment_mode: paymentData.payment_mode || 'cash',
@@ -1297,8 +1299,43 @@ export const dataService = {
     const localDb = getLocalDb();
     if (!localDb.wholesalePayments) localDb.wholesalePayments = [];
     localDb.wholesalePayments.unshift(result);
-    saveLocalDb(localDb);
 
+    // If payment is linked to a specific wholesale issue, update the issue balance & status in DB and local store
+    if (validIssueId) {
+      try {
+        let issue = (localDb.wholesaleIssues || []).find((w) => w.id === validIssueId);
+        if (!issue) {
+          issue = await this.getWholesaleIssueById(validIssueId) || undefined;
+        }
+        if (issue) {
+          const currentPaid = Number(issue.cash_paid || 0) + Number(issue.gold_916_value_paid || 0);
+          const newPaid = currentPaid + result.amount;
+          const valuation = Number(issue.total_valuation_amount || issue.total_cash_value || 0);
+          const newRemaining = Math.max(0, valuation - newPaid);
+          const newStatus = newRemaining === 0 ? 'settled' : newPaid > 0 ? 'partially_settled' : issue.status;
+
+          await db.from('wholesale_issues').update({
+            cash_paid: newPaid,
+            remaining_balance: newRemaining,
+            status: newStatus,
+          }).eq('id', validIssueId);
+
+          if (localDb.wholesaleIssues) {
+            const lIssue = localDb.wholesaleIssues.find((w) => w.id === validIssueId);
+            if (lIssue) {
+              lIssue.cash_paid = newPaid;
+              lIssue.remaining_balance = newRemaining;
+              lIssue.status = newStatus;
+            }
+          }
+          syncEngine.notifyDataChange('wholesale_issues', 'UPDATE', { id: validIssueId, cash_paid: newPaid, remaining_balance: newRemaining, status: newStatus });
+        }
+      } catch (err) {
+        console.warn('Could not update wholesale issue balance on payment creation:', err);
+      }
+    }
+
+    saveLocalDb(localDb);
     syncEngine.notifyDataChange('wholesale_payments', 'INSERT', result);
     return result;
   },

@@ -43,18 +43,22 @@ export const Dashboard: React.FC = () => {
   const [wholesaleIssuesList, setWholesaleIssuesList] = useState<any[]>([]);
   const [expensesList, setExpensesList] = useState<any[]>([]);
   const [wholesaleSettlementsList, setWholesaleSettlementsList] = useState<any[]>([]);
+  const [wholesalePaymentsList, setWholesalePaymentsList] = useState<any[]>([]);
+  const [retailPaymentsList, setRetailPaymentsList] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadDashboardData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [cData, pData, rData, wData, eData, sData] = await Promise.all([
+      const [cData, pData, rData, wData, eData, sData, wpData, rpData] = await Promise.all([
         dataService.getCustomers(),
         dataService.getProducts(),
         dataService.getRetailInvoices(),
         dataService.getWholesaleIssues(),
         dataService.getExpenses(),
         dataService.getWholesaleSettlements(),
+        dataService.getWholesalePayments(),
+        dataService.getRetailPayments(),
       ]);
       setCustomersList(cData);
       setProductsList(pData);
@@ -62,6 +66,8 @@ export const Dashboard: React.FC = () => {
       setWholesaleIssuesList(wData);
       setExpensesList(eData);
       setWholesaleSettlementsList(sData);
+      setWholesalePaymentsList(wpData);
+      setRetailPaymentsList(rpData);
     } catch (e) {
       console.error('Error loading live dashboard metrics:', e);
     } finally {
@@ -71,8 +77,21 @@ export const Dashboard: React.FC = () => {
 
   useEffect(() => {
     loadDashboardData();
-    const unsubscribe = syncEngine.subscribeDataChange(() => {
-      loadDashboardData();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (
+        !tableName ||
+        tableName === 'all_tables' ||
+        tableName === 'retail_invoices' ||
+        tableName === 'retail_payments' ||
+        tableName === 'wholesale_issues' ||
+        tableName === 'wholesale_payments' ||
+        tableName === 'wholesale_settlements' ||
+        tableName === 'customers' ||
+        tableName === 'products' ||
+        tableName === 'expenses'
+      ) {
+        loadDashboardData();
+      }
     });
     return () => {
       unsubscribe();
@@ -111,10 +130,6 @@ export const Dashboard: React.FC = () => {
       0
     );
 
-  const outstandingWholesaleBalances = (wholesaleSettlementsList || [])
-    .filter((s) => s.status !== 'paid')
-    .reduce((sum, s) => sum + (s.balance_due || 0), 0);
-
   const totalExpenses = (expensesList || []).reduce((sum, e) => sum + (e.amount || 0), 0);
 
   // Compute real gross profit from actual database invoices and wholesale settlements
@@ -129,23 +144,47 @@ export const Dashboard: React.FC = () => {
   const grossProfit = retailGrossProfit + wholesaleGrossProfit;
   const netProfit = Math.max(0, grossProfit - totalExpenses);
 
+  // Compute actual pending retail payments from outstanding retail invoices
   const pendingRetailPayments = (invoicesList || [])
     .filter((i) => i.status !== 'cancelled' && i.status !== 'refunded' && i.payment_status !== 'paid')
     .reduce((sum, i) => {
+      const totalAmt = Number(i.total_amount || 0);
+      const paidAmt = Number(i.paid_amount || 0);
+      const addPayments = (retailPaymentsList || [])
+        .filter((p) => p.invoice_id === i.id)
+        .reduce((pSum, p) => pSum + Number(p.amount || 0), 0);
       const due = i.balance_due !== undefined && i.balance_due !== null
-        ? Number(i.balance_due)
-        : Math.max(0, Number(i.total_amount || 0) - Number(i.paid_amount || 0));
+        ? Math.max(0, Number(i.balance_due) - addPayments)
+        : Math.max(0, totalAmt - (paidAmt + addPayments));
       return sum + Math.max(0, due);
     }, 0);
 
-  const pendingWholesalePayments = (wholesaleSettlementsList || [])
-    .filter((s) => s.status !== 'paid')
+  // Compute actual pending wholesale payments across consignment issues & settlements
+  const issuesDues = (wholesaleIssuesList || [])
+    .filter((i) => i.status !== 'cancelled' && i.status !== 'settled')
+    .reduce((sum, issue) => {
+      const totalVal = Number(issue.total_valuation_amount || issue.total_cash_value || 0);
+      const directPaid = Number(issue.cash_paid || 0) + Number(issue.gold_916_value_paid || 0);
+      const linkedPayments = (wholesalePaymentsList || [])
+        .filter((p) => p.issue_id === issue.id)
+        .reduce((pSum, p) => pSum + Number(p.amount || 0), 0);
+      const totalPaidForIssue = directPaid + linkedPayments;
+      const due = issue.remaining_balance !== undefined && issue.remaining_balance !== null
+        ? Math.max(0, Math.min(Number(issue.remaining_balance), totalVal - linkedPayments))
+        : Math.max(0, totalVal - totalPaidForIssue);
+      return sum + Math.max(0, due);
+    }, 0);
+
+  const settlementsDues = (wholesaleSettlementsList || [])
+    .filter((s) => s.status !== 'paid' && s.status !== 'cancelled')
     .reduce((sum, s) => {
       const due = s.balance_due !== undefined && s.balance_due !== null
         ? Number(s.balance_due)
         : Math.max(0, Number(s.net_payable_to_shop || 0) - Number(s.amount_paid || 0));
       return sum + Math.max(0, due);
     }, 0);
+
+  const pendingWholesalePayments = issuesDues + settlementsDues;
 
   // Dynamic Stock & Settlement Alerts from Database
   const lowStockProducts = (productsList || []).filter((p) => (p.quantity || 0) <= (p.minimum_stock || 5));
@@ -317,6 +356,7 @@ export const Dashboard: React.FC = () => {
                 : 'No outstanding retail payments'
             }
             icon={DollarSign}
+            highlight={pendingRetailPayments > 0}
           />
           <StatCard
             title={t('monthly_retail_sales')}
@@ -353,6 +393,7 @@ export const Dashboard: React.FC = () => {
                 : 'No outstanding wholesale receivables'
             }
             icon={BadgePercent}
+            highlight={pendingWholesalePayments > 0}
           />
           <StatCard
             title={t('active_wholesale_partners')}

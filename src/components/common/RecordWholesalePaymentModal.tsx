@@ -48,7 +48,10 @@ export const RecordWholesalePaymentModal: React.FC<RecordWholesalePaymentModalPr
       ? goldValue
       : cashAmount + goldValue;
 
-  const currentDue = issue ? issue.remaining_balance || issue.total_valuation_amount : 24550;
+  const issuePaid = issue ? Number(issue.cash_paid || 0) + Number(issue.gold_916_value_paid || 0) : 0;
+  const currentDue = issue
+    ? (issue.remaining_balance ?? Math.max(0, Number(issue.total_valuation_amount || issue.total_cash_value || 0) - issuePaid))
+    : 0;
   const newRemainingBalance = Math.max(0, currentDue - totalPaymentValue);
 
   const handleSubmit = async (e: React.FormEvent) => {
