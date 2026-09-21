@@ -64,9 +64,30 @@ Translucent glassmorphism login interface featuring dual-mode authentication: tr
 
 <table>
 <tr>
-<td width="100%">
+<td width="50%">
 <img src="docs/screenshots/login.png" alt="Shankar Jewellery ERP Luxury Login Interface" width="100%"/>
-<p align="center"><b>Luxury Mobile & Desktop Passkey Login Interface</b></p>
+<p align="center"><b>Desktop Glassmorphism Login Interface</b></p>
+</td>
+<td width="50%">
+<img src="docs/screenshots/mobile-login.png" alt="Shankar Jewellery ERP Mobile Passkey Login Interface" width="100%"/>
+<p align="center"><b>Mobile Passkey Login Interface</b></p>
+</td>
+</tr>
+</table>
+
+---
+
+### 📱 Responsive Mobile Workflows & Navigation Drawer
+
+<table>
+<tr>
+<td width="50%">
+<img src="docs/screenshots/mobile-dashboard.png" alt="Shankar Jewellery ERP Mobile Dashboard" width="100%"/>
+<p align="center"><b>Mobile Dashboard & Bottom Navigation Bar</b></p>
+</td>
+<td width="50%">
+<img src="docs/screenshots/mobile-drawer.png" alt="Shankar Jewellery ERP Mobile Navigation Drawer" width="100%"/>
+<p align="center"><b>Mobile Navigation Drawer Menu</b></p>
 </td>
 </tr>
 </table>
@@ -272,3 +293,4 @@ This repository is maintained for demonstration and portfolio case-study purpose
   <b>💎 Shankar Jewellery ERP &bull; Trust &bull; Tradition &bull; Technology</b><br/>
   <i>For a Brighter Tomorrow</i>
 </p>
+
