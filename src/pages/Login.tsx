@@ -87,16 +87,17 @@ export const Login: React.FC = () => {
 
   return (
     <div className="min-h-screen lg:h-screen lg:max-h-screen w-full bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-x-hidden lg:overflow-hidden selection:bg-gold-500 selection:text-charcoal-950 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
-      {/* Background Decorative Layer */}
+      {/* Background Decorative Ambient Layer */}
       <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-charcoal-900 via-slate-950 to-black -z-20 pointer-events-none" />
-      <div className="fixed -top-32 -left-32 h-[28rem] w-[28rem] rounded-full bg-amber-500/10 blur-[140px] -z-10 pointer-events-none" />
-      <div className="fixed top-1/3 -right-32 h-[30rem] w-[30rem] rounded-full bg-gold-500/15 blur-[150px] -z-10 pointer-events-none" />
+      <div className="fixed -top-32 -left-32 h-[30rem] w-[30rem] rounded-full bg-amber-500/10 blur-[140px] -z-10 pointer-events-none" />
+      <div className="fixed top-1/3 -right-32 h-[32rem] w-[32rem] rounded-full bg-gold-500/15 blur-[150px] -z-10 pointer-events-none" />
+      <div className="fixed -bottom-32 left-1/3 h-[28rem] w-[28rem] rounded-full bg-amber-600/10 blur-[140px] -z-10 pointer-events-none" />
 
-      {/* Main Responsive Layout */}
-      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 flex-1 flex flex-col justify-between py-2 lg:py-4 relative z-10">
+      {/* Main Container - Balanced max-w-6xl Grid */}
+      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex-1 flex flex-col justify-between py-3 lg:py-4 relative z-10">
         
         {/* Top Header Security Indicator Bar */}
-        <header className="w-full flex items-center justify-between sm:justify-end gap-3 text-[10px] sm:text-xs text-gold-200/80 font-medium pb-2 border-b border-gold-500/10 shrink-0">
+        <header className="w-full flex items-center justify-between sm:justify-end gap-3 text-[11px] sm:text-xs text-gold-200/80 font-medium pb-2 border-b border-gold-500/15 shrink-0">
           <div className="flex items-center gap-1.5 hover:text-gold-300 transition-colors">
             <ShieldCheck className="h-3.5 w-3.5 text-gold-400 shrink-0" />
             <span>Secure</span>
@@ -114,20 +115,20 @@ export const Login: React.FC = () => {
         </header>
 
         {/* Center Container: 2-Column Split on Desktop */}
-        <main className="w-full my-auto py-3 lg:py-4 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-center">
+        <main className="w-full my-auto py-4 lg:py-6 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
           
           {/* DESKTOP LEFT SIDE: Brand Showcase & Feature Highlights */}
-          <section className="hidden lg:flex lg:col-span-7 flex-col justify-between space-y-4 pr-2">
+          <section className="hidden lg:flex lg:col-span-6 flex-col justify-center space-y-5 pr-2">
             
             {/* Logo Emblem & Brand Header */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center gap-4">
                 <div className="relative shrink-0">
-                  <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-gold-400/40 to-amber-500/20 blur-md" />
+                  <div className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-gold-400/50 to-amber-500/30 blur-md pointer-events-none" />
                   <img
                     src="/brand/shankar-jewellery-logo.png"
                     alt="Shankar Jewellery Logo"
-                    className="relative h-20 w-20 xl:h-24 xl:w-24 object-contain rounded-full border-2 border-gold-400/80 shadow-[0_0_25px_rgba(212,175,55,0.3)] bg-charcoal-900/90 p-1"
+                    className="relative h-20 w-20 xl:h-24 xl:w-24 object-contain rounded-full border-2 border-gold-400/90 shadow-[0_0_25px_rgba(212,175,55,0.35)] bg-charcoal-900/95 p-1"
                   />
                 </div>
 
@@ -138,7 +139,7 @@ export const Login: React.FC = () => {
                   
                   <div className="flex items-center gap-2 mt-1">
                     <div className="h-[1px] w-8 bg-gold-400/60" />
-                    <span className="font-serif text-sm font-bold tracking-[0.3em] text-gold-400">
+                    <span className="font-serif text-xs font-bold tracking-[0.3em] text-gold-400">
                       E R P
                     </span>
                     <div className="h-[1px] w-8 bg-gold-400/60" />
@@ -160,64 +161,64 @@ export const Login: React.FC = () => {
                 JEWELLERY BUSINESS <br />
                 <span className="text-gold-400 italic">Simplified with Technology</span>
               </h2>
-              <p className="text-xs text-slate-400 max-w-lg leading-relaxed">
+              <p className="text-xs text-slate-300/90 max-w-md leading-relaxed">
                 Complete enterprise solution for Shankar Jewellery retail billing, 916 gold consignment issues, customer ledgers, and real-time metal rate tracking.
               </p>
             </div>
 
             {/* 2x2 Feature Cards Grid */}
-            <div className="grid grid-cols-2 gap-3 pt-1 max-w-lg">
-              <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-gold-500/20 bg-charcoal-900/40 backdrop-blur-sm">
-                <div className="p-1.5 rounded-lg bg-gold-500/10 text-gold-400 shrink-0">
+            <div className="grid grid-cols-2 gap-3 pt-1 max-w-md">
+              <div className="flex items-center gap-3 p-3 rounded-2xl border border-gold-500/25 bg-charcoal-900/60 backdrop-blur-md shadow-md hover:border-gold-400/50 hover:bg-gold-500/10 transition-all">
+                <div className="p-2 rounded-xl bg-gold-500/15 text-gold-400 shrink-0">
                   <TrendingUp className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-slate-200 leading-none">Manage Sales</h3>
-                  <p className="text-[10px] text-slate-400 mt-1 leading-none">POS & GST Billing</p>
+                  <h3 className="text-xs font-bold text-slate-100 leading-none">Manage Sales</h3>
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-none">POS & GST Billing</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-gold-500/20 bg-charcoal-900/40 backdrop-blur-sm">
-                <div className="p-1.5 rounded-lg bg-gold-500/10 text-gold-400 shrink-0">
+              <div className="flex items-center gap-3 p-3 rounded-2xl border border-gold-500/25 bg-charcoal-900/60 backdrop-blur-md shadow-md hover:border-gold-400/50 hover:bg-gold-500/10 transition-all">
+                <div className="p-2 rounded-xl bg-gold-500/15 text-gold-400 shrink-0">
                   <Boxes className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-slate-200 leading-none">Track Inventory</h3>
-                  <p className="text-[10px] text-slate-400 mt-1 leading-none">Gold & Silver Weight</p>
+                  <h3 className="text-xs font-bold text-slate-100 leading-none">Track Inventory</h3>
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-none">Gold & Silver Weight</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-gold-500/20 bg-charcoal-900/40 backdrop-blur-sm">
-                <div className="p-1.5 rounded-lg bg-gold-500/10 text-gold-400 shrink-0">
+              <div className="flex items-center gap-3 p-3 rounded-2xl border border-gold-500/25 bg-charcoal-900/60 backdrop-blur-md shadow-md hover:border-gold-400/50 hover:bg-gold-500/10 transition-all">
+                <div className="p-2 rounded-xl bg-gold-500/15 text-gold-400 shrink-0">
                   <Users className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-slate-200 leading-none">Handle Wholesale</h3>
-                  <p className="text-[10px] text-slate-400 mt-1 leading-none">Credit Consignment</p>
+                  <h3 className="text-xs font-bold text-slate-100 leading-none">Handle Wholesale</h3>
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-none">Credit Consignment</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-gold-500/20 bg-charcoal-900/40 backdrop-blur-sm">
-                <div className="p-1.5 rounded-lg bg-gold-500/10 text-gold-400 shrink-0">
+              <div className="flex items-center gap-3 p-3 rounded-2xl border border-gold-500/25 bg-charcoal-900/60 backdrop-blur-md shadow-md hover:border-gold-400/50 hover:bg-gold-500/10 transition-all">
+                <div className="p-2 rounded-xl bg-gold-500/15 text-gold-400 shrink-0">
                   <ShieldCheck className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-slate-200 leading-none">Secure & Reliable</h3>
-                  <p className="text-[10px] text-slate-400 mt-1 leading-none">Passkey & WebAuthn</p>
+                  <h3 className="text-xs font-bold text-slate-100 leading-none">Secure & Reliable</h3>
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-none">Passkey & WebAuthn</p>
                 </div>
               </div>
             </div>
 
             {/* Left Quote */}
-            <div className="pt-1">
-              <p className="font-serif italic text-xs text-gold-300/80">
+            <div className="pt-2">
+              <p className="font-serif italic text-xs text-gold-300/90 border-l-2 border-gold-400/60 pl-3">
                 &ldquo;Tradition in Every Gram, Technology in Every Step&rdquo;
               </p>
             </div>
           </section>
 
           {/* RIGHT SIDE: Compact Luxury Login Card */}
-          <section className="lg:col-span-5 flex flex-col items-center justify-center w-full max-w-md mx-auto">
+          <section className="lg:col-span-6 flex flex-col items-center justify-center w-full max-w-md mx-auto lg:ml-auto">
             
             {/* MOBILE ONLY BRAND HEADER */}
             <div className="flex lg:hidden flex-col items-center text-center space-y-2 mb-4">
@@ -253,14 +254,14 @@ export const Login: React.FC = () => {
             </div>
 
             {/* LUXURY GLASSMORPHISM LOGIN CARD */}
-            <div className="w-full rounded-2xl border border-gold-500/30 bg-charcoal-900/80 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_40px_rgba(0,0,0,0.8),0_0_20px_rgba(212,175,55,0.15)] relative overflow-hidden transition-all">
+            <div className="w-full rounded-3xl border border-gold-500/35 bg-charcoal-900/85 backdrop-blur-2xl p-6 sm:p-7 shadow-[0_20px_60px_rgba(0,0,0,0.9),0_0_30px_rgba(212,175,55,0.2)] relative overflow-hidden transition-all">
               
-              {/* Top Card Golden Accent Line */}
+              {/* Top Card Golden Ambient Accent Line */}
               <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-gold-400 to-transparent" />
 
               {/* Card Header Title */}
-              <div className="text-center space-y-0.5 mb-5">
-                <h2 className="font-serif text-xl sm:text-2xl font-bold text-white tracking-wide">
+              <div className="text-center space-y-1 mb-5">
+                <h2 className="font-serif text-2xl font-bold text-white tracking-wide">
                   Welcome Back
                 </h2>
                 <p className="text-xs text-slate-400">
@@ -288,15 +289,15 @@ export const Login: React.FC = () => {
               )}
 
               {/* Form Controls */}
-              <form onSubmit={handleSubmit} className="space-y-3.5">
+              <form onSubmit={handleSubmit} className="space-y-4">
                 
                 {/* Email / Username Field */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                     Email Address or Username
                   </label>
-                  <div className="relative rounded-xl border border-gold-500/20 bg-black/40 text-slate-100 focus-within:border-gold-400 focus-within:ring-1 focus-within:ring-gold-400/50 transition-all">
-                    <Mail className="absolute left-3 top-3.5 h-4 w-4 text-gold-400/80 pointer-events-none" />
+                  <div className="relative rounded-xl border border-gold-500/30 bg-black/50 text-slate-100 focus-within:border-gold-400 focus-within:ring-1 focus-within:ring-gold-400/60 transition-all">
+                    <Mail className="absolute left-3.5 top-3.5 h-4 w-4 text-gold-400/90 pointer-events-none" />
                     <input
                       type="text"
                       required
@@ -304,18 +305,18 @@ export const Login: React.FC = () => {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="Enter email or username"
-                      className="w-full min-h-[46px] bg-transparent py-2.5 pl-9 pr-3 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none font-sans"
+                      className="w-full min-h-[48px] bg-transparent py-3 pl-10 pr-3 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none font-sans"
                     />
                   </div>
                 </div>
 
                 {/* Password Field */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                     Password
                   </label>
-                  <div className="relative rounded-xl border border-gold-500/20 bg-black/40 text-slate-100 focus-within:border-gold-400 focus-within:ring-1 focus-within:ring-gold-400/50 transition-all">
-                    <Lock className="absolute left-3 top-3.5 h-4 w-4 text-gold-400/80 pointer-events-none" />
+                  <div className="relative rounded-xl border border-gold-500/30 bg-black/50 text-slate-100 focus-within:border-gold-400 focus-within:ring-1 focus-within:ring-gold-400/60 transition-all">
+                    <Lock className="absolute left-3.5 top-3.5 h-4 w-4 text-gold-400/90 pointer-events-none" />
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
@@ -323,12 +324,12 @@ export const Login: React.FC = () => {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Enter password"
-                      className="w-full min-h-[46px] bg-transparent py-2.5 pl-9 pr-11 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
+                      className="w-full min-h-[48px] bg-transparent py-3 pl-10 pr-12 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-0 top-0 bottom-0 px-3 text-slate-400 hover:text-gold-300 transition-colors flex items-center justify-center min-w-[44px] min-h-[46px]"
+                      className="absolute right-0 top-0 bottom-0 px-3.5 text-slate-400 hover:text-gold-300 transition-colors flex items-center justify-center min-w-[48px] min-h-[48px]"
                       title={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -359,7 +360,7 @@ export const Login: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isLoading || isAuthenticatingPasskey}
-                  className="w-full min-h-[48px] rounded-xl bg-gradient-to-r from-gold-400 via-gold-500 to-amber-500 text-charcoal-950 font-bold text-xs sm:text-sm shadow-[0_4px_20px_rgba(212,175,55,0.3)] hover:brightness-110 active:scale-[0.99] transition-all flex items-center justify-center gap-2 mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full min-h-[48px] rounded-xl bg-gradient-to-r from-gold-400 via-gold-500 to-amber-500 text-charcoal-950 font-bold text-xs sm:text-sm shadow-[0_4px_25px_rgba(212,175,55,0.35)] hover:brightness-110 active:scale-[0.99] transition-all flex items-center justify-center gap-2 mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoading ? (
                     <>
@@ -377,7 +378,7 @@ export const Login: React.FC = () => {
 
               {/* Passkey Biometric Login Section */}
               {passkeySupported && (
-                <div className="space-y-3 pt-3">
+                <div className="space-y-3 pt-4">
                   {/* OR Divider */}
                   <div className="relative flex items-center justify-center">
                     <div className="absolute inset-0 flex items-center">
@@ -393,7 +394,7 @@ export const Login: React.FC = () => {
                     type="button"
                     onClick={handlePasskeySignIn}
                     disabled={isLoading || isAuthenticatingPasskey}
-                    className="w-full min-h-[48px] rounded-xl border border-gold-500/40 bg-black/30 text-gold-200 font-semibold text-xs sm:text-sm hover:border-gold-400 hover:bg-gold-500/10 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(212,175,55,0.1)] disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full min-h-[48px] rounded-xl border border-gold-500/40 bg-black/40 text-gold-200 font-semibold text-xs sm:text-sm hover:border-gold-400 hover:bg-gold-500/15 active:scale-[0.99] transition-all flex items-center justify-center gap-2.5 shadow-[0_0_15px_rgba(212,175,55,0.1)] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isAuthenticatingPasskey ? (
                       <RefreshCw className="h-4 w-4 animate-spin text-gold-400" />
@@ -410,7 +411,7 @@ export const Login: React.FC = () => {
               )}
 
               {/* Bottom Security Active Indicator */}
-              <div className="mt-4 pt-3 border-t border-gold-500/15 text-center text-[10px] sm:text-xs text-slate-400 flex items-center justify-center gap-1.5">
+              <div className="mt-5 pt-3.5 border-t border-gold-500/15 text-center text-[10px] sm:text-xs text-slate-400 flex items-center justify-center gap-1.5">
                 <ShieldCheck className="h-3.5 w-3.5 text-gold-400 shrink-0" />
                 <span>Shankar Jewellery ERP &bull; Session Protection & Passkey Security Active</span>
               </div>
