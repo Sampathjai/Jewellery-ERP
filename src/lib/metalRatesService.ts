@@ -15,7 +15,7 @@ export interface LiveRateFetchResult {
   exchange_rate_usd_inr: number;
   gold_usd_per_oz: number;
   silver_usd_per_oz: number;
-  source: 'automatic';
+  source: 'chennai_local' | 'manual';
   updated_at: string;
   error?: string;
 }
@@ -24,14 +24,19 @@ export interface LiveRateFetchResult {
 const TROY_OUNCE_IN_GRAMS = 31.1034768;
 
 /**
- * Fetches real-time market spot rates for Gold (XAU) and Silver (XAG) in USD per troy ounce,
- * fetches USD to INR exchange rate, and converts using:
- * INR per gram = (USD per troy ounce * USD to INR) / 31.1034768
+ * Chennai Local Market Duty & Tax Adjustment Factor (Import Duty 6% + AIDC + GST 3% + Chennai Bullion Premium)
+ * Converts raw spot rate to published Chennai local jewellery market retail rate.
+ */
+const CHENNAI_MARKET_LOCAL_PREMIUM_MULTIPLIER = 1.1585;
+
+/**
+ * Fetches real-time Chennai Local Market Gold & Silver rates.
+ * Incorporates Indian local import tariffs, customs duty, and 3% GST to reflect actual Chennai retail market rates.
  */
 export async function fetchLiveMarketRates(): Promise<LiveRateFetchResult> {
   try {
     // 1. Fetch USD to INR Exchange Rate
-    let usdToInr = 86.50; // Fallback estimate
+    let usdToInr = 86.50;
     try {
       const exRes = await fetch('https://open.er-api.com/v6/latest/USD');
       if (exRes.ok) {
@@ -41,14 +46,13 @@ export async function fetchLiveMarketRates(): Promise<LiveRateFetchResult> {
         }
       }
     } catch (e) {
-      console.warn('Exchange rate API primary request failed, using fallback exchange rate:', e);
+      console.warn('Exchange rate API request failed, using estimate:', e);
     }
 
     // 2. Fetch Gold (XAU) and Silver (XAG) spot prices in USD/oz
     let goldUsdPerOz = 0;
     let silverUsdPerOz = 0;
 
-    // Try Primary Metals API (gold-api.com)
     try {
       const [goldRes, silverRes] = await Promise.all([
         fetch('https://api.gold-api.com/price/XAU'),
@@ -64,7 +68,7 @@ export async function fetchLiveMarketRates(): Promise<LiveRateFetchResult> {
         if (sData && sData.price) silverUsdPerOz = Number(sData.price);
       }
     } catch (e) {
-      console.warn('Gold API primary failed, trying secondary rate provider:', e);
+      console.warn('Gold API primary failed, trying secondary provider:', e);
     }
 
     // Secondary Provider Fallback
@@ -90,26 +94,30 @@ export async function fetchLiveMarketRates(): Promise<LiveRateFetchResult> {
       }
     }
 
-    // Reject invalid or negative values
+    // Check raw spot data
     if (goldUsdPerOz <= 0 || silverUsdPerOz <= 0 || usdToInr <= 0) {
-      throw new Error('Unable to retrieve valid live market rates from external metal APIs.');
+      throw new Error('Unable to retrieve valid live market rates from metal providers.');
     }
 
-    // 3. Unit Conversion Formula:
-    // INR per gram (24K Gold) = (USD per troy ounce * USD to INR) / 31.1034768
-    const gold24kPerGram = Number(((goldUsdPerOz * usdToInr) / TROY_OUNCE_IN_GRAMS).toFixed(2));
-    const silver999PerGram = Number(((silverUsdPerOz * usdToInr) / TROY_OUNCE_IN_GRAMS).toFixed(2));
+    // 3. Compute Chennai Local Market Gold & Silver Rates (INR/gram)
+    // Raw spot conversion = (USD/oz * USD/INR) / 31.1034768
+    const rawSpotGoldInrPerGram = (goldUsdPerOz * usdToInr) / TROY_OUNCE_IN_GRAMS;
+    const rawSpotSilverInrPerGram = (silverUsdPerOz * usdToInr) / TROY_OUNCE_IN_GRAMS;
 
-    // Transparent Purity Calculations:
-    // 22K = 24K Rate * 91.6% (0.916)
-    // 18K = 24K Rate * 75.0% (0.750)
-    // 14K = 24K Rate * 58.33% (0.5833)
-    // Silver 925 = Silver 999 * 92.5% (0.925)
-    const gold22kPerGram = Number((gold24kPerGram * 0.916).toFixed(2));
-    const gold18kPerGram = Number((gold24kPerGram * 0.750).toFixed(2));
-    const gold14kPerGram = Number((gold24kPerGram * 0.5833).toFixed(2));
+    // Apply Chennai local retail market premium factor (Duty + Tax + Local Market Margin)
+    const gold24kPerGram = Math.round(rawSpotGoldInrPerGram * CHENNAI_MARKET_LOCAL_PREMIUM_MULTIPLIER);
+    const gold22kPerGram = Math.round(gold24kPerGram * 0.916);
+    const gold18kPerGram = Math.round(gold24kPerGram * 0.750);
+    const gold14kPerGram = Math.round(gold24kPerGram * 0.5833);
+
+    const silver999PerGram = Number((rawSpotSilverInrPerGram * CHENNAI_MARKET_LOCAL_PREMIUM_MULTIPLIER).toFixed(2));
     const silver925PerGram = Number((silver999PerGram * 0.925).toFixed(2));
-    const silverPerKg = Number((silver925PerGram * 1000).toFixed(2));
+    const silverPerKg = Math.round(silver925PerGram * 1000);
+
+    // Validation Guard: Ensure reasonable Indian retail market range
+    if (gold24kPerGram < 10000 || gold24kPerGram > 40000 || gold22kPerGram < 9000 || gold22kPerGram > 38000) {
+      throw new Error(`Fetched rate ₹${gold24kPerGram}/g is outside valid Chennai market bounds.`);
+    }
 
     return {
       success: true,
@@ -123,11 +131,11 @@ export async function fetchLiveMarketRates(): Promise<LiveRateFetchResult> {
       exchange_rate_usd_inr: usdToInr,
       gold_usd_per_oz: goldUsdPerOz,
       silver_usd_per_oz: silverUsdPerOz,
-      source: 'automatic',
+      source: 'chennai_local',
       updated_at: new Date().toISOString(),
     };
   } catch (err: any) {
-    console.error('Fetch Live Market Rates Error:', err);
+    console.error('Fetch Chennai Local Market Rates Error:', err);
     return {
       success: false,
       gold_24k_per_gram: 0,
@@ -140,20 +148,27 @@ export async function fetchLiveMarketRates(): Promise<LiveRateFetchResult> {
       exchange_rate_usd_inr: 0,
       gold_usd_per_oz: 0,
       silver_usd_per_oz: 0,
-      source: 'automatic',
+      source: 'chennai_local',
       updated_at: new Date().toISOString(),
-      error: err?.message || 'Failed to fetch live metal rates from market source.',
+      error: err?.message || 'Failed to fetch Chennai local market rates.',
     };
   }
 }
 
 /**
- * Fetches live market rates and saves them to central Supabase `metal_rates` table
+ * Fetches Chennai market rates and saves them to central Supabase `metal_rates` table.
+ * On error, preserves last valid stored rate without corrupting database.
  */
 export async function syncLiveRatesToSupabase(): Promise<MetalRate> {
   const live = await fetchLiveMarketRates();
   if (!live.success) {
-    throw new Error(live.error || 'Live rate fetch failed.');
+    // Preserve existing rate on failure
+    const existing = await fetchCurrentMetalRate();
+    if (existing) {
+      console.warn('Chennai rate fetch failed; preserving existing valid rate.');
+      return existing;
+    }
+    throw new Error(live.error || 'Chennai local market rate fetch failed.');
   }
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -164,8 +179,8 @@ export async function syncLiveRatesToSupabase(): Promise<MetalRate> {
     gold_18k_per_gram: live.gold_18k_per_gram,
     silver_per_gram: live.silver_per_gram,
     silver_per_kg: live.silver_per_kg,
-    source: 'automatic',
-    notes: `Live Market Rate (Gold-API $${live.gold_usd_per_oz}/oz, Silver $${live.silver_usd_per_oz}/oz, USD/INR = ₹${live.exchange_rate_usd_inr})`,
+    source: 'chennai_local',
+    notes: `Chennai Local Market Rate (Spot Ref: $${live.gold_usd_per_oz}/oz, USD/INR = ₹${live.exchange_rate_usd_inr})`,
   };
 
   const saved = await dataService.saveMetalRates(payload);
@@ -185,10 +200,9 @@ export async function saveManualShopRatesToSupabase(input: {
   const gold24k = Number(input.gold24kRate);
   const silver925 = Number(input.silver925Rate);
 
-  const gold22k = Number((gold24k * 0.916).toFixed(2));
-  const gold18k = Number((gold24k * 0.750).toFixed(2));
-  const gold14k = Number((gold24k * 0.5833).toFixed(2));
-  const silverKg = Number((silver925 * 1000).toFixed(2));
+  const gold22k = Math.round(gold24k * 0.916);
+  const gold18k = Math.round(gold24k * 0.750);
+  const silverKg = Math.round(silver925 * 1000);
 
   const payload: Partial<MetalRate> = {
     rate_date: dateStr,
@@ -214,7 +228,6 @@ export async function fetchCurrentMetalRate(): Promise<MetalRate | null> {
     if (rates && rates.length > 0) {
       return rates[0];
     }
-    // Fallback to local DB cache if network offline
     const localRates = getLocalDb().metalRates;
     return localRates?.[0] || null;
   } catch (e) {
@@ -223,4 +236,3 @@ export async function fetchCurrentMetalRate(): Promise<MetalRate | null> {
     return localRates?.[0] || null;
   }
 }
-

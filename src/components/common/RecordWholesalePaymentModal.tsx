@@ -34,7 +34,7 @@ export const RecordWholesalePaymentModal: React.FC<RecordWholesalePaymentModalPr
     if (isOpen) {
       dataService.getMetalRates().then((rates) => {
         if (rates && rates.length > 0) {
-          setGoldRate(rates[0].gold_22k_per_gram || 6830);
+          setGoldRate(rates[0].gold_22k_per_gram || 14285);
         }
       });
 

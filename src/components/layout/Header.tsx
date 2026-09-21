@@ -118,7 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Center/Left: Metal Rates Ticker for Desktop */}
         <div className="hidden sm:flex items-center gap-2 rounded-full border border-amber-200/80 bg-amber-50/80 px-3 py-1.5 text-xs text-amber-900 dark:border-gold-800/40 dark:bg-gold-950/40 dark:text-gold-300 shrink min-w-0 overflow-x-auto whitespace-nowrap shadow-sm scrollbar-none">
           <TrendingUp className="h-3.5 w-3.5 shrink-0 text-gold-600" />
-          <span className="font-bold shrink-0">{t('today_rates')}:</span>
+          <span className="font-bold shrink-0">{language === 'ta' ? 'இன்றைய சென்னை விலைகள்' : "Today's Chennai Rates"}:</span>
           {metalRate ? (
             <>
               <span className="whitespace-nowrap">
@@ -133,11 +133,11 @@ export const Header: React.FC<HeaderProps> = ({
                 {t('silver_925')}: <strong className="font-bold text-amber-950 dark:text-gold-300">{formatCurrency(metalRate.silver_per_gram)}/g</strong>
               </span>
               <span className="rounded bg-gold-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-900 dark:text-gold-300 border border-gold-300/40 ml-0.5 shrink-0">
-                {metalRate.source === 'manual' ? 'Shop Rate' : 'Live Market'}
+                {metalRate.source === 'manual' ? 'Shop Rate' : 'Chennai Rate'}
               </span>
             </>
           ) : (
-            <span className="text-slate-400 italic">Gold Rate: Loading...</span>
+            <span className="text-slate-400 italic">Chennai Gold Rate: Loading...</span>
           )}
         </div>
 

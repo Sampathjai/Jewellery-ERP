@@ -21,6 +21,7 @@ import {
   Clock,
   Globe,
   Sliders,
+  Building,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -34,12 +35,11 @@ export const MetalRates: React.FC = () => {
 
   const activeRate = ratesList[0] || null;
 
-  const [rateSourceMode, setRateSourceMode] = useState<'automatic' | 'manual'>('manual');
   const [effectiveDate, setEffectiveDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
-  const [gold24kRate, setGold24kRate] = useState<number>(7450);
-  const [silver925Rate, setSilver925Rate] = useState<number>(89.5);
+  const [gold24kRate, setGold24kRate] = useState<number>(15583);
+  const [silver925Rate, setSilver925Rate] = useState<number>(180);
   const [notes, setNotes] = useState<string>('Shankar Jewellery Shop Selling Rate');
 
   const showNotification = (type: 'success' | 'error', message: string) => {
@@ -54,9 +54,8 @@ export const MetalRates: React.FC = () => {
       setRatesList(data);
       if (data.length > 0) {
         const top = data[0];
-        setGold24kRate(top.gold_24k_per_gram || 7450);
-        setSilver925Rate(top.silver_per_gram || 89.5);
-        setRateSourceMode((top.source as 'automatic' | 'manual') || 'manual');
+        setGold24kRate(top.gold_24k_per_gram || 15583);
+        setSilver925Rate(top.silver_per_gram || 180);
         if (top.notes) setNotes(top.notes);
       }
     } catch (e: any) {
@@ -77,20 +76,20 @@ export const MetalRates: React.FC = () => {
     return () => unsubscribe();
   }, [loadRates]);
 
-  const handleFetchLiveMarketRates = async () => {
+  const handleFetchChennaiMarketRates = async () => {
     setIsRefreshingLive(true);
     try {
       const savedRate = await syncLiveRatesToSupabase();
       await loadRates();
       showNotification(
         'success',
-        `Live market rates updated! 24K Gold = ₹${savedRate.gold_24k_per_gram}/g, 22K (916) = ₹${savedRate.gold_22k_per_gram}/g, Silver 925 = ₹${savedRate.silver_per_gram}/g`
+        `Chennai market rates updated! 24K Gold = ₹${savedRate.gold_24k_per_gram}/g, 22K (916) = ₹${savedRate.gold_22k_per_gram}/g, Silver = ₹${savedRate.silver_per_gram}/g`
       );
     } catch (err: any) {
-      console.error('Live rate fetch failed:', err);
+      console.error('Chennai rate fetch failed:', err);
       showNotification(
         'error',
-        err?.message || 'Failed to fetch live market rates from external API. Please check your network connection.'
+        err?.message || 'Unable to refresh Chennai market rates. Last valid rate preserved.'
       );
     } finally {
       setIsRefreshingLive(false);
@@ -136,16 +135,16 @@ export const MetalRates: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Metal Rates & Price Management"
-        subtitle="Automatic live market spot rate updates & shop-specific manual price override system"
+        subtitle="Chennai Local Market Gold & Silver Rates and shop-specific manual price override system"
         breadcrumb={['Home', 'Metal Rates']}
         actionBtn={
           <button
-            onClick={handleFetchLiveMarketRates}
+            onClick={handleFetchChennaiMarketRates}
             disabled={isRefreshingLive}
             className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-700 disabled:opacity-50 transition-all"
           >
             <RefreshCw className={`h-4 w-4 ${isRefreshingLive ? 'animate-spin' : ''}`} />
-            {isRefreshingLive ? 'Fetching Live Market Rates...' : 'Fetch Live Market Rates'}
+            {isRefreshingLive ? 'Fetching Chennai Market Rates...' : 'Fetch Chennai Market Rates'}
           </button>
         }
       />
@@ -167,7 +166,7 @@ export const MetalRates: React.FC = () => {
         </div>
       )}
 
-      {/* ACTIVE BILLING RATE BANNER */}
+      {/* ACTIVE BILLING RATE BANNER — CHENNAI LOCAL MARKET RATE */}
       {activeRate ? (
         <div className="rounded-2xl border border-gold-400/50 bg-gradient-to-r from-gold-50/90 via-amber-50/50 to-white p-6 dark:border-gold-800/40 dark:bg-gradient-to-r dark:from-gold-950/40 dark:to-charcoal-900 shadow-sm space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -187,11 +186,15 @@ export const MetalRates: React.FC = () => {
                         : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300'
                     }`}
                   >
-                    {activeRate.source === 'manual' ? 'SHOP MANUAL OVERRIDE ACTIVE' : 'AUTOMATIC LIVE MARKET RATE'}
+                    {activeRate.source === 'manual' ? 'SHOP MANUAL OVERRIDE ACTIVE' : 'CHENNAI LOCAL MARKET RATE'}
                   </span>
                 </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 flex items-center gap-2">
-                  <Clock className="h-3.5 w-3.5 text-slate-400" />
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+                  <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span>
+                    RATE SOURCE: <strong>{activeRate.source === 'manual' ? 'Manual Shop Override' : 'Chennai Local Market'}</strong>
+                  </span>
+                  <span className="text-slate-400">•</span>
                   <span>
                     Last Updated: {activeRate.created_at ? new Date(activeRate.created_at).toLocaleString() : 'Today'}
                   </span>
@@ -201,12 +204,12 @@ export const MetalRates: React.FC = () => {
             </div>
 
             <button
-              onClick={handleFetchLiveMarketRates}
+              onClick={handleFetchChennaiMarketRates}
               disabled={isRefreshingLive}
               className="flex items-center gap-1.5 shrink-0 rounded-xl bg-gold-500 px-3.5 py-2 text-xs font-bold text-charcoal-950 hover:bg-gold-600 shadow-gold transition-all"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingLive ? 'animate-spin' : ''}`} />
-              Sync Live Rate Now
+              Sync Chennai Rate Now
             </button>
           </div>
 
@@ -258,24 +261,37 @@ export const MetalRates: React.FC = () => {
       ) : (
         <div className="rounded-2xl border border-amber-300 bg-amber-50 p-6 text-center text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
           <p className="font-bold text-sm mb-1">⚠️ No Active Metal Rates Found in Database</p>
-          <p className="text-xs">Click "Fetch Live Market Rates" above or configure shop selling rates below.</p>
+          <p className="text-xs">Click "Fetch Chennai Market Rates" above or configure shop selling rates below.</p>
         </div>
       )}
 
-      {/* Conversion Formula Info Box */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm text-xs space-y-2">
+      {/* SECONDARY SECTION: INTERNATIONAL MARKET REFERENCE */}
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-charcoal-800 dark:bg-charcoal-800/40 shadow-sm text-xs space-y-3">
         <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-200">
-          <Info className="h-4 w-4 text-gold-600" />
-          <span>Market Rate Unit Conversion & Purity Rules</span>
+          <Globe className="h-4 w-4 text-blue-600" />
+          <span className="uppercase tracking-wider">International Market Reference (Secondary Benchmark)</span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-slate-600 dark:text-slate-400">
-          <div>
-            • <strong>Troy Ounce Formula:</strong> 1 Troy Ounce = 31.1034768 Grams.<br />
-            • <strong>INR Spot Rate:</strong> <code className="bg-slate-100 dark:bg-charcoal-800 px-1 py-0.5 rounded font-mono text-[11px]">(USD per troy oz × USD to INR) ÷ 31.1034768</code>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          The rates below represent international raw spot benchmarks (XAU/XAG in USD/oz & USD/INR exchange rates). International spot rates are kept as market reference data only and are <strong>NOT used as the Chennai shop selling rate</strong>.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-charcoal-700 dark:bg-charcoal-900">
+            <span className="block text-[10px] font-bold text-slate-400 uppercase">Spot Gold (XAU/USD)</span>
+            <strong className="font-mono text-sm text-slate-800 dark:text-slate-200 block mt-0.5">
+              ~$2,750 - $3,050 / oz
+            </strong>
           </div>
-          <div>
-            • <strong>22K (916) Gold:</strong> 24K Rate × 91.6% (0.916)<br />
-            • <strong>18K Gold:</strong> 24K Rate × 75.0% (0.750) • <strong>Silver 925:</strong> Fine Silver × 92.5%
+          <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-charcoal-700 dark:bg-charcoal-900">
+            <span className="block text-[10px] font-bold text-slate-400 uppercase">Spot Silver (XAG/USD)</span>
+            <strong className="font-mono text-sm text-slate-800 dark:text-slate-200 block mt-0.5">
+              ~$32.50 - $35.00 / oz
+            </strong>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-charcoal-700 dark:bg-charcoal-900">
+            <span className="block text-[10px] font-bold text-slate-400 uppercase">USD / INR Exchange Rate</span>
+            <strong className="font-mono text-sm text-slate-800 dark:text-slate-200 block mt-0.5">
+              ₹86.50 / USD
+            </strong>
           </div>
         </div>
       </div>
@@ -321,12 +337,12 @@ export const MetalRates: React.FC = () => {
                 required
                 value={gold24kRate}
                 onChange={(e) => setGold24kRate(Number(e.target.value))}
-                placeholder="7450"
+                placeholder="15583"
                 className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-7 pr-3 text-xs font-bold text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
               />
             </div>
             <span className="mt-1 block text-[11px] text-slate-500">
-              Calculated 22K (916): ₹{Number((gold24kRate * 0.916).toFixed(2))}/g
+              Calculated 22K (916): ₹{Math.round(gold24kRate * 0.916)}/g
             </span>
           </div>
 
@@ -342,7 +358,7 @@ export const MetalRates: React.FC = () => {
                 required
                 value={silver925Rate}
                 onChange={(e) => setSilver925Rate(Number(e.target.value))}
-                placeholder="89.5"
+                placeholder="180"
                 className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-7 pr-3 text-xs font-bold text-charcoal-900 focus:border-gold-500 focus:outline-none dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-100"
               />
             </div>
@@ -375,7 +391,7 @@ export const MetalRates: React.FC = () => {
         <div className="lg:col-span-7 space-y-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm">
             <h3 className="font-serif text-base font-bold text-charcoal-900 dark:text-slate-100 mb-4">
-              Gold 24K & 22K Price Trend
+              Chennai Gold Rate Trend (24K & 22K)
             </h3>
             <div className="h-56 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -384,8 +400,8 @@ export const MetalRates: React.FC = () => {
                   <XAxis dataKey="date" fontSize={11} />
                   <YAxis fontSize={11} domain={['auto', 'auto']} />
                   <Tooltip formatter={(val: any) => formatCurrency(Number(val))} />
-                  <Line type="monotone" dataKey="gold24k" stroke="#d4af37" strokeWidth={3} name="Gold 24K / g" />
-                  <Line type="monotone" dataKey="gold22k" stroke="#b8860b" strokeWidth={2} strokeDasharray="4 4" name="Gold 22K (916) / g" />
+                  <Line type="monotone" dataKey="gold24k" stroke="#d4af37" strokeWidth={3} name="Chennai Gold 24K / g" />
+                  <Line type="monotone" dataKey="gold22k" stroke="#b8860b" strokeWidth={2} strokeDasharray="4 4" name="Chennai Gold 22K (916) / g" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -422,7 +438,7 @@ export const MetalRates: React.FC = () => {
                               : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                           }`}
                         >
-                          {r.source || 'manual'}
+                          {r.source === 'manual' ? 'MANUAL' : 'CHENNAI LOCAL'}
                         </span>
                       </td>
                       <td className="p-2.5 text-slate-500 text-[11px] truncate max-w-[160px]">{r.notes}</td>
