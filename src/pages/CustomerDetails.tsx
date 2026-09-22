@@ -18,6 +18,7 @@ import {
   Trash2,
   Edit,
   Loader2,
+  RotateCcw,
 } from 'lucide-react';
 
 interface LedgerEntry {
@@ -326,6 +327,17 @@ export const CustomerDetails: React.FC = () => {
     openWhatsAppClickToChat(customer.whatsapp_number || customer.phone, msg);
   };
 
+  const handleUnarchiveCustomer = async () => {
+    if (!customer) return;
+    try {
+      const updated = await dataService.restoreCustomer(customer.id);
+      setCustomer(updated);
+      alert(`Customer "${customer.full_name}" unarchived successfully.`);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to unarchive customer.');
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center space-x-2 text-slate-500">
@@ -342,6 +354,8 @@ export const CustomerDetails: React.FC = () => {
       </div>
     );
   }
+
+  const isArchived = customer.is_active === false || (customer as any).is_active === 'false' || (customer as any).status === 'archived';
 
   return (
     <div className="space-y-6">
@@ -372,12 +386,21 @@ export const CustomerDetails: React.FC = () => {
             >
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
-            <button
-              onClick={() => navigate(`/customers/edit/${customer.id}`)}
-              className="flex items-center gap-1 rounded-xl border border-gold-400 bg-gold-50 px-3 py-2 text-xs font-bold text-amber-950 hover:bg-gold-100 dark:bg-gold-950/40 dark:text-gold-300"
-            >
-              <Edit className="h-4 w-4 text-gold-600" /> Edit Profile
-            </button>
+            {isArchived ? (
+              <button
+                onClick={handleUnarchiveCustomer}
+                className="flex items-center gap-1.5 rounded-xl border border-emerald-500 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-300 shadow-sm"
+              >
+                <RotateCcw className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> Unarchive Customer
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate(`/customers/edit/${customer.id}`)}
+                className="flex items-center gap-1 rounded-xl border border-gold-400 bg-gold-50 px-3 py-2 text-xs font-bold text-amber-950 hover:bg-gold-100 dark:bg-gold-950/40 dark:text-gold-300"
+              >
+                <Edit className="h-4 w-4 text-gold-600" /> Edit Profile
+              </button>
+            )}
             <button
               onClick={handlePrintLedger}
               className="flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300"

@@ -39,89 +39,92 @@ The system centralizes end-to-end operational workflows into a unified, high-per
 
 ---
 
-## 📸 Application Showcase
+## ✨ Feature Overview Showcase
 
-### 📊 Dashboard & Retail Overview
-The central dashboard provides real-time financial metrics, daily counter billing totals, outstanding retail dues, pending wholesale consignment returns, and category stock distributions.
+| Module | Screenshot | Description |
+|---|:---:|---|
+| **Dashboard** | <img src="docs/screenshots/dashboard-desktop.png" width="140" alt="Dashboard" /> | Live financial summary, counter sales, pending dues & wholesale alerts |
+| **Retail POS Billing** | <img src="docs/screenshots/dashboard-mobile.png" width="140" alt="Retail POS" /> | Counter billing, wastage & making charge calculations, PDF invoices |
+| **Precious Metal Rates** | <img src="docs/screenshots/gold-silver-rates.png" width="140" alt="Metal Rates" /> | Published Chennai Local Market gold/silver rates & shop price overrides |
+| **Role Permissions** | <img src="docs/screenshots/role-permissions.png" width="140" alt="Role Permissions" /> | Granular 10-role permission matrix editor and staff access control |
+| **Security & Passkeys** | <img src="docs/screenshots/security-settings.png" width="140" alt="Security Settings" /> | WebAuthn passkey biometric registration & staff inactivity auto-logout |
+| **Multi-Device Sync** | <img src="docs/screenshots/multi-device-sync.png" width="140" alt="Multi-Device Sync" /> | Supabase Realtime Channels & JSON database backup export/restore |
 
-<table>
+---
+
+## 📸 Application Screenshots
+
+### 🖥️ Desktop Overview
+
+<p align="center">
+  <img src="docs/screenshots/dashboard-desktop.png" width="900" alt="Shankar Jewellery ERP Desktop Dashboard Overview" />
+</p>
+<p align="center"><sub><b>Figure 1:</b> Centralized Desktop Dashboard displaying real-time counter sales, pending dues, wholesale alerts, and category distribution.</sub></p>
+
+---
+
+### 🔐 Authentication & Security
+
+<table width="100%">
 <tr>
-<td width="50%">
-<img src="docs/screenshots/dashboard.png" alt="Shankar Jewellery ERP Desktop Dashboard" width="100%"/>
-<p align="center"><b>Desktop Dashboard View</b></p>
+<td width="50%" align="center">
+  <img src="docs/screenshots/login-desktop.png" width="100%" alt="Desktop Glassmorphism Passkey Login" />
+  <br />
+  <sub><b>Desktop Glassmorphism Passkey Login</b></sub>
 </td>
-<td width="50%">
-<img src="docs/screenshots/mobile-dashboard.png" alt="Shankar Jewellery ERP Mobile Navigation & View" width="100%"/>
-<p align="center"><b>Responsive Mobile Dashboard & Bottom Navigation</b></p>
+<td width="50%" align="center">
+  <img src="docs/screenshots/security-settings.png" width="100%" alt="User Login & Session Security Controls" />
+  <br />
+  <sub><b>Inactivity Auto-Logout & Session Controls</b></sub>
 </td>
 </tr>
 </table>
 
 ---
 
-### 🔑 Authentication & Passkey Security
-Translucent glassmorphism login interface featuring dual-mode authentication: traditional password login and native **WebAuthn Passkey (Touch ID / Face ID / Windows Hello)** biometric login.
+### 🛡️ Access Control & Multi-Device Realtime Sync
 
-<table>
+<table width="100%">
 <tr>
-<td width="50%">
-<img src="docs/screenshots/login.png" alt="Shankar Jewellery ERP Luxury Login Interface" width="100%"/>
-<p align="center"><b>Desktop Glassmorphism Login Interface</b></p>
+<td width="50%" align="center">
+  <img src="docs/screenshots/role-permissions.png" width="100%" alt="Granular 10-Role Permission Matrix Editor" />
+  <br />
+  <sub><b>10-Role Granular Permission Matrix Editor</b></sub>
 </td>
-<td width="50%">
-<img src="docs/screenshots/mobile-login.png" alt="Shankar Jewellery ERP Mobile Passkey Login Interface" width="100%"/>
-<p align="center"><b>Mobile Passkey Login Interface</b></p>
+<td width="50%" align="center">
+  <img src="docs/screenshots/multi-device-sync.png" width="100%" alt="Supabase Realtime Sync & Backup Settings" />
+  <br />
+  <sub><b>Supabase Realtime Channel & Database Backup</b></sub>
 </td>
 </tr>
 </table>
 
 ---
 
-### 📱 Responsive Mobile Workflows & Navigation Drawer
+### 💰 Precious Metal Rate Management
 
-<table>
-<tr>
-<td width="50%">
-<img src="docs/screenshots/mobile-dashboard.png" alt="Shankar Jewellery ERP Mobile Dashboard" width="100%"/>
-<p align="center"><b>Mobile Dashboard & Bottom Navigation Bar</b></p>
-</td>
-<td width="50%">
-<img src="docs/screenshots/mobile-drawer.png" alt="Shankar Jewellery ERP Mobile Navigation Drawer" width="100%"/>
-<p align="center"><b>Mobile Navigation Drawer Menu</b></p>
-</td>
-</tr>
-</table>
+<p align="center">
+  <img src="docs/screenshots/gold-silver-rates.png" width="450" alt="Chennai Local Market Gold & Silver Rates Manager" />
+</p>
+<p align="center"><sub><b>Figure 2:</b> Published Chennai Local Market Gold (24K, 22K, 18K) & Silver Rates with Manual Shop Overrides.</sub></p>
 
 ---
 
-### 💰 Metal Rates & Session Control
+### 📱 Mobile Experience
 
-<table>
+Mobile screenshots retain their native vertical aspect ratios without distortion or desktop stretching:
+
+<table align="center">
 <tr>
-<td width="50%">
-<img src="docs/screenshots/gold-silver-rates.png" alt="Chennai Local Market Gold Rate Management" width="100%"/>
-<p align="center"><b>Chennai Local Market Gold & Silver Rates</b></p>
+<td align="center" padding="10">
+  <img src="docs/screenshots/login-mobile.png" width="320" alt="Mobile WebAuthn Passkey Login" />
+  <br />
+  <sub><b>Mobile WebAuthn Passkey Login</b></sub>
 </td>
-<td width="50%">
-<img src="docs/screenshots/security-settings.png" alt="User Login & Session Security Controls" width="100%"/>
-<p align="center"><b>Staff Inactivity Timeout & Passkey Registration</b></p>
-</td>
-</tr>
-</table>
-
----
-
-### 🛡️ Granular Role-Based Access Control (RBAC) & Realtime Synchronization
-
-<table>
-<tr>
-<td width="50%">
-<img src="docs/screenshots/role-permissions.png" alt="Granular Role Permission Matrix Editor" width="100%"/>
-<p align="center"><b>Granular 10-Role Permission Matrix Editor</b></p>
-</td>
-<td width="50%">
-<img src="docs/screenshots/multi-device-sync.png" alt="Multi-Device Realtime Sync & Backup Settings" width="100%"/>
-<p align="center"><b>Supabase Realtime Channel & JSON Backup Engine</b></p>
+<td align="center" padding="10">
+  <img src="docs/screenshots/mobile-drawer.png" width="320" alt="Mobile Navigation Drawer Menu" />
+  <br />
+  <sub><b>Mobile Navigation Drawer Menu</b></sub>
 </td>
 </tr>
 </table>
@@ -293,4 +296,3 @@ This repository is maintained for demonstration and portfolio case-study purpose
   <b>💎 Shankar Jewellery ERP &bull; Trust &bull; Tradition &bull; Technology</b><br/>
   <i>For a Brighter Tomorrow</i>
 </p>
-

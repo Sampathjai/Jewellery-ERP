@@ -1,18 +1,60 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { getLocalDb } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
+import { syncEngine } from '@/lib/syncEngine';
 import { formatCurrency, formatWeight } from '@/lib/utils';
-import { MetalType } from '@/types';
+import { MetalType, Supplier, Customer, Purchase } from '@/types';
 import { MetalBadge } from '@/components/common/MetalBadge';
 import { Building2, Phone, MapPin, Plus, Scale, CreditCard } from 'lucide-react';
 
 export const Suppliers: React.FC = () => {
   const navigate = useNavigate();
-  const db = getLocalDb();
+  const [suppliersList, setSuppliersList] = useState<Supplier[]>([]);
+  const [customersList, setCustomersList] = useState<Customer[]>([]);
+  const [purchasesList, setPurchasesList] = useState<Purchase[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const supplierCustomers = (db.customers || []).filter((c) => c.customer_type === 'supplier');
-  const dbSuppliers = db.suppliers || [];
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [sData, cData, pData] = await Promise.all([
+        dataService.getSuppliers(),
+        dataService.getCustomers(),
+        dataService.getPurchases(),
+      ]);
+      setSuppliersList(sData);
+      setCustomersList(cData);
+      setPurchasesList(pData);
+    } catch (e) {
+      console.warn('Using local fallback for suppliers:', e);
+      const db = getLocalDb();
+      setSuppliersList(db.suppliers || []);
+      setCustomersList(db.customers || []);
+      setPurchasesList(db.purchases || []);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'suppliers' || tableName === 'purchases' || tableName === 'customers' || tableName === 'general') {
+        loadData();
+      }
+    });
+    return () => unsubscribe();
+  }, [loadData]);
+
+  const db = getLocalDb();
+  const rawSuppliers = suppliersList.length > 0 ? suppliersList : (db.suppliers || []);
+  const rawCustomers = customersList.length > 0 ? customersList : (db.customers || []);
+  const purchases = purchasesList.length > 0 ? purchasesList : (db.purchases || []);
+
+  const supplierCustomers = rawCustomers.filter((c) => c.customer_type === 'supplier');
+  const dbSuppliers = rawSuppliers;
 
   const supplierMap = new Map<
     string,
@@ -55,7 +97,6 @@ export const Suppliers: React.FC = () => {
   });
 
   const allSuppliers = Array.from(supplierMap.values());
-  const purchases = db.purchases || [];
 
   return (
     <div className="space-y-6">

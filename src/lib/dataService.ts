@@ -34,10 +34,14 @@ import {
 // Ensures that all entity and foreign key IDs are valid RFC4122 UUIDs
 // ============================================================================
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const isUUID = (id?: string): boolean => {
+  return !!id && UUID_REGEX.test(id);
+};
 
 export const ensureValidUUID = (id?: string): string => {
-  if (id && UUID_REGEX.test(id)) {
+  if (id && isUUID(id)) {
     return id;
   }
   return crypto.randomUUID();
@@ -222,49 +226,232 @@ export const dataService = {
     return result;
   },
 
-  async deleteCustomer(id: string): Promise<{ success: boolean; softDeleted: boolean; message: string }> {
+  async checkCustomerHasTransactions(id: string): Promise<boolean> {
     const db = checkSupabaseClient();
-    const validId = ensureValidUUID(id);
+    let customerUuid = id;
 
-    const [retailRef, wholesaleRef] = await Promise.all([
-      db.from('retail_invoices').select('id').eq('customer_id', validId).limit(1),
-      db.from('wholesale_issues').select('id').eq('customer_id', validId).limit(1),
-    ]);
+    if (!isUUID(id)) {
+      try {
+        const { data: cust } = await db
+          .from('customers')
+          .select('id')
+          .eq('customer_code', id)
+          .maybeSingle();
+        if (cust?.id) {
+          customerUuid = cust.id;
+        }
+      } catch (err) {
+        console.warn('Error resolving customer UUID by code:', err);
+      }
+    }
 
-    const isReferenced = (retailRef.data && retailRef.data.length > 0) ||
-                         (wholesaleRef.data && wholesaleRef.data.length > 0);
+    if (!isUUID(customerUuid)) {
+      return true;
+    }
+
+    const tablesToCheck: { table: string; column: string }[] = [
+      { table: 'wholesale_payments', column: 'customer_id' },
+      { table: 'wholesale_issues', column: 'customer_id' },
+      { table: 'wholesale_sales', column: 'customer_id' },
+      { table: 'wholesale_returns', column: 'customer_id' },
+      { table: 'wholesale_settlements', column: 'customer_id' },
+      { table: 'retail_invoices', column: 'customer_id' },
+      { table: 'retail_returns', column: 'customer_id' },
+      { table: 'manufacturing_jobs', column: 'customer_id' },
+    ];
+
+    try {
+      const results = await Promise.all(
+        tablesToCheck.map(async ({ table, column }) => {
+          try {
+            const { data, error } = await db
+              .from(table)
+              .select('id')
+              .eq(column, customerUuid)
+              .limit(1);
+
+            if (!error && data && data.length > 0) {
+              return true;
+            }
+            return false;
+          } catch {
+            return false;
+          }
+        })
+      );
+
+      return results.some(Boolean);
+    } catch (e) {
+      console.warn('Error checking customer transaction dependencies:', e);
+      return true;
+    }
+  },
+
+  async deleteCustomer(
+    id: string,
+    forceArchive: boolean = false
+  ): Promise<{ success: boolean; softDeleted: boolean; message: string }> {
+    const db = checkSupabaseClient();
+    let customerUuid = id;
+
+    if (!isUUID(id)) {
+      try {
+        const { data: cust } = await db
+          .from('customers')
+          .select('id')
+          .eq('customer_code', id)
+          .maybeSingle();
+        if (cust?.id) {
+          customerUuid = cust.id;
+        }
+      } catch (err) {
+        console.warn('Error resolving customer UUID:', err);
+      }
+    }
+
+    const hasTransactions = await this.checkCustomerHasTransactions(customerUuid);
+    const shouldArchive = forceArchive || hasTransactions;
 
     let softDeleted = false;
-    if (isReferenced) {
-      const { error } = await db.from('customers').update({ is_active: false }).eq('id', validId);
+
+    if (shouldArchive) {
+      // NEVER attempt DELETE FROM customers when records exist or archive is requested
+      const { error } = await db
+        .from('customers')
+        .update({ is_active: false })
+        .eq('id', customerUuid);
+
       if (error) {
-        console.error('Failed to deactivate customer in Supabase:', error.message);
-        throw new Error(`Customer Deactivation Failed: ${error.message}`);
+        console.error('Failed to archive customer in Supabase:', error.message);
+        throw new Error(`Failed to archive customer: ${error.message}`);
       }
       softDeleted = true;
     } else {
-      const { error } = await db.from('customers').delete().eq('id', validId);
+      // Only delete if NO dependent records exist
+      const { error } = await db.from('customers').delete().eq('id', customerUuid);
+
       if (error) {
-        console.error('Failed to delete customer in Supabase:', error.message);
-        throw new Error(`Customer Delete Failed: ${error.message}`);
+        // If Postgres rejected hard delete due to foreign key constraint, fallback safely to archiving:
+        console.warn('Customer hard delete rejected by DB constraint; falling back to archive:', error.message);
+        const { error: archiveErr } = await db
+          .from('customers')
+          .update({ is_active: false })
+          .eq('id', customerUuid);
+
+        if (archiveErr) {
+          console.error('Failed to archive customer after delete rejection:', archiveErr.message);
+          throw new Error('Unable to remove or archive customer. Please try again.');
+        }
+        softDeleted = true;
       }
     }
 
     await this.logAuditAction(
-      softDeleted ? 'deactivate_customer' : 'delete_customer',
+      softDeleted ? 'archive_customer' : 'delete_customer',
       'customer',
-      validId,
-      { softDeleted }
-    );
+      customerUuid,
+      { softDeleted, customer_id: customerUuid }
+    ).catch((e) => console.warn('Audit log failed:', e));
 
-    syncEngine.notifyDataChange('customers', 'DELETE', { id: validId });
+    syncEngine.notifyDataChange('customers', 'DELETE', { id: customerUuid });
+
     return {
       success: true,
       softDeleted,
       message: softDeleted
-        ? 'Customer has historical transaction records; safely archived to protect CRM & accounting ledger history.'
-        : 'Customer permanently deleted.',
+        ? 'Customer has transaction history and was safely archived to preserve financial records.'
+        : 'Customer deleted successfully.',
     };
+  },
+
+  async restoreCustomer(id: string): Promise<Customer> {
+    const db = checkSupabaseClient();
+    let customerUuid = id;
+
+    if (!isUUID(id)) {
+      try {
+        const { data: cust } = await db
+          .from('customers')
+          .select('id')
+          .eq('customer_code', id)
+          .maybeSingle();
+        if (cust?.id) {
+          customerUuid = cust.id;
+        }
+      } catch (err) {
+        console.warn('Error resolving customer UUID:', err);
+      }
+    }
+
+    const { data, error } = await db
+      .from('customers')
+      .update({ is_active: true })
+      .eq('id', customerUuid)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to restore customer in Supabase:', error.message);
+      throw formatDbError('Customer Restore Failed', error);
+    }
+
+    const result = {
+      ...data,
+      agreed_customer_touch: data.default_actual_touch ?? data.agreed_profit_percent ?? 40,
+    } as Customer;
+
+    await this.logAuditAction('restore_customer', 'customer', customerUuid, {
+      full_name: result.full_name,
+      customer_code: result.customer_code,
+    }).catch((e) => console.warn('Audit log failed for restoreCustomer:', e));
+
+    syncEngine.notifyDataChange('customers', 'UPDATE', result);
+    return result;
+  },
+
+  async archiveCustomer(id: string): Promise<Customer> {
+    const db = checkSupabaseClient();
+    let customerUuid = id;
+
+    if (!isUUID(id)) {
+      try {
+        const { data: cust } = await db
+          .from('customers')
+          .select('id')
+          .eq('customer_code', id)
+          .maybeSingle();
+        if (cust?.id) {
+          customerUuid = cust.id;
+        }
+      } catch (err) {
+        console.warn('Error resolving customer UUID:', err);
+      }
+    }
+
+    const { data, error } = await db
+      .from('customers')
+      .update({ is_active: false })
+      .eq('id', customerUuid)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to archive customer in Supabase:', error.message);
+      throw formatDbError('Customer Archive Failed', error);
+    }
+
+    const result = {
+      ...data,
+      agreed_customer_touch: data.default_actual_touch ?? data.agreed_profit_percent ?? 40,
+    } as Customer;
+
+    await this.logAuditAction('archive_customer', 'customer', customerUuid, {
+      full_name: result.full_name,
+      customer_code: result.customer_code,
+    }).catch((e) => console.warn('Audit log failed for archiveCustomer:', e));
+
+    syncEngine.notifyDataChange('customers', 'UPDATE', result);
+    return result;
   },
 
   // --------------------------------------------------------------------------

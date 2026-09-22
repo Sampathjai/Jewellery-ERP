@@ -1,28 +1,66 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { getLocalDb, saveLocalDb } from '@/lib/supabase';
+import { dataService } from '@/lib/dataService';
+import { syncEngine } from '@/lib/syncEngine';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { RetailPayment, RetailInvoice } from '@/types';
 import { DollarSign, Plus, Save } from 'lucide-react';
 
 export const Payments: React.FC = () => {
-  const [db, setDb] = useState(getLocalDb());
+  const [paymentsList, setPaymentsList] = useState<RetailPayment[]>([]);
+  const [invoicesList, setInvoicesList] = useState<RetailInvoice[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [amount, setAmount] = useState<number>(5000);
   const [paymentMode, setPaymentMode] = useState<string>('upi');
   const [refNo, setRefNo] = useState('UPI/9182746192');
 
+  const loadPayments = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [pData, iData] = await Promise.all([
+        dataService.getRetailPayments(),
+        dataService.getRetailInvoices(),
+      ]);
+      setPaymentsList(pData);
+      setInvoicesList(iData);
+    } catch (e) {
+      console.warn('Fallback to local payments db:', e);
+      const db = getLocalDb();
+      setPaymentsList(db.retailPayments || []);
+      setInvoicesList(db.retailInvoices || []);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPayments();
+    const unsubscribe = syncEngine.subscribeDataChange((tableName) => {
+      if (tableName === 'retail_payments' || tableName === 'retail_invoices' || tableName === 'general') {
+        loadPayments();
+      }
+    });
+    return () => unsubscribe();
+  }, [loadPayments]);
+
+  const db = getLocalDb();
+  const rawPayments = paymentsList.length > 0 ? paymentsList : (db.retailPayments || []);
+
   const handleRecordPayment = (e: React.FormEvent) => {
     e.preventDefault();
-    const newPay = {
+    const newPay: RetailPayment = {
       id: `pay-${Date.now()}`,
-      invoice_id: 'inv-1001',
+      invoice_id: invoicesList[0]?.id || 'inv-1001',
       payment_date: new Date().toISOString().split('T')[0],
       amount,
       payment_mode: paymentMode as any,
       reference_number: refNo,
+      created_at: new Date().toISOString(),
     };
     db.retailPayments.unshift(newPay);
     saveLocalDb(db);
-    setDb({ ...db });
+    setPaymentsList([newPay, ...rawPayments]);
   };
 
   return (
@@ -64,6 +102,7 @@ export const Payments: React.FC = () => {
               <option value="upi">UPI / GPay / PhonePe</option>
               <option value="bank_transfer">Bank Transfer (NEFT/RTGS)</option>
               <option value="card">Credit/Debit Card</option>
+              <option value="exchange_gold">Old Gold Exchange</option>
             </select>
           </div>
 
@@ -101,7 +140,7 @@ export const Payments: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
-                {db.retailPayments.map((p) => (
+                {rawPayments.map((p) => (
                   <tr key={p.id}>
                     <td className="p-3 font-mono">{formatDate(p.payment_date)}</td>
                     <td className="p-3 font-mono font-bold text-amber-900 dark:text-gold-300">{p.reference_number || 'Cash Receipt'}</td>

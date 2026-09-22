@@ -3,6 +3,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { SyncSettings } from './SyncSettings';
 import { UserLoginSettings } from './UserLoginSettings';
 import { getLocalDb, resetLocalDbToDemo, resetToCleanProductionData } from '@/lib/supabase';
+import { seedDemoData, clearDemoData } from '@/lib/demoData';
 import { dataService } from '@/lib/dataService';
 import { BusinessSettings } from '@/types';
 import { Settings as SettingsIcon, Save, RefreshCw, Upload, ShieldCheck, AlertOctagon, Trash2, Wifi, Building2, Database, Lock } from 'lucide-react';
@@ -56,12 +57,28 @@ export const Settings: React.FC = () => {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const handleConfirmCleanReset = () => {
-    resetToCleanProductionData();
+  const handleConfirmCleanReset = async () => {
+    setShowCleanModal(false);
+    setToastMessage('Purging demo data...');
+    try {
+      const res = await clearDemoData();
+      setToastMessage(res.message);
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (e: any) {
+      resetToCleanProductionData();
+    }
   };
 
-  const handleConfirmDemoReset = () => {
-    resetLocalDbToDemo();
+  const handleConfirmDemoReset = async () => {
+    setShowDemoModal(false);
+    setToastMessage('Loading demo test dataset (2026)...');
+    try {
+      const res = await seedDemoData();
+      setToastMessage(res.message);
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (e: any) {
+      resetLocalDbToDemo();
+    }
   };
 
   return (

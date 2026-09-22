@@ -133,24 +133,24 @@ interface DbStore {
 const defaultSeedStore: DbStore = {
   settings: {
     id: '00000000-0000-0000-0000-000000000001',
-    shop_name: 'Shankar Jewellery',
+    shop_name: 'Shankar Jewellers',
     owner_name: 'Sampath Kumar',
-    address: 'No.4 sandhukadai, bigbazzar street',
+    address: '12, Main Bazaar Road',
     city: 'Trichy',
     state: 'Tamil Nadu',
     country: 'India',
-    pin_code: '620008',
-    phone: '+91 98765 43210',
-    whatsapp_number: '+91 98765 43210',
-    email: 'contact@shankarjewellery.com',
-    gstin: '',
-    pan: 'ABCDE1234F',
+    pin_code: '620001',
+    phone: '+91 94431 20260',
+    whatsapp_number: '+91 94431 20260',
+    email: 'demo@shankarjewellers.example',
+    gstin: '33DEMOP1234A1Z5',
+    pan: 'DEMOP1234A',
     bank_name: 'State Bank of India',
     bank_account_number: '39182746501',
     bank_ifsc: 'SBIN0001234',
     upi_id: 'shankarjewels@upi',
     invoice_prefix: 'SJ-INV-',
-    next_invoice_number: 1005,
+    next_invoice_number: 1045,
     default_profit_sharing_model: 'model_a_profit_percent',
     default_profit_sharing_percent: 40,
     inactivity_logout_enabled: true,
@@ -159,26 +159,26 @@ const defaultSeedStore: DbStore = {
   },
   metalRates: [
     {
-      id: 'rate-1',
-      rate_date: new Date().toISOString().split('T')[0],
-      gold_24k_per_gram: 15583,
-      gold_22k_per_gram: 14285,
-      gold_18k_per_gram: 11700,
-      silver_per_gram: 180,
-      silver_per_kg: 180000,
+      id: 'c0000000-0000-0000-0000-000000000016',
+      rate_date: '2026-09-22',
+      gold_24k_per_gram: 13250,
+      gold_22k_per_gram: 12150,
+      gold_18k_per_gram: 9950,
+      silver_per_gram: 165,
+      silver_per_kg: 165000,
       source: 'chennai_local',
-      notes: 'Chennai Local Market Rate',
+      notes: 'Official Demo Market Rate (22-Sep-2026)',
     },
     {
-      id: 'rate-2',
-      rate_date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
-      gold_24k_per_gram: 15540,
-      gold_22k_per_gram: 14240,
-      gold_18k_per_gram: 11660,
-      silver_per_gram: 178,
-      silver_per_kg: 178000,
+      id: 'c0000000-0000-0000-0000-000000000015',
+      rate_date: '2026-09-18',
+      gold_24k_per_gram: 13150,
+      gold_22k_per_gram: 12050,
+      gold_18k_per_gram: 9890,
+      silver_per_gram: 164,
+      silver_per_kg: 164000,
       source: 'chennai_local',
-      notes: 'Chennai Local Market Previous Closing Rate',
+      notes: 'Trichy Closing Rate',
     },
   ],
   categories: [
@@ -890,21 +890,54 @@ export const getCleanStore = (): DbStore => ({
   whatsappMessages: [],
 });
 
+let memoryStore: DbStore | null = null;
+
 export const getLocalDb = (): DbStore => {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      // ignore JSON parse error
+    }
+  }
+  if (memoryStore) return memoryStore;
   return getCleanStore();
 };
 
 export const saveLocalDb = (data: DbStore, tableName?: string, eventType?: 'INSERT' | 'UPDATE' | 'DELETE', payload?: any) => {
+  memoryStore = data;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      // quota limit or disabled
+    }
+  }
   if (tableName) {
     syncEngine.notifyDataChange(tableName, eventType || 'UPDATE', payload);
   }
 };
 
 export const resetLocalDbToDemo = () => {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {}
+  }
+  memoryStore = null;
   window.location.reload();
 };
 
 export const resetToCleanProductionData = () => {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {}
+  }
+  memoryStore = null;
   window.location.reload();
 };
 

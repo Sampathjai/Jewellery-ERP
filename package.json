@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seed:demo": "node scripts/seed-demo-data.js",
+    "reset:demo": "node scripts/clear-demo-data.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
