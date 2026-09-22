@@ -3,6 +3,7 @@
 > A modern, responsive ERP platform designed to manage jewellery retail, inventory, billing, customers, wholesale operations, business analytics, and administration from a centralized system.
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-shankar--jewellery--erp.vercel.app-00C853?style=for-the-badge&logo=vercel&logoColor=white)](https://shankar-jewellery-erp.vercel.app/)
+[![Demo Video](https://img.shields.io/badge/Demo_Video-Watch_Walkthrough-4285F4?style=for-the-badge&logo=googledrive&logoColor=white)](https://drive.google.com/file/d/1H-XF9fHiOuz-AZEibpWHNhplIbnOffB1/view?usp=drive_link)
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Sampathjai%2FJewellery--ERP-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Sampathjai/Jewellery-ERP)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6.3-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18.3.1-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
@@ -14,6 +15,8 @@
 ## 💎 Project Overview
 
 **SHANKAR JEWELLERY ERP** is a full-featured digital enterprise management platform built specifically for jewellery retailers, goldsmith workshops, and wholesale consignment businesses.
+
+> 🎬 **Demo Video Walkthrough**: [Watch Full Client-Facing Demo Video on Google Drive](https://drive.google.com/file/d/1H-XF9fHiOuz-AZEibpWHNhplIbnOffB1/view?usp=drive_link)
 
 The system centralizes end-to-end operational workflows into a unified, high-performance web and mobile web application:
 
@@ -28,11 +31,12 @@ The system centralizes end-to-end operational workflows into a unified, high-per
 
 ---
 
-## 🌐 Live Demo & Repository
+## 🌐 Live Demo, Video & Repository
 
 | Metric | Link |
 |---|---|
 | **Live Deployment** | [https://shankar-jewellery-erp.vercel.app/](https://shankar-jewellery-erp.vercel.app/) |
+| **Demo Video Walkthrough** | [Watch Demo Video (Google Drive)](https://drive.google.com/file/d/1H-XF9fHiOuz-AZEibpWHNhplIbnOffB1/view?usp=drive_link) |
 | **GitHub Repository** | [https://github.com/Sampathjai/Jewellery-ERP](https://github.com/Sampathjai/Jewellery-ERP) |
 | **Platform Host** | Vercel Cloud Platform |
 | **Backend Engine** | Supabase Cloud Database & Auth Engine |
