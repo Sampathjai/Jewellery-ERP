@@ -1,14 +1,32 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Mail, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Mail, CheckCircle, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export const ForgotPassword: React.FC = () => {
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    setIsSubmitting(true);
+    try {
+      if (supabase) {
+        await supabase.auth.resetPasswordForEmail(cleanEmail, {
+          redirectTo: `${window.location.origin}/login`,
+        });
+      }
+    } catch (err) {
+      console.warn('Password reset request error:', err);
+    } finally {
+      setIsSubmitting(false);
+      // Always show generic confirmation to prevent email enumeration
+      setSubmitted(true);
+    }
   };
 
   return (
@@ -21,9 +39,9 @@ export const ForgotPassword: React.FC = () => {
         {submitted ? (
           <div className="text-center py-6">
             <CheckCircle className="mx-auto h-12 w-12 text-emerald-400 mb-3" />
-            <h3 className="font-serif text-xl font-bold text-slate-100">Reset Email Sent</h3>
+            <h3 className="font-serif text-xl font-bold text-slate-100">Password Reset Requested</h3>
             <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-              Password reset instructions have been sent to <strong>{email}</strong>. Please check your inbox.
+              If an account is associated with <strong>{email}</strong>, a secure password reset link has been dispatched to your email address.
             </p>
           </div>
         ) : (
@@ -49,9 +67,16 @@ export const ForgotPassword: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full rounded-xl bg-gold-500 py-3 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600"
+                disabled={isSubmitting}
+                className="w-full rounded-xl bg-gold-500 py-3 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                Send Password Reset Link
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Sending Link...
+                  </>
+                ) : (
+                  'Send Password Reset Link'
+                )}
               </button>
             </form>
           </div>

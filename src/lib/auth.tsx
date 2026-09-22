@@ -4,6 +4,7 @@ import { getLocalDb, supabase } from './supabase';
 import { syncEngine } from './syncEngine';
 import { dataService } from './dataService';
 import { hasPermission } from './utils';
+import { rateLimiter } from './rateLimiter';
 import { InactivityWarningModal } from '@/components/common/InactivityWarningModal';
 
 interface AuthContextType {
@@ -90,55 +91,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
-          .or(`id.eq.${userId},email.eq.${emailNorm}`)
+          .or(`id.eq.${userId},user_id.eq.${userId},email.eq.${emailNorm}`)
           .maybeSingle();
 
-        if (profile) {
-          // If profile user_id doesn't match authenticated session UUID, update profile to link to real Auth user ID
-          if (profile.user_id !== userId || profile.id !== userId) {
-            supabase
-              .from('profiles')
-              .update({ user_id: userId, updated_at: new Date().toISOString() })
-              .or(`id.eq.${profile.id},email.eq.${emailNorm}`)
-              .then(() => {})
-              .then(null, (e: any) => console.warn('Could not auto-link profile user_id:', e));
-          }
-
-          const userObj: UserProfile = {
-            id: userId,
-            user_id: userId,
-            full_name: profile.full_name || sessionUser.user_metadata?.full_name || emailNorm.split('@')[0],
-            email: profile.email || emailNorm,
-            phone: profile.phone || '',
-            role: (profile.role || 'billing_staff') as UserRole,
-            branch: profile.branch || 'Trichy - Sandhukadai',
-            avatar_url: profile.avatar_url,
-            is_active: profile.is_active ?? true,
-            last_login_at: new Date().toISOString(),
-          };
-          return userObj;
+        // 1. Authoritative check: If account does not exist or was deleted, reject
+        if (!profile || profile.deleted_at || profile.status === 'deleted') {
+          console.warn(`[AUTH SECURITY] User ${emailNorm} profile not found or marked deleted in database.`);
+          return null;
         }
+
+        // 2. Status check: If account is inactive / disabled, reject
+        if (profile.is_active === false || profile.status === 'disabled') {
+          console.warn(`[AUTH SECURITY] User ${emailNorm} profile is deactivated/disabled in database.`);
+          return null;
+        }
+
+        // If profile user_id doesn't match authenticated session UUID, update profile to link to real Auth user ID
+        if (profile.user_id !== userId || profile.id !== userId) {
+          supabase
+            .from('profiles')
+            .update({ user_id: userId, updated_at: new Date().toISOString() })
+            .or(`id.eq.${profile.id},email.eq.${emailNorm}`)
+            .then(() => {})
+            .then(null, (e: any) => console.warn('Could not auto-link profile user_id:', e));
+        }
+
+        const userObj: UserProfile = {
+          id: profile.id,
+          user_id: userId,
+          full_name: profile.full_name || sessionUser.user_metadata?.full_name || emailNorm.split('@')[0],
+          email: profile.email || emailNorm,
+          phone: profile.phone || '',
+          role: (profile.role || 'billing_staff') as UserRole,
+          branch: profile.branch || 'Trichy - Sandhukadai',
+          avatar_url: profile.avatar_url,
+          is_active: true,
+          last_login_at: new Date().toISOString(),
+        };
+        return userObj;
       }
     } catch (e) {
       console.warn('Error fetching user profile from database:', e);
+      return null;
     }
 
-    // Provision default profile record in profiles table if authenticated user has no profile row yet
-    const isOwnerOrAdmin = emailNorm.includes('owner') || emailNorm.includes('sampath') || emailNorm.includes('admin');
-    const defaultProfile: UserProfile = {
-      id: userId,
-      user_id: userId,
-      full_name: sessionUser.user_metadata?.full_name || (isOwnerOrAdmin ? 'Sampath Kumar' : emailNorm.split('@')[0]),
-      email: emailNorm,
-      phone: '',
-      role: (sessionUser.user_metadata?.role as UserRole) || (isOwnerOrAdmin ? 'admin' : 'billing_staff'),
-      branch: 'Trichy - Sandhukadai',
-      is_active: true,
-      last_login_at: new Date().toISOString(),
-    };
-
-    dataService.createUserProfile(defaultProfile).catch(() => {});
-    return defaultProfile;
+    // Never auto-provision or resurrect an account if no profile exists in database
+    return null;
   };
 
   useEffect(() => {
@@ -180,6 +178,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 localStorage.setItem('sampath_auth_user', JSON.stringify(profile));
                 recordActivity();
               } else {
+                // Profile deleted or inactive: Terminate backend Supabase session immediately
+                console.warn('[AUTH SECURITY] Active session revoked: Account is deleted or inactive in database.');
+                supabase.auth.signOut().catch(() => {});
                 setUser(null);
                 localStorage.removeItem('sampath_auth_user');
                 localStorage.removeItem(LAST_ACTIVITY_KEY);
@@ -216,6 +217,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setRole(profile.role);
             localStorage.setItem('sampath_auth_user', JSON.stringify(profile));
             recordActivity();
+          } else {
+            // Profile deleted or inactive: Terminate session immediately
+            console.warn('[AUTH SECURITY] Auth state change rejected: Account is deleted or inactive.');
+            supabase?.auth.signOut().catch(() => {});
+            setUser(null);
+            localStorage.removeItem('sampath_auth_user');
+            localStorage.removeItem(LAST_ACTIVITY_KEY);
           }
         }
       });
@@ -226,17 +234,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isMounted = false;
       if (authSubscription) authSubscription.unsubscribe();
     };
-  }, []);
-
-  // Multi-tab logout synchronization
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'sampath_auth_user' && !e.newValue) {
-        setUser(null);
-      }
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   const logout = useCallback((reason?: string) => {
@@ -265,6 +262,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       window.location.href = '/login';
     }
   }, [user]);
+
+  // Multi-tab logout synchronization
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'sampath_auth_user' && !e.newValue) {
+        setUser(null);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    // Real-time synchronization: If current user's profile is deleted or disabled in database, log out immediately
+    const unsubscribeProfileChanges = syncEngine.subscribeDataChange((tableName, eventType, payload) => {
+      if (tableName === 'profiles' && user) {
+        if (eventType === 'DELETE') {
+          const deletedId = payload?.id || payload?.user_id;
+          if (deletedId && (deletedId === user.id || deletedId === user.user_id)) {
+            console.warn('[AUTH SECURITY] Current user account was deleted from database. Terminating session.');
+            logout('account_deleted');
+          }
+        } else if (eventType === 'UPDATE' && payload) {
+          const targetId = payload?.id || payload?.user_id;
+          if (targetId && (targetId === user.id || targetId === user.user_id)) {
+            if (payload.is_active === false || payload.status === 'disabled' || payload.deleted_at) {
+              console.warn('[AUTH SECURITY] Current user account was deactivated. Terminating session.');
+              logout('account_disabled');
+            }
+          }
+        }
+      }
+    });
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      unsubscribeProfileChanges();
+    };
+  }, [user, logout]);
 
   const [showInactivityWarning, setShowInactivityWarning] = useState(false);
   const [warningCountdown, setWarningCountdown] = useState(60);
@@ -370,75 +403,90 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: 'Please enter both email address / username and password.' };
     }
 
+    // 1. Brute-Force Rate Limiting Check
+    const rateCheck = rateLimiter.isRateLimited(normalizedEmail);
+    if (rateCheck.limited) {
+      setIsLoading(false);
+      return {
+        success: false,
+        message: `Too many failed login attempts. Please wait ${rateCheck.remainingSeconds} seconds before trying again.`,
+      };
+    }
+
     if (!supabase) {
       setIsLoading(false);
-      return { success: false, message: 'Supabase client is not configured.' };
+      return { success: false, message: 'Authentication service is unavailable. Please try again later.' };
     }
 
     try {
-      // Direct Supabase Auth credential verification via signInWithPassword
+      // 2. Authoritative Backend Authentication via Supabase Auth (bcrypt verification)
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password: pwd,
       });
 
-      if (!authError && authData?.user) {
+      // Strict check: Must have valid auth session from backend
+      if (!authError && authData?.user && authData?.session) {
         const userProfile = await syncUserProfileFromAuth(authData.user);
-        if (!userProfile) {
+        if (!userProfile || userProfile.is_active === false) {
+          // Immediately terminate the GoTrue session if profile is deleted or disabled
+          await supabase.auth.signOut().catch(() => {});
+          localStorage.removeItem('sampath_auth_user');
+          localStorage.removeItem(LAST_ACTIVITY_KEY);
+          setUser(null);
           setIsLoading(false);
-          return { success: false, message: 'Failed to retrieve user profile.' };
+          rateLimiter.recordFailure(normalizedEmail);
+          dataService.logAuditAction('user_login_rejected_inactive_or_deleted', 'auth', undefined, {
+            email: normalizedEmail,
+            reason: 'account_inactive_or_deleted',
+          }).catch(() => {});
+          return { success: false, message: 'Invalid email or password.' };
         }
-        if (userProfile.is_active === false) {
-          await supabase.auth.signOut();
-          setIsLoading(false);
-          return { success: false, message: 'Your account is inactive. Please contact the administrator.' };
-        }
+
+        // Authentication verified by backend — reset rate limiting counter
+        rateLimiter.reset(normalizedEmail);
+
         setUser(userProfile);
         setRole(userProfile.role);
         localStorage.setItem('sampath_auth_user', JSON.stringify(userProfile));
-        dataService.logAuditAction('user_login', 'auth', userProfile.id, { email: normalizedEmail, method: 'auth_session' });
+        recordActivity();
+
+        dataService.logAuditAction('user_login_success', 'auth', userProfile.id, {
+          email: normalizedEmail,
+          method: 'supabase_auth_password',
+        }).catch(() => {});
+
         setIsLoading(false);
         return { success: true };
       }
 
-      // Fallback: Check profiles table in Supabase PostgreSQL for staff profiles (e.g. Sumathy)
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .or(`email.eq.${normalizedEmail},full_name.ilike.%${rawInput}%`)
-        .maybeSingle();
+      // 3. Authentication Failed: Record failure for rate limiting and log security event
+      const failState = rateLimiter.recordFailure(normalizedEmail);
 
-      if (profile && profile.is_active !== false) {
-        const userProfile: UserProfile = {
-          id: profile.id,
-          user_id: profile.user_id || profile.id,
-          full_name: profile.full_name || rawInput,
-          email: profile.email || normalizedEmail,
-          phone: profile.phone || '',
-          role: (profile.role || 'billing_staff') as UserRole,
-          branch: profile.branch || 'Trichy - Sandhukadai',
-          avatar_url: profile.avatar_url,
-          is_active: true,
-          last_login_at: new Date().toISOString(),
+      // Clean up any stale client state
+      setUser(null);
+      localStorage.removeItem('sampath_auth_user');
+
+      dataService.logAuditAction('user_login_failure', 'auth', undefined, {
+        email: normalizedEmail,
+        reason: 'invalid_credentials',
+      }).catch(() => {});
+
+      setIsLoading(false);
+
+      if (failState.limited) {
+        return {
+          success: false,
+          message: `Too many failed login attempts. Account access temporarily throttled for ${failState.remainingSeconds} seconds.`,
         };
-
-        setUser(userProfile);
-        setRole(userProfile.role);
-        localStorage.setItem('sampath_auth_user', JSON.stringify(userProfile));
-        dataService.logAuditAction('user_login', 'auth', profile.id, { email: normalizedEmail, method: 'profile_fallback' });
-        setIsLoading(false);
-        return { success: true };
       }
 
-      let msg = authError?.message || 'Invalid email address or password.';
-      if (msg.toLowerCase().includes('email not confirmed')) {
-        msg = 'Email address not confirmed in Supabase Auth. Contact administrator.';
-      }
-      return { success: false, message: msg };
+      // Return generic error message to prevent account enumeration
+      return { success: false, message: 'Invalid email or password.' };
     } catch (err: any) {
       console.error('Login authentication error:', err);
       setIsLoading(false);
-      return { success: false, message: err?.message || 'Authentication error. Please try again.' };
+      return { success: false, message: 'Invalid email or password.' };
     }
   };
 

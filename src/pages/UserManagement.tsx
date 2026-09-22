@@ -34,7 +34,9 @@ import {
 } from 'lucide-react';
 
 export const UserManagement: React.FC = () => {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, role, can } = useAuth();
+  const isAuthorized = Boolean(currentUser) && (role === 'admin' || role === 'super_admin' || can('manage_users'));
+
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -348,6 +350,22 @@ export const UserManagement: React.FC = () => {
   const handleForceLogout = (userName: string) => {
     showToast(`Active session for ${userName} has been revoked.`);
   };
+
+  if (!isAuthorized) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center space-y-4 text-center px-4">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400">
+          <ShieldCheck className="h-8 w-8 text-red-600" />
+        </div>
+        <h2 className="font-serif text-2xl font-bold text-charcoal-900 dark:text-slate-100">
+          403 — Access Forbidden
+        </h2>
+        <p className="max-w-md text-xs text-slate-500 leading-relaxed">
+          Only authorized Shankar Jewellery Admin accounts can manage staff accounts and role permissions.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-12">

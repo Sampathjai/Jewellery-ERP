@@ -49,6 +49,8 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { ErrorPage } from '@/components/common/ErrorPage';
 import { GlobalLoader } from '@/components/common/GlobalLoader';
 import { LanguageProvider } from '@/lib/i18n';
+import { UserRole, PermissionCode } from '@/types';
+import { Lock } from 'lucide-react';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading } = useAuth();
@@ -58,6 +60,56 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   if (!user) {
     return <Navigate to="/login" replace />;
   }
+  return <DashboardLayout>{children}</DashboardLayout>;
+};
+
+interface RoleRouteProps {
+  children: React.ReactNode;
+  allowedRoles?: UserRole[];
+  requiredPermission?: PermissionCode;
+}
+
+const RoleRoute: React.FC<RoleRouteProps> = ({
+  children,
+  allowedRoles = ['admin', 'super_admin'],
+  requiredPermission,
+}) => {
+  const { user, role, can, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <GlobalLoader message="Verifying permissions..." />;
+  }
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  const hasRole = allowedRoles.includes(role);
+  const hasPerm = requiredPermission ? can(requiredPermission) : false;
+
+  if (!hasRole && !hasPerm) {
+    return (
+      <DashboardLayout>
+        <div className="flex min-h-[60vh] flex-col items-center justify-center space-y-4 text-center px-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400">
+            <Lock className="h-8 w-8" />
+          </div>
+          <h2 className="font-serif text-2xl font-bold text-charcoal-900 dark:text-slate-100">
+            403 — Access Forbidden
+          </h2>
+          <p className="max-w-md text-xs text-slate-500 leading-relaxed">
+            You do not have administrative permissions to view or modify this module. Contact your store owner or administrator to request access.
+          </p>
+          <a
+            href="/dashboard"
+            className="rounded-xl bg-gold-500 px-5 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600"
+          >
+            Return to Dashboard
+          </a>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return <DashboardLayout>{children}</DashboardLayout>;
 };
 
@@ -116,15 +168,15 @@ export const App: React.FC = () => {
               <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
               <Route path="/whatsapp-messages" element={<ProtectedRoute><WhatsAppMessages /></ProtectedRoute>} />
               <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-              <Route path="/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
-              <Route path="/settings/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
-              <Route path="/admin/user-login-settings" element={<ProtectedRoute><UserLoginSettings /></ProtectedRoute>} />
-              <Route path="/roles-permissions" element={<ProtectedRoute><RolesPermissions /></ProtectedRoute>} />
-              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-              <Route path="/settings/sync" element={<ProtectedRoute><SyncSettings /></ProtectedRoute>} />
-              <Route path="/sync-settings" element={<ProtectedRoute><SyncSettings /></ProtectedRoute>} />
-              <Route path="/admin/storage-database" element={<ProtectedRoute><StorageDatabaseSettings /></ProtectedRoute>} />
-              <Route path="/audit-logs" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
+              <Route path="/users" element={<RoleRoute allowedRoles={['admin', 'super_admin']} requiredPermission="manage_users"><UserManagement /></RoleRoute>} />
+              <Route path="/settings/users" element={<RoleRoute allowedRoles={['admin', 'super_admin']} requiredPermission="manage_users"><UserManagement /></RoleRoute>} />
+              <Route path="/admin/user-login-settings" element={<RoleRoute allowedRoles={['admin', 'super_admin']} requiredPermission="manage_settings"><UserLoginSettings /></RoleRoute>} />
+              <Route path="/roles-permissions" element={<RoleRoute allowedRoles={['admin', 'super_admin']}><RolesPermissions /></RoleRoute>} />
+              <Route path="/settings" element={<RoleRoute allowedRoles={['admin', 'super_admin']} requiredPermission="manage_settings"><Settings /></RoleRoute>} />
+              <Route path="/settings/sync" element={<RoleRoute allowedRoles={['admin', 'super_admin']} requiredPermission="manage_settings"><SyncSettings /></RoleRoute>} />
+              <Route path="/sync-settings" element={<RoleRoute allowedRoles={['admin', 'super_admin']} requiredPermission="manage_settings"><SyncSettings /></RoleRoute>} />
+              <Route path="/admin/storage-database" element={<RoleRoute allowedRoles={['admin', 'super_admin']}><StorageDatabaseSettings /></RoleRoute>} />
+              <Route path="/audit-logs" element={<RoleRoute allowedRoles={['admin', 'super_admin']} requiredPermission="view_reports"><AuditLogs /></RoleRoute>} />
 
               <Route path="*" element={<ErrorPage type="404" />} />
             </Routes>

@@ -4,9 +4,13 @@ import { AuditLogViewer } from '@/components/common/AuditLogViewer';
 import { dataService } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
 import { AuditLog } from '@/types';
-import { RefreshCw, Search, Shield } from 'lucide-react';
+import { useAuth } from '@/lib/auth';
+import { RefreshCw, Search, Shield, Lock } from 'lucide-react';
 
 export const AuditLogs: React.FC = () => {
+  const { user, role, can } = useAuth();
+  const isAuthorized = Boolean(user) && (role === 'admin' || role === 'super_admin' || can('view_reports'));
+
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +49,22 @@ export const AuditLogs: React.FC = () => {
       (log.entity_id && log.entity_id.toLowerCase().includes(term))
     );
   });
+
+  if (!isAuthorized) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center space-y-4 text-center px-4">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400">
+          <Lock className="h-8 w-8 text-red-600" />
+        </div>
+        <h2 className="font-serif text-2xl font-bold text-charcoal-900 dark:text-slate-100">
+          403 — Access Forbidden
+        </h2>
+        <p className="max-w-md text-xs text-slate-500 leading-relaxed">
+          Only authorized Shankar Jewellery Admin accounts can inspect system audit logs and security trails.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

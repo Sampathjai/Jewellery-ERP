@@ -2747,6 +2747,16 @@ export const dataService = {
     };
 
     this.logAuditAction('update_user', 'user_profile', updated.id, { full_name: updated.full_name, email: updated.email, role: updated.role }).catch(() => {});
+
+    // If account was deactivated, revoke all backend sessions immediately
+    if (updates.is_active === false) {
+      try {
+        await db.rpc('deactivate_user_sessions', { target_id: id });
+      } catch (e) {
+        console.warn('RPC deactivate_user_sessions warning:', e);
+      }
+    }
+
     syncEngine.notifyDataChange('profiles', 'UPDATE', updated);
     return updated;
   },
@@ -2754,17 +2764,40 @@ export const dataService = {
   async deleteUserProfile(id: string): Promise<void> {
     const db = checkSupabaseClient();
 
+    // 1. Fetch user profile details before deletion to get both id and user_id
+    let authUserId: string | null = null;
+    try {
+      const { data: prof } = await db.from('profiles').select('id, user_id').or(`id.eq.${id},user_id.eq.${id}`).maybeSingle();
+      if (prof?.user_id) authUserId = prof.user_id;
+    } catch (e) {
+      // Fallthrough
+    }
+
+    // 2. Primary Method: Call authoritative PostgreSQL RPC function delete_user_permanently
+    try {
+      const { data: rpcRes, error: rpcErr } = await db.rpc('delete_user_permanently', { target_id: id });
+      if (!rpcErr && rpcRes?.success) {
+        this.logAuditAction('delete_user', 'user_profile', id).catch(() => {});
+        syncEngine.notifyDataChange('profiles', 'DELETE', { id, user_id: authUserId || id });
+        return;
+      }
+    } catch (rpcEx) {
+      console.warn('RPC delete_user_permanently fallback to direct method:', rpcEx);
+    }
+
+    // 3. Secondary Method: Invoke Edge Function create-staff-user
     try {
       await db.functions.invoke('create-staff-user', {
         body: {
           action: 'delete_user',
-          user_id: id,
+          user_id: authUserId || id,
         },
       });
     } catch (e) {
       console.warn('Edge function delete_user warning, deleting profile row directly:', e);
     }
 
+    // 4. Delete from public.profiles table (PostgreSQL trigger on_profile_deleted will also fire)
     const { error } = await db.from('profiles').delete().or(`id.eq.${id},user_id.eq.${id}`);
 
     if (error) {
@@ -2773,7 +2806,7 @@ export const dataService = {
     }
 
     this.logAuditAction('delete_user', 'user_profile', id).catch(() => {});
-    syncEngine.notifyDataChange('profiles', 'DELETE', { id });
+    syncEngine.notifyDataChange('profiles', 'DELETE', { id, user_id: authUserId || id });
   },
 
   // --------------------------------------------------------------------------

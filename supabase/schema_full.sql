@@ -654,29 +654,50 @@ ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
--- Permissive RLS Policies allowing full read/insert/update access for anon & authenticated roles
+-- 12. HARDENED ROW LEVEL SECURITY (RLS) POLICIES
+-- Business settings: Public read, Admin only modify
+CREATE POLICY "settings_select_policy" ON public.business_settings FOR SELECT USING (true);
+CREATE POLICY "settings_modify_policy" ON public.business_settings FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- Metal rates & categories: Public read, Authenticated modify
+CREATE POLICY "metal_rates_select_policy" ON public.metal_rates FOR SELECT USING (true);
+CREATE POLICY "metal_rates_modify_policy" ON public.metal_rates FOR ALL TO authenticated USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "categories_select_policy" ON public.product_categories FOR SELECT USING (true);
+CREATE POLICY "categories_modify_policy" ON public.product_categories FOR ALL TO authenticated USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+
+-- Profiles: Authenticated read, Self/Admin update, Admin insert/delete
+CREATE POLICY "profiles_select_policy" ON public.profiles FOR SELECT TO authenticated USING (true);
+CREATE POLICY "profiles_update_policy" ON public.profiles FOR UPDATE TO authenticated USING (id = auth.uid() OR user_id = auth.uid() OR public.is_admin()) WITH CHECK (id = auth.uid() OR user_id = auth.uid() OR public.is_admin());
+CREATE POLICY "profiles_insert_delete_policy" ON public.profiles FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- Audit logs: Append-only, Admin read
+CREATE POLICY "audit_logs_select_policy" ON public.audit_logs FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY "audit_logs_insert_policy" ON public.audit_logs FOR INSERT WITH CHECK (true);
+
+-- Sensitive Business Records: Authenticated only, Admin delete
 DO $$ 
 DECLARE
     tbl text;
     tables text[] := ARRAY[
-        'profiles', 'business_settings', 'metal_rates', 'customers', 'suppliers',
-        'product_categories', 'products', 'product_photos', 'inventory_movements',
+        'customers', 'suppliers', 'products', 'product_photos', 'inventory_movements',
         'manufacturing_jobs', 'retail_invoices', 'retail_invoice_items', 'retail_payments',
         'retail_returns', 'wholesale_issues', 'wholesale_issue_items', 'wholesale_sales',
         'wholesale_returns', 'wholesale_settlements', 'wholesale_payments', 'purchases',
-        'purchase_payments', 'expenses', 'notifications', 'audit_logs'
+        'purchase_payments', 'expenses', 'notifications'
     ];
 BEGIN
     FOREACH tbl IN ARRAY tables LOOP
-        EXECUTE format('DROP POLICY IF EXISTS "Allow_public_select_%I" ON %I', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS "Allow_public_insert_%I" ON %I', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS "Allow_public_update_%I" ON %I', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS "Allow_public_delete_%I" ON %I', tbl, tbl);
+        EXECUTE format('DROP POLICY IF EXISTS "%I_auth_select" ON %I', tbl, tbl);
+        EXECUTE format('CREATE POLICY "%I_auth_select" ON %I FOR SELECT TO authenticated USING (true)', tbl, tbl);
 
-        EXECUTE format('CREATE POLICY "Allow_public_select_%I" ON %I FOR SELECT USING (true)', tbl, tbl);
-        EXECUTE format('CREATE POLICY "Allow_public_insert_%I" ON %I FOR INSERT WITH CHECK (true)', tbl, tbl);
-        EXECUTE format('CREATE POLICY "Allow_public_update_%I" ON %I FOR UPDATE USING (true) WITH CHECK (true)', tbl, tbl);
-        EXECUTE format('CREATE POLICY "Allow_public_delete_%I" ON %I FOR DELETE USING (true)', tbl, tbl);
+        EXECUTE format('DROP POLICY IF EXISTS "%I_auth_insert" ON %I', tbl, tbl);
+        EXECUTE format('CREATE POLICY "%I_auth_insert" ON %I FOR INSERT TO authenticated WITH CHECK (true)', tbl, tbl);
+
+        EXECUTE format('DROP POLICY IF EXISTS "%I_auth_update" ON %I', tbl, tbl);
+        EXECUTE format('CREATE POLICY "%I_auth_update" ON %I FOR UPDATE TO authenticated USING (true) WITH CHECK (true)', tbl, tbl);
+
+        EXECUTE format('DROP POLICY IF EXISTS "%I_admin_delete" ON %I', tbl, tbl);
+        EXECUTE format('CREATE POLICY "%I_admin_delete" ON %I FOR DELETE TO authenticated USING (public.is_admin())', tbl, tbl);
     END LOOP;
 END $$;
 

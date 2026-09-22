@@ -29,6 +29,45 @@ serve(async (req: Request) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    // 1. Authorize Caller: Must provide valid Bearer JWT of an active Admin user
+    const authHeader = req.headers.get("Authorization") || req.headers.get("authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized: Missing authentication token" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "").trim();
+    const { data: { user: callerUser }, error: callerAuthErr } = await adminClient.auth.getUser(token);
+
+    if (callerAuthErr || !callerUser) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized: Invalid or expired authentication session" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // 2. Check Caller Role in profiles table: Must be admin, super_admin, or owner
+    const { data: callerProfile, error: profileCheckErr } = await adminClient
+      .from("profiles")
+      .select("role, is_active")
+      .or(`id.eq.${callerUser.id},user_id.eq.${callerUser.id}`)
+      .maybeSingle();
+
+    const allowedRoles = ["admin", "super_admin", "owner"];
+    if (
+      profileCheckErr ||
+      !callerProfile ||
+      !allowedRoles.includes(callerProfile.role) ||
+      callerProfile.is_active === false
+    ) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: Administrative privileges required to manage staff accounts" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // 3. Parse Request Body
     const body = await req.json();
     const action = body.action || "create";
@@ -49,9 +88,9 @@ serve(async (req: Request) => {
         );
       }
 
-      if (password.length < 6) {
+      if (password.length < 8) {
         return new Response(
-          JSON.stringify({ error: "Password must be at least 6 characters long" }),
+          JSON.stringify({ error: "Password must be at least 8 characters long" }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -135,9 +174,9 @@ serve(async (req: Request) => {
         );
       }
 
-      if (newPassword.length < 6) {
+      if (newPassword.length < 8) {
         return new Response(
-          JSON.stringify({ error: "Password must be at least 6 characters long" }),
+          JSON.stringify({ error: "Password must be at least 8 characters long" }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
