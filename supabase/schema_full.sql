@@ -656,22 +656,33 @@ ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- 12. HARDENED ROW LEVEL SECURITY (RLS) POLICIES
 -- Business settings: Public read, Admin only modify
+DROP POLICY IF EXISTS "settings_select_policy" ON public.business_settings;
 CREATE POLICY "settings_select_policy" ON public.business_settings FOR SELECT USING (true);
+DROP POLICY IF EXISTS "settings_modify_policy" ON public.business_settings;
 CREATE POLICY "settings_modify_policy" ON public.business_settings FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 
 -- Metal rates & categories: Public read, Authenticated modify
+DROP POLICY IF EXISTS "metal_rates_select_policy" ON public.metal_rates;
 CREATE POLICY "metal_rates_select_policy" ON public.metal_rates FOR SELECT USING (true);
+DROP POLICY IF EXISTS "metal_rates_modify_policy" ON public.metal_rates;
 CREATE POLICY "metal_rates_modify_policy" ON public.metal_rates FOR ALL TO authenticated USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "categories_select_policy" ON public.product_categories;
 CREATE POLICY "categories_select_policy" ON public.product_categories FOR SELECT USING (true);
+DROP POLICY IF EXISTS "categories_modify_policy" ON public.product_categories;
 CREATE POLICY "categories_modify_policy" ON public.product_categories FOR ALL TO authenticated USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
 
 -- Profiles: Authenticated read, Self/Admin update, Admin insert/delete
+DROP POLICY IF EXISTS "profiles_select_policy" ON public.profiles;
 CREATE POLICY "profiles_select_policy" ON public.profiles FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "profiles_update_policy" ON public.profiles;
 CREATE POLICY "profiles_update_policy" ON public.profiles FOR UPDATE TO authenticated USING (id = auth.uid() OR user_id = auth.uid() OR public.is_admin()) WITH CHECK (id = auth.uid() OR user_id = auth.uid() OR public.is_admin());
+DROP POLICY IF EXISTS "profiles_insert_delete_policy" ON public.profiles;
 CREATE POLICY "profiles_insert_delete_policy" ON public.profiles FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 
 -- Audit logs: Append-only, Admin read
+DROP POLICY IF EXISTS "audit_logs_select_policy" ON public.audit_logs;
 CREATE POLICY "audit_logs_select_policy" ON public.audit_logs FOR SELECT TO authenticated USING (public.is_admin());
+DROP POLICY IF EXISTS "audit_logs_insert_policy" ON public.audit_logs;
 CREATE POLICY "audit_logs_insert_policy" ON public.audit_logs FOR INSERT WITH CHECK (true);
 
 -- Sensitive Business Records: Authenticated only, Admin delete
