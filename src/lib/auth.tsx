@@ -6,7 +6,6 @@ import { dataService } from './dataService';
 import { hasPermission } from './utils';
 import { rateLimiter } from './rateLimiter';
 import { InactivityWarningModal } from '@/components/common/InactivityWarningModal';
-import { hasRegisteredLocalDevice } from './biometricAuth';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -187,32 +186,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 localStorage.removeItem(LAST_ACTIVITY_KEY);
               }
             } else {
-              // If there is no active GoTrue session, check if there is an active local user session
-              const storedUser = localStorage.getItem('sampath_auth_user');
-              if (storedUser) {
-                try {
-                  const parsedUser = JSON.parse(storedUser);
-                  // Verify that the user still exists and is active
-                  const profile = await dataService.getUserProfileById(parsedUser.id);
-                  if (profile && profile.is_active !== false && !profile.deleted_at && profile.status !== 'disabled') {
-                    setUser(profile);
-                    setRole(profile.role);
-                    recordActivity();
-                  } else {
-                    setUser(null);
-                    localStorage.removeItem('sampath_auth_user');
-                    localStorage.removeItem(LAST_ACTIVITY_KEY);
-                  }
-                } catch {
-                  setUser(null);
-                  localStorage.removeItem('sampath_auth_user');
-                  localStorage.removeItem(LAST_ACTIVITY_KEY);
-                }
-              } else {
-                setUser(null);
-                localStorage.removeItem('sampath_auth_user');
-                localStorage.removeItem(LAST_ACTIVITY_KEY);
-              }
+              setUser(null);
+              localStorage.removeItem('sampath_auth_user');
+              localStorage.removeItem(LAST_ACTIVITY_KEY);
             }
           }
         }
@@ -230,14 +206,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let authSubscription: any = null;
     if (supabase) {
       const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_OUT') {
-          // If a trusted device unlock is active locally, don't prematurely wipe the user state
-          const storedUser = localStorage.getItem('sampath_auth_user');
-          if (!storedUser) {
-            setUser(null);
-            localStorage.removeItem('sampath_auth_user');
-            localStorage.removeItem(LAST_ACTIVITY_KEY);
-          }
+        if (event === 'SIGNED_OUT' || !session) {
+          setUser(null);
+          localStorage.removeItem('sampath_auth_user');
+          localStorage.removeItem(LAST_ACTIVITY_KEY);
         } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
           const profile = await syncUserProfileFromAuth(session.user);
           if (profile && profile.is_active !== false) {
@@ -270,10 +242,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (supabase) {
       try {
-        const hasDevice = hasRegisteredLocalDevice();
-        // If a device biometric credential is registered, use 'local' scope so that local tokens are purged
-        // while preserving the server refresh token encrypted in the local PIN/biometric vault
-        supabase.auth.signOut({ scope: hasDevice ? 'local' : 'global' }).catch((e) => console.warn('Supabase signout error:', e));
+        supabase.auth.signOut().catch((e) => console.warn('Supabase signout error:', e));
       } catch (e) {
         console.warn('Supabase signout exception:', e);
       }

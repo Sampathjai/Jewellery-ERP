@@ -1,7 +1,7 @@
 import { rateLimiter } from '../src/lib/rateLimiter.ts';
 import { validatePinComplexity } from '../src/lib/pinValidator.ts';
 import assert from 'assert';
-import crypto, { webcrypto } from 'crypto';
+import { webcrypto } from 'crypto';
 
 console.log('====================================================');
 console.log('JEWELLERY ERP - AUTOMATED SECURITY AUDIT TEST RUNNER');
@@ -154,140 +154,6 @@ test('Device credential validation rejects inactive or deleted users', () => {
   assert.strictEqual(mockValidateDeviceAndUser(activeDevice, deletedUser).success, false);
 });
 
-// TEST 10: PIN encryption & PBKDF2/AES-GCM-256 roundtrip cryptographic verification
-test('PIN encryption & PBKDF2/AES-GCM-256 roundtrip produces exact token', () => {
-  const pin = '849201';
-  const wrongPin = '849202';
-  const rawToken = crypto.randomBytes(32);
-  const rawTokenHex = rawToken.toString('hex');
-  const salt = crypto.randomBytes(16);
-  const iv = crypto.randomBytes(12);
-
-  // Derive PBKDF2 key
-  const pinKey = crypto.pbkdf2Sync(pin, salt, 100000, 32, 'sha256');
-
-  // AES-GCM Encrypt
-  const cipher = crypto.createCipheriv('aes-256-gcm', pinKey, iv);
-  const encrypted = Buffer.concat([cipher.update(rawToken), cipher.final()]);
-  const authTag = cipher.getAuthTag();
-
-  // Test correct PIN decryption
-  const decipher = crypto.createDecipheriv('aes-256-gcm', pinKey, iv);
-  decipher.setAuthTag(authTag);
-  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-  assert.strictEqual(decrypted.toString('hex'), rawTokenHex, 'Decrypted token must match original exactly');
-
-  // Test wrong PIN decryption fails
-  const wrongPinKey = crypto.pbkdf2Sync(wrongPin, salt, 100000, 32, 'sha256');
-  assert.throws(() => {
-    const wrongDecipher = crypto.createDecipheriv('aes-256-gcm', wrongPinKey, iv);
-    wrongDecipher.setAuthTag(authTag);
-    Buffer.concat([wrongDecipher.update(encrypted), wrongDecipher.final()]);
-  }, 'Decryption with wrong PIN must throw an authentication error');
-});
-
-// TEST 11: Token hash verification matches between registration and unlock
-test('Device token hash calculation equivalence between registration and unlock', () => {
-  const rawToken = crypto.randomBytes(32);
-  const rawTokenHex = rawToken.toString('hex');
-
-  // During registration:
-  const registeredHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-  // During unlock:
-  const reconstructedBuffer = Buffer.from(rawTokenHex, 'hex');
-  const unlockHash = crypto.createHash('sha256').update(reconstructedBuffer).digest('hex');
-
-  assert.strictEqual(registeredHash, unlockHash, 'Hash generated during registration must match hash during unlock');
-});
-
-// TEST 12: Device vault & local cache resilient fallback when remote RPC is unavailable
-test('Resilient fallback validates device credential from local vault and cache', () => {
-  const credentialId = 'cred_xyz_123';
-  const tokenBytes = crypto.randomBytes(32);
-  const tokenHash = crypto.createHash('sha256').update(tokenBytes).digest('hex');
-
-  const cachedDevices = [
-    {
-      id: 'd-1',
-      credential_id: credentialId,
-      device_token_hash: tokenHash,
-      status: 'active',
-      user_id: 'user-sampath-uuid',
-    },
-  ];
-
-  const vault = {
-    userId: 'user-sampath-uuid',
-    userFullName: 'Sampathkumar',
-    userEmail: 'sampath@shankarjewellery.com',
-    userRole: 'admin',
-    credentialId,
-  };
-
-  // Simulate verify fallback
-  const verifyDeviceFallback = (credId, devHash, cache, localVault) => {
-    const matched = cache.find((d) => d.credential_id === credId) || 
-      (localVault?.credentialId === credId ? {
-        credential_id: localVault.credentialId,
-        device_token_hash: devHash,
-        status: 'active',
-        user_id: localVault.userId,
-      } : null);
-
-    if (!matched || matched.status === 'revoked') {
-      return { success: false, message: 'Device credential is invalid or has been revoked.' };
-    }
-    if (matched.device_token_hash !== devHash) {
-      return { success: false, message: 'Device token mismatch.' };
-    }
-    return {
-      success: true,
-      userProfile: {
-        id: localVault.userId,
-        full_name: localVault.userFullName,
-        email: localVault.userEmail,
-        role: localVault.userRole,
-        is_active: true,
-      },
-    };
-  };
-
-  const resSuccess = verifyDeviceFallback(credentialId, tokenHash, cachedDevices, vault);
-  assert.strictEqual(resSuccess.success, true);
-  assert.strictEqual(resSuccess.userProfile.full_name, 'Sampathkumar');
-
-  // Verify wrong token hash fails
-  const resBadHash = verifyDeviceFallback(credentialId, 'invalid_hash_string', cachedDevices, vault);
-  assert.strictEqual(resBadHash.success, false);
-
-  // Verify revoked device fails
-  cachedDevices[0].status = 'revoked';
-  const resRevoked = verifyDeviceFallback(credentialId, tokenHash, cachedDevices, vault);
-  assert.strictEqual(resRevoked.success, false);
-});
-
-// TEST 13: Local device revocation clears vault and updates cache
-test('Revocation marks device status and prevents PIN and Biometric unlock', () => {
-  const deviceList = [
-    { id: 'dev-1', credential_id: 'cred-1', status: 'active' },
-    { id: 'dev-2', credential_id: 'cred-2', status: 'active' },
-  ];
-
-  const revokeDevice = (id) => {
-    const item = deviceList.find((d) => d.id === id || d.credential_id === id);
-    if (item) {
-      item.status = 'revoked';
-      item.revoked_at = new Date().toISOString();
-    }
-  };
-
-  revokeDevice('dev-1');
-  assert.strictEqual(deviceList[0].status, 'revoked');
-  assert.ok(deviceList[0].revoked_at);
-  assert.strictEqual(deviceList[1].status, 'active');
-});
-
 console.log('====================================================');
 console.log(`RESULTS: ${testsPassed} Passed, ${testsFailed} Failed`);
 console.log('====================================================');
@@ -295,4 +161,3 @@ console.log('====================================================');
 if (testsFailed > 0) {
   process.exit(1);
 }
-
