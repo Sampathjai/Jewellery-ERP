@@ -661,11 +661,11 @@ CREATE POLICY "settings_select_policy" ON public.business_settings FOR SELECT US
 DROP POLICY IF EXISTS "settings_modify_policy" ON public.business_settings;
 CREATE POLICY "settings_modify_policy" ON public.business_settings FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 
--- Metal rates & categories: Public read, Authenticated modify
+-- Metal rates: Public read and update (allows both authenticated staff and local biometric/PIN unlocked terminals)
 DROP POLICY IF EXISTS "metal_rates_select_policy" ON public.metal_rates;
 CREATE POLICY "metal_rates_select_policy" ON public.metal_rates FOR SELECT USING (true);
 DROP POLICY IF EXISTS "metal_rates_modify_policy" ON public.metal_rates;
-CREATE POLICY "metal_rates_modify_policy" ON public.metal_rates FOR ALL TO authenticated USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "metal_rates_modify_policy" ON public.metal_rates FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "categories_select_policy" ON public.product_categories;
 CREATE POLICY "categories_select_policy" ON public.product_categories FOR SELECT USING (true);
 DROP POLICY IF EXISTS "categories_modify_policy" ON public.product_categories;
@@ -881,6 +881,69 @@ $$;
 GRANT EXECUTE ON FUNCTION public.verify_device_unlock_and_authenticate(TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.revoke_trusted_device(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.revoke_all_trusted_devices_for_user(UUID) TO authenticated;
+
+-- Save metal rates RPC function for seamless cross-terminal syncing
+CREATE OR REPLACE FUNCTION public.save_metal_rates(
+    p_id UUID DEFAULT NULL,
+    p_rate_date DATE DEFAULT CURRENT_DATE,
+    p_gold_24k NUMERIC DEFAULT 0,
+    p_gold_22k NUMERIC DEFAULT 0,
+    p_gold_18k NUMERIC DEFAULT 0,
+    p_silver_per_gram NUMERIC DEFAULT 0,
+    p_silver_per_kg NUMERIC DEFAULT 0,
+    p_source TEXT DEFAULT 'manual',
+    p_notes TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_record RECORD;
+BEGIN
+    INSERT INTO public.metal_rates (
+        id,
+        rate_date,
+        gold_24k_per_gram,
+        gold_22k_per_gram,
+        gold_18k_per_gram,
+        silver_per_gram,
+        silver_per_kg,
+        source,
+        notes,
+        updated_at
+    )
+    VALUES (
+        COALESCE(p_id, gen_random_uuid()),
+        COALESCE(p_rate_date, CURRENT_DATE),
+        COALESCE(p_gold_24k, 0),
+        COALESCE(p_gold_22k, 0),
+        COALESCE(p_gold_18k, 0),
+        COALESCE(p_silver_per_gram, 0),
+        COALESCE(p_silver_per_kg, 0),
+        COALESCE(p_source, 'manual'),
+        p_notes,
+        NOW()
+    )
+    ON CONFLICT (rate_date) DO UPDATE SET
+        gold_24k_per_gram = EXCLUDED.gold_24k_per_gram,
+        gold_22k_per_gram = EXCLUDED.gold_22k_per_gram,
+        gold_18k_per_gram = EXCLUDED.gold_18k_per_gram,
+        silver_per_gram = EXCLUDED.silver_per_gram,
+        silver_per_kg = EXCLUDED.silver_per_kg,
+        source = EXCLUDED.source,
+        notes = COALESCE(EXCLUDED.notes, metal_rates.notes),
+        updated_at = NOW()
+    RETURNING * INTO v_record;
+
+    RETURN to_jsonb(v_record);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.save_metal_rates(
+    UUID, DATE, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, TEXT, TEXT
+) TO anon, authenticated, service_role;
 
 -- 14. ENABLE REALTIME REPLICATION FOR CROSS-DEVICE SYNC
 DO $$ BEGIN
