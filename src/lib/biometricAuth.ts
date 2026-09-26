@@ -1,5 +1,6 @@
 import { UserProfile, TrustedDevice, DeviceBiometricType } from '../types/index';
 import { dataService } from './dataService';
+import { supabase } from './supabase';
 
 // Storage key for the local encrypted device vault
 const DEVICE_VAULT_KEY = 'shankar_erp_device_vault';
@@ -196,6 +197,7 @@ export interface LocalDeviceVault {
   pinHashHex: string;
   encryptedTokenHex: string;
   rawDeviceTokenHex: string; // Protected by device OS access
+  sessionToken?: string; // Encrypted refresh token to re-establish Supabase session
   createdAt: string;
 }
 
@@ -362,10 +364,33 @@ export const registerDeviceBiometricAndPin = async (
     const pinKey = await deriveKeyFromPin(pin, salt);
     const pinHashHex = await derivePinVerificationHash(pin, salt);
 
+    // Capture active session refresh token if available to maintain authenticated RLS session upon unlock
+    let currentRefreshToken = '';
+    let currentAccessToken = '';
+    if (supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session) {
+          currentRefreshToken = sessionData.session.refresh_token;
+          currentAccessToken = sessionData.session.access_token;
+        }
+      } catch (sessErr) {
+        console.warn('Could not read existing session tokens:', sessErr);
+      }
+    }
+
+    // Secure payload encrypted with PIN-derived AES-GCM-256 key
+    const pinPayload = JSON.stringify({
+      deviceTokenHex,
+      refreshToken: currentRefreshToken,
+      accessToken: currentAccessToken,
+    });
+    const pinPayloadBytes = new TextEncoder().encode(pinPayload);
+
     const encryptedTokenBuffer = await window.crypto.subtle.encrypt(
       { name: 'AES-GCM', iv: iv as unknown as BufferSource },
       pinKey,
-      deviceTokenBytes as unknown as BufferSource
+      pinPayloadBytes as unknown as BufferSource
     );
 
     const vault: LocalDeviceVault = {
@@ -381,6 +406,7 @@ export const registerDeviceBiometricAndPin = async (
       pinHashHex,
       encryptedTokenHex: bufferToHex(encryptedTokenBuffer),
       rawDeviceTokenHex: deviceTokenHex,
+      sessionToken: currentRefreshToken || undefined,
       createdAt: new Date().toISOString(),
     };
 
@@ -490,7 +516,19 @@ export const unlockWithBiometrics = async (): Promise<{
       };
     }
 
-    // 4. Verification successful: Log audit event and return user profile
+    // 4. Re-establish Supabase Auth session if session token is available
+    if (vault.sessionToken && supabase) {
+      try {
+        await supabase.auth.setSession({
+          access_token: '',
+          refresh_token: vault.sessionToken,
+        });
+      } catch (sessErr) {
+        console.warn('Could not restore Supabase GoTrue session from vault in biometric unlock:', sessErr);
+      }
+    }
+
+    // 5. Verification successful: Log audit event and return user profile
     await dataService.logAuditAction('BIOMETRIC_LOGIN_SUCCESS', 'auth', backendRes.userProfile.id, {
       device_name: vault.deviceName,
       credential_id: vault.credentialId,
@@ -575,7 +613,25 @@ export const unlockWithPin = async (
       encryptedBytes as unknown as BufferSource
     );
 
-    const decryptedTokenBytes = new Uint8Array(decryptedBuffer);
+    let decryptedTokenBytes: Uint8Array;
+    let storedRefreshToken = '';
+    let storedAccessToken = '';
+
+    try {
+      // Check if decrypted buffer is JSON payload containing session tokens
+      const text = new TextDecoder().decode(decryptedBuffer);
+      const payload = JSON.parse(text);
+      if (payload.deviceTokenHex) {
+        decryptedTokenBytes = hexToBuffer(payload.deviceTokenHex);
+        storedRefreshToken = payload.refreshToken || '';
+        storedAccessToken = payload.accessToken || '';
+      } else {
+        decryptedTokenBytes = new Uint8Array(decryptedBuffer);
+      }
+    } catch {
+      decryptedTokenBytes = new Uint8Array(decryptedBuffer);
+    }
+
     const deviceTokenHash = await sha256(decryptedTokenBytes);
 
     // 4. Authoritative Backend Validation against trusted_devices & profiles in Supabase
@@ -594,7 +650,19 @@ export const unlockWithPin = async (
       };
     }
 
-    // 5. Success: Reset lockout counter, log audit, and return user profile
+    // 5. Re-establish Supabase Auth session if refresh token is available
+    if (storedRefreshToken && supabase) {
+      try {
+        await supabase.auth.setSession({
+          access_token: storedAccessToken || '',
+          refresh_token: storedRefreshToken,
+        });
+      } catch (sessErr) {
+        console.warn('Could not restore Supabase GoTrue session from vault in PIN unlock:', sessErr);
+      }
+    }
+
+    // 6. Success: Reset lockout counter, log audit, and return user profile
     resetPinLockout();
     await dataService.logAuditAction('PIN_UNLOCK_SUCCESS', 'auth', backendRes.userProfile.id, {
       device_name: vault.deviceName,

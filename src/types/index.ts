@@ -73,6 +73,8 @@ export interface UserProfile {
   branch?: string;
   avatar_url?: string;
   is_active: boolean;
+  status?: string;
+  deleted_at?: string;
   last_login_at?: string;
   created_at?: string;
 }
