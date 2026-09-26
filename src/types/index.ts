@@ -145,6 +145,33 @@ export interface BusinessSettings {
   updated_at?: string;
 }
 
+export type DeviceBiometricType = 
+  | 'touch_id'
+  | 'face_id'
+  | 'windows_hello'
+  | 'fingerprint'
+  | 'biometric_generic'
+  | 'tauri_desktop';
+
+export interface TrustedDevice {
+  id: string;
+  user_id: string;
+  device_name: string;
+  device_type: DeviceBiometricType;
+  credential_id: string;
+  public_key?: string;
+  device_token_hash?: string;
+  platform?: string;
+  browser?: string;
+  status: 'active' | 'revoked' | 'expired';
+  created_at: string;
+  last_used_at?: string;
+  revoked_at?: string;
+}
+
+/**
+ * @deprecated Legacy passkey interface retained for safe migration
+ */
 export interface UserPasskey {
   id: string;
   user_id: string;

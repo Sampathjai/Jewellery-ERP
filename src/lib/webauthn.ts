@@ -1,3 +1,8 @@
+/**
+ * @deprecated This legacy module has been superseded by `biometricAuth.ts`
+ * implementing the Hardware Biometric & 6-digit ERP PIN Unlock System with `trusted_devices`.
+ * Retained for backwards compatibility during cloud migration.
+ */
 import { UserProfile, UserPasskey } from '@/types';
 import { dataService } from './dataService';
 

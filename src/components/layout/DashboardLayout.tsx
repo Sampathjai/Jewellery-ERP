@@ -8,15 +8,15 @@ import { syncEngine } from '@/lib/syncEngine';
 import { NotificationItem } from '@/types';
 import { useAuth } from '@/lib/auth';
 import { dataService } from '@/lib/dataService';
-import { isWebAuthnSupported } from '@/lib/webauthn';
-import { KeyRound, X } from 'lucide-react';
+import { detectBiometricCapability } from '@/lib/biometricAuth';
+import { Fingerprint, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [showPasskeyBanner, setShowPasskeyBanner] = useState(false);
+  const [showBiometricBanner, setShowBiometricBanner] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
     return getLocalDb().notifications || [];
   });
@@ -29,26 +29,29 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   useEffect(() => {
-    const checkPasskeys = async () => {
-      if (!user?.id || !isWebAuthnSupported()) return;
-      const isDismissed = sessionStorage.getItem('passkey_prompt_dismissed');
+    const checkDevices = async () => {
+      if (!user?.id) return;
+      const isDismissed = sessionStorage.getItem('biometric_prompt_dismissed');
       if (isDismissed === 'true') return;
 
       try {
-        const userPasskeys = await dataService.getUserPasskeys(user.id);
-        if (userPasskeys.length === 0) {
-          setShowPasskeyBanner(true);
+        const cap = await detectBiometricCapability();
+        if (!cap.isSupported) return;
+
+        const userDevices = await dataService.getTrustedDevices(user.id);
+        if (userDevices.length === 0) {
+          setShowBiometricBanner(true);
         }
       } catch (err) {
-        console.error('Failed to check passkey status:', err);
+        console.error('Failed to check biometric device status:', err);
       }
     };
-    checkPasskeys();
+    checkDevices();
   }, [user?.id]);
 
-  const handleDismissPasskeyBanner = () => {
-    setShowPasskeyBanner(false);
-    sessionStorage.setItem('passkey_prompt_dismissed', 'true');
+  const handleDismissBanner = () => {
+    setShowBiometricBanner(false);
+    sessionStorage.setItem('biometric_prompt_dismissed', 'true');
   };
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
@@ -80,18 +83,18 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
         />
 
         <main className="flex-1 overflow-y-auto min-h-0 p-4 pb-20 sm:p-6 lg:pb-6 w-full max-w-7xl mx-auto">
-          {showPasskeyBanner && (
+          {showBiometricBanner && (
             <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-gold-400/40 bg-gold-500/10 p-3.5 text-xs text-charcoal-950 dark:text-slate-100 shadow-sm backdrop-blur">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gold-500 text-charcoal-950 shrink-0 shadow-sm">
-                  <KeyRound className="h-4 w-4" />
+                  <Fingerprint className="h-4 w-4" />
                 </div>
                 <div>
                   <p className="font-bold text-charcoal-950 dark:text-slate-100">
-                    Enable Passkey Sign-In (Touch ID / Face ID / Windows Hello)
+                    Enable Biometric & PIN Sign-In (Touch ID / Face ID / Windows Hello)
                   </p>
                   <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                    Your device supports passkeys! Register this device to sign in instantly without typing your password next time.
+                    Your device supports biometrics! Register this device to unlock Shankar Jewellery ERP using Touch ID, Face ID, or your 6-digit PIN.
                   </p>
                 </div>
               </div>
@@ -100,11 +103,11 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                   to="/admin/user-login-settings"
                   className="rounded-xl bg-gold-500 px-3.5 py-1.5 text-xs font-bold text-charcoal-950 hover:bg-gold-600 transition-colors shadow-sm"
                 >
-                  Enable Passkey
+                  Enable Biometrics & PIN
                 </Link>
                 <button
                   type="button"
-                  onClick={handleDismissPasskeyBanner}
+                  onClick={handleDismissBanner}
                   className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 dark:hover:bg-charcoal-800 transition-colors"
                   title="Dismiss"
                 >

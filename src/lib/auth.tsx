@@ -10,7 +10,7 @@ import { InactivityWarningModal } from '@/components/common/InactivityWarningMod
 interface AuthContextType {
   user: UserProfile | null;
   role: UserRole;
-  login: (email: string, password?: string) => Promise<{ success: boolean; message?: string }>;
+  login: (email: string, password?: string) => Promise<{ success: boolean; message?: string; userProfile?: UserProfile }>;
   loginWithProfile: (profile: UserProfile) => void;
   logout: (reason?: string) => void;
   switchRole: (newRole: UserRole) => void;
@@ -391,7 +391,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user, autoLogoutEnabled, inactivityTimeoutMinutes, logout, showInactivityWarning]);
 
-  const login = async (email: string, password?: string): Promise<{ success: boolean; message?: string }> => {
+  const login = async (email: string, password?: string): Promise<{ success: boolean; message?: string; userProfile?: UserProfile }> => {
     setIsLoading(true);
 
     const rawInput = (email || '').trim().toLowerCase();
@@ -457,7 +457,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }).catch(() => {});
 
         setIsLoading(false);
-        return { success: true };
+        return { success: true, userProfile };
       }
 
       // 3. Authentication Failed: Record failure for rate limiting and log security event

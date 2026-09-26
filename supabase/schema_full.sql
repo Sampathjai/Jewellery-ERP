@@ -727,10 +727,166 @@ AS $$
   );
 $$;
 
--- 13. ENABLE REALTIME REPLICATION FOR CROSS-DEVICE SYNC
+-- 13. TRUSTED DEVICES & BIOMETRIC/PIN SECURITY
+CREATE TABLE IF NOT EXISTS public.trusted_devices (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    device_name TEXT NOT NULL,
+    device_type TEXT NOT NULL DEFAULT 'biometric_generic',
+    credential_id TEXT UNIQUE NOT NULL,
+    public_key TEXT,
+    device_token_hash TEXT NOT NULL,
+    platform TEXT,
+    browser TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired')),
+    last_used_at TIMESTAMPTZ DEFAULT NOW(),
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_trusted_devices_user_id ON public.trusted_devices(user_id);
+CREATE INDEX IF NOT EXISTS idx_trusted_devices_credential_id ON public.trusted_devices(credential_id);
+CREATE INDEX IF NOT EXISTS idx_trusted_devices_status ON public.trusted_devices(status);
+
+ALTER TABLE public.trusted_devices ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "trusted_devices_select_policy" ON public.trusted_devices;
+CREATE POLICY "trusted_devices_select_policy" ON public.trusted_devices
+    FOR SELECT TO authenticated
+    USING (user_id = auth.uid() OR public.is_admin());
+
+DROP POLICY IF EXISTS "trusted_devices_insert_policy" ON public.trusted_devices;
+CREATE POLICY "trusted_devices_insert_policy" ON public.trusted_devices
+    FOR INSERT TO authenticated
+    WITH CHECK (user_id = auth.uid() OR public.is_admin());
+
+DROP POLICY IF EXISTS "trusted_devices_update_policy" ON public.trusted_devices;
+CREATE POLICY "trusted_devices_update_policy" ON public.trusted_devices
+    FOR UPDATE TO authenticated
+    USING (user_id = auth.uid() OR public.is_admin())
+    WITH CHECK (user_id = auth.uid() OR public.is_admin());
+
+DROP POLICY IF EXISTS "trusted_devices_delete_policy" ON public.trusted_devices;
+CREATE POLICY "trusted_devices_delete_policy" ON public.trusted_devices
+    FOR DELETE TO authenticated
+    USING (user_id = auth.uid() OR public.is_admin());
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.trusted_devices TO authenticated;
+GRANT ALL ON public.trusted_devices TO service_role;
+
+-- Secure RPC: Verify Device Credential & Return Profile
+CREATE OR REPLACE FUNCTION public.verify_device_unlock_and_authenticate(
+    p_credential_id TEXT,
+    p_device_token_hash TEXT
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_device RECORD;
+    v_profile RECORD;
+BEGIN
+    SELECT * INTO v_device
+    FROM public.trusted_devices
+    WHERE credential_id = p_credential_id
+      AND device_token_hash = p_device_token_hash
+      AND status = 'active'
+      AND revoked_at IS NULL
+    LIMIT 1;
+
+    IF v_device.id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Device credential is invalid or has been revoked.');
+    END IF;
+
+    SELECT * INTO v_profile
+    FROM public.profiles
+    WHERE id = v_device.user_id
+    LIMIT 1;
+
+    IF v_profile.id IS NULL OR v_profile.deleted_at IS NOT NULL OR v_profile.status = 'deleted' THEN
+        UPDATE public.trusted_devices SET status = 'revoked', revoked_at = NOW(), updated_at = NOW() WHERE id = v_device.id;
+        RETURN jsonb_build_object('success', false, 'message', 'User account does not exist or has been removed.');
+    END IF;
+
+    IF v_profile.is_active = false OR v_profile.status = 'disabled' THEN
+        UPDATE public.trusted_devices SET status = 'revoked', revoked_at = NOW(), updated_at = NOW() WHERE id = v_device.id;
+        RETURN jsonb_build_object('success', false, 'message', 'User account is disabled. Please contact your administrator.');
+    END IF;
+
+    UPDATE public.trusted_devices SET last_used_at = NOW(), updated_at = NOW() WHERE id = v_device.id;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'device_id', v_device.id,
+        'device_name', v_device.device_name,
+        'user_profile', jsonb_build_object(
+            'id', v_profile.id,
+            'user_id', v_profile.user_id,
+            'email', v_profile.email,
+            'full_name', v_profile.full_name,
+            'role', v_profile.role,
+            'phone', v_profile.phone,
+            'is_active', v_profile.is_active,
+            'avatar_url', v_profile.avatar_url,
+            'last_login_at', NOW()
+        )
+    );
+END;
+$$;
+
+-- Secure RPC: Revoke Device
+CREATE OR REPLACE FUNCTION public.revoke_trusted_device(p_device_id UUID)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_device RECORD;
+BEGIN
+    SELECT * INTO v_device FROM public.trusted_devices WHERE id = p_device_id;
+    IF v_device.id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Device not found.');
+    END IF;
+
+    IF v_device.user_id != auth.uid() AND NOT public.is_admin() THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Unauthorized to revoke this device.');
+    END IF;
+
+    UPDATE public.trusted_devices SET status = 'revoked', revoked_at = NOW(), updated_at = NOW() WHERE id = p_device_id;
+    RETURN jsonb_build_object('success', true, 'revoked_id', p_device_id);
+END;
+$$;
+
+-- Secure RPC: Revoke All Devices for User
+CREATE OR REPLACE FUNCTION public.revoke_all_trusted_devices_for_user(p_user_id UUID)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+BEGIN
+    IF p_user_id != auth.uid() AND NOT public.is_admin() THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Unauthorized to revoke devices.');
+    END IF;
+
+    UPDATE public.trusted_devices SET status = 'revoked', revoked_at = NOW(), updated_at = NOW() WHERE user_id = p_user_id AND status = 'active';
+    RETURN jsonb_build_object('success', true, 'user_id', p_user_id);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.verify_device_unlock_and_authenticate(TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.revoke_trusted_device(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.revoke_all_trusted_devices_for_user(UUID) TO authenticated;
+
+-- 14. ENABLE REALTIME REPLICATION FOR CROSS-DEVICE SYNC
 DO $$ BEGIN
-    ALTER PUBLICATION supabase_realtime ADD TABLE profiles, customers, products, retail_invoices, wholesale_issues, metal_rates, expenses, purchases, suppliers;
+    ALTER PUBLICATION supabase_realtime ADD TABLE profiles, customers, products, retail_invoices, wholesale_issues, metal_rates, expenses, purchases, suppliers, trusted_devices;
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- Schema setup completed successfully!
+
 

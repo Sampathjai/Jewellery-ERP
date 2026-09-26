@@ -27,6 +27,7 @@ import {
   NotificationItem,
   WhatsAppMessage,
   UserPasskey,
+  TrustedDevice,
 } from '@/types';
 
 // ============================================================================
@@ -2090,6 +2091,252 @@ export const dataService = {
     return profiles.find((p: UserProfile) => p.id === userId || p.user_id === userId) || null;
   },
 
+  // --------------------------------------------------------------------------
+  // TRUSTED DEVICES & BIOMETRIC/PIN DATA SERVICES
+  // --------------------------------------------------------------------------
+  async getTrustedDevices(userId: string): Promise<TrustedDevice[]> {
+    if (!userId) return [];
+    try {
+      const db = checkSupabaseClient();
+      const { data, error } = await db
+        .from('trusted_devices')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        return data as TrustedDevice[];
+      }
+    } catch (e) {
+      console.warn('Could not fetch trusted_devices from Supabase:', e);
+    }
+
+    // Local fallback
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('shankar_erp_trusted_devices_cache');
+        if (stored) {
+          const list: TrustedDevice[] = JSON.parse(stored);
+          return list.filter((d) => d.user_id === userId);
+        }
+      } catch (e) {
+        console.warn('Local device fallback parse error:', e);
+      }
+    }
+    return [];
+  },
+
+  async registerTrustedDevice(device: Partial<TrustedDevice>): Promise<TrustedDevice> {
+    const db = checkSupabaseClient();
+    const id = device.id || ensureValidUUID();
+    const now = new Date().toISOString();
+
+    const record: TrustedDevice = {
+      id,
+      user_id: device.user_id!,
+      device_name: device.device_name || 'Trusted Device',
+      device_type: device.device_type || 'biometric_generic',
+      credential_id: device.credential_id!,
+      public_key: device.public_key,
+      device_token_hash: device.device_token_hash,
+      platform: device.platform || (typeof navigator !== 'undefined' ? navigator.platform : undefined),
+      browser: device.browser,
+      status: 'active',
+      created_at: device.created_at || now,
+      last_used_at: device.last_used_at || now,
+    };
+
+    try {
+      const { data, error } = await db
+        .from('trusted_devices')
+        .upsert(record)
+        .select()
+        .single();
+
+      if (!error && data) {
+        syncEngine.notifyDataChange('trusted_devices', 'INSERT', data);
+        return data as TrustedDevice;
+      }
+    } catch (e) {
+      console.warn('Failed to upsert trusted_devices in Supabase:', e);
+    }
+
+    // Cache locally as resilient fallback
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('shankar_erp_trusted_devices_cache');
+        const list: TrustedDevice[] = stored ? JSON.parse(stored) : [];
+        const idx = list.findIndex((d) => d.credential_id === record.credential_id);
+        if (idx >= 0) list[idx] = record;
+        else list.unshift(record);
+        localStorage.setItem('shankar_erp_trusted_devices_cache', JSON.stringify(list));
+      } catch {}
+    }
+
+    syncEngine.notifyDataChange('trusted_devices', 'INSERT', record);
+    return record;
+  },
+
+  async revokeTrustedDevice(deviceId: string, userId: string): Promise<boolean> {
+    try {
+      const db = checkSupabaseClient();
+      // Try dedicated RPC first
+      const { data: rpcRes, error: rpcErr } = await db.rpc('revoke_trusted_device', { p_device_id: deviceId });
+      if (!rpcErr && rpcRes?.success) {
+        await this.logAuditAction('DEVICE_REVOKED', 'auth', userId, { device_id: deviceId });
+        syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { id: deviceId, status: 'revoked' });
+        return true;
+      }
+
+      // Fallback: Direct UPDATE on table
+      const { error } = await db
+        .from('trusted_devices')
+        .update({ status: 'revoked', revoked_at: new Date().toISOString() })
+        .eq('id', deviceId);
+
+      if (!error) {
+        await this.logAuditAction('DEVICE_REVOKED', 'auth', userId, { device_id: deviceId });
+        syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { id: deviceId, status: 'revoked' });
+        return true;
+      }
+    } catch (e) {
+      console.warn('Failed to revoke trusted device in Supabase:', e);
+    }
+
+    // Local cache update
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('shankar_erp_trusted_devices_cache');
+        if (stored) {
+          const list: TrustedDevice[] = JSON.parse(stored);
+          const item = list.find((d) => d.id === deviceId);
+          if (item) item.status = 'revoked';
+          localStorage.setItem('shankar_erp_trusted_devices_cache', JSON.stringify(list));
+        }
+      } catch {}
+    }
+
+    return true;
+  },
+
+  async revokeTrustedDeviceByCredentialId(credentialId: string, userId: string): Promise<boolean> {
+    try {
+      const db = checkSupabaseClient();
+      const { data: found } = await db
+        .from('trusted_devices')
+        .select('id')
+        .eq('credential_id', credentialId)
+        .maybeSingle();
+
+      if (found?.id) {
+        return this.revokeTrustedDevice(found.id, userId);
+      }
+    } catch (e) {
+      console.warn('Could not revoke device by credentialId:', e);
+    }
+    return false;
+  },
+
+  async revokeAllTrustedDevices(userId: string): Promise<boolean> {
+    try {
+      const db = checkSupabaseClient();
+      const { data: rpcRes, error: rpcErr } = await db.rpc('revoke_all_trusted_devices_for_user', { p_user_id: userId });
+      if (!rpcErr && rpcRes?.success) {
+        await this.logAuditAction('ALL_DEVICES_REVOKED', 'auth', userId, {});
+        syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { user_id: userId, status: 'revoked' });
+        return true;
+      }
+
+      await db
+        .from('trusted_devices')
+        .update({ status: 'revoked', revoked_at: new Date().toISOString() })
+        .eq('user_id', userId)
+        .eq('status', 'active');
+
+      await this.logAuditAction('ALL_DEVICES_REVOKED', 'auth', userId, {});
+      syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { user_id: userId, status: 'revoked' });
+      return true;
+    } catch (e) {
+      console.warn('Failed to revoke all devices in Supabase:', e);
+      return false;
+    }
+  },
+
+  async verifyDeviceCredential(
+    credentialId: string,
+    deviceTokenHash: string
+  ): Promise<{ success: boolean; userProfile?: UserProfile; message?: string }> {
+    try {
+      const db = checkSupabaseClient();
+
+      // 1. Try secure RPC verification first
+      const { data: rpcData, error: rpcErr } = await db.rpc('verify_device_unlock_and_authenticate', {
+        p_credential_id: credentialId,
+        p_device_token_hash: deviceTokenHash,
+      });
+
+      if (!rpcErr && rpcData) {
+        if (!rpcData.success) {
+          return { success: false, message: rpcData.message || 'Device authentication failed.' };
+        }
+        return {
+          success: true,
+          userProfile: rpcData.user_profile as UserProfile,
+        };
+      }
+
+      // 2. Direct fallback query if RPC is not yet loaded in Supabase
+      const { data: device, error: devErr } = await db
+        .from('trusted_devices')
+        .select('*')
+        .eq('credential_id', credentialId)
+        .eq('status', 'active')
+        .is('revoked_at', null)
+        .maybeSingle();
+
+      if (devErr || !device) {
+        return { success: false, message: 'Device credential is invalid or has been revoked.' };
+      }
+
+      // Verify token hash
+      if (device.device_token_hash && device.device_token_hash !== deviceTokenHash) {
+        return { success: false, message: 'Device token mismatch. Authentication rejected.' };
+      }
+
+      // Authoritative check on profile
+      const { data: profile, error: profErr } = await db
+        .from('profiles')
+        .select('*')
+        .eq('id', device.user_id)
+        .maybeSingle();
+
+      if (profErr || !profile || profile.deleted_at || profile.status === 'deleted') {
+        return { success: false, message: 'User account has been removed or deleted.' };
+      }
+
+      if (profile.is_active === false || profile.status === 'disabled') {
+        return { success: false, message: 'User account is disabled. Please contact your administrator.' };
+      }
+
+      // Touch last_used_at
+      try {
+        await db.from('trusted_devices')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('id', device.id);
+      } catch (err) {
+        console.warn('Could not update last_used_at:', err);
+      }
+
+      return {
+        success: true,
+        userProfile: profile as UserProfile,
+      };
+    } catch (e: any) {
+      console.error('Failed to verify device credential:', e);
+      return { success: false, message: e?.message || 'Server error verifying device credential.' };
+    }
+  },
+
   async getAllRegisteredPasskeys(): Promise<UserPasskey[]> {
     const db = checkSupabaseClient();
     const passkeyMap = new Map<string, UserPasskey>();
@@ -2748,10 +2995,11 @@ export const dataService = {
 
     this.logAuditAction('update_user', 'user_profile', updated.id, { full_name: updated.full_name, email: updated.email, role: updated.role }).catch(() => {});
 
-    // If account was deactivated, revoke all backend sessions immediately
+    // If account was deactivated, revoke all backend sessions and trusted devices immediately
     if (updates.is_active === false) {
       try {
         await db.rpc('deactivate_user_sessions', { target_id: id });
+        await this.revokeAllTrustedDevices(id);
       } catch (e) {
         console.warn('RPC deactivate_user_sessions warning:', e);
       }
@@ -2763,6 +3011,13 @@ export const dataService = {
 
   async deleteUserProfile(id: string): Promise<void> {
     const db = checkSupabaseClient();
+
+    // Revoke all trusted devices for this user immediately
+    try {
+      await this.revokeAllTrustedDevices(id);
+    } catch (e) {
+      console.warn('Could not revoke trusted devices before deletion:', e);
+    }
 
     // 1. Fetch user profile details before deletion to get both id and user_id
     let authUserId: string | null = null;
