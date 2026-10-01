@@ -85,34 +85,7 @@ export const CreateEstimation: React.FC = () => {
   const [referenceImages, setReferenceImages] = useState<EstimationReferenceImage[]>([]);
 
   // Items
-  const [items, setItems] = useState<EstimationItem[]>([
-    {
-      id: `item-${Date.now()}`,
-      item_type: 'reference_design',
-      product_id: null,
-      item_name: 'Customer Reference Jewellery',
-      jewellery_type: 'Necklace',
-      metal_type: 'gold',
-      purity: '22k',
-      quantity: 1,
-      estimated_gross_weight_g: 16.0,
-      estimated_stone_weight_g: 1.0,
-      estimated_net_weight_g: 15.0,
-      metal_rate_per_gram: 7100,
-      metal_value: 15.0 * 7100,
-      making_charge_type: 'percentage',
-      making_charge_rate: 8.0,
-      making_charge_amount: 15.0 * 7100 * 0.08,
-      wastage_percent: 10.0,
-      wastage_weight_g: 1.5,
-      wastage_value: 1.5 * 7100,
-      stone_charge: 1200,
-      other_charge: 0,
-      discount: 0,
-      line_total: 15.0 * 7100 + 15.0 * 7100 * 0.08 + 1.5 * 7100 + 1200,
-      customer_requirements: '',
-    },
-  ]);
+  const [items, setItems] = useState<EstimationItem[]>([]);
 
   // Overall Financial adjustments
   const [discountAmount, setDiscountAmount] = useState<number>(0);
@@ -259,36 +232,35 @@ export const CreateEstimation: React.FC = () => {
 
   const addItem = () => {
     const newItem: EstimationItem = {
-      id: `item-${Date.now()}`,
+      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       item_type: estimationType,
       product_id: null,
-      item_name: 'Custom Reference Model',
+      item_name: '',
       jewellery_type: 'Ring',
       metal_type: 'gold',
       purity: '22k',
       quantity: 1,
-      estimated_gross_weight_g: 8.0,
+      estimated_gross_weight_g: 0,
       estimated_stone_weight_g: 0,
-      estimated_net_weight_g: 8.0,
+      estimated_net_weight_g: 0,
       metal_rate_per_gram: gold22kRate,
-      metal_value: 8.0 * gold22kRate,
+      metal_value: 0,
       making_charge_type: 'percentage',
-      making_charge_rate: 8.0,
-      making_charge_amount: Math.round(8.0 * gold22kRate * 0.08),
-      wastage_percent: 8.0,
-      wastage_weight_g: 0.64,
-      wastage_value: Math.round(0.64 * gold22kRate),
+      making_charge_rate: 0,
+      making_charge_amount: 0,
+      wastage_percent: 0,
+      wastage_weight_g: 0,
+      wastage_value: 0,
       stone_charge: 0,
       other_charge: 0,
       discount: 0,
-      line_total: Math.round(8.0 * gold22kRate * 1.16),
+      line_total: 0,
     };
-    setItems([...items, newItem]);
+    setItems((prev) => [...prev, newItem]);
   };
 
   const removeItem = (index: number) => {
-    if (items.length <= 1) return;
-    setItems(items.filter((_, idx) => idx !== index));
+    setItems((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   const handleCustomerSelect = (id: string) => {
@@ -310,17 +282,23 @@ export const CreateEstimation: React.FC = () => {
   const totalOtherCharges = items.reduce((acc, it) => acc + (it.other_charge || 0), 0);
 
   const subtotalBeforeTax =
-    subtotalMetalValue +
-    totalWastageValue +
-    totalMakingCharges +
-    totalStoneCharges +
-    totalOtherCharges -
-    discountAmount;
+    items.length === 0
+      ? 0
+      : Math.max(
+          0,
+          subtotalMetalValue +
+            totalWastageValue +
+            totalMakingCharges +
+            totalStoneCharges +
+            totalOtherCharges -
+            discountAmount
+        );
 
-  const taxAmount = Math.round((Math.max(0, subtotalBeforeTax) * (taxPercent || 0)) / 100);
-  const rawTotal = Math.max(0, subtotalBeforeTax) + taxAmount;
-  const roundOff = Number((Math.round(rawTotal) - rawTotal).toFixed(2));
-  const grandTotal = Math.round(rawTotal);
+  const taxAmount =
+    items.length === 0 ? 0 : Math.round((subtotalBeforeTax * (taxPercent || 0)) / 100);
+  const rawTotal = items.length === 0 ? 0 : subtotalBeforeTax + taxAmount;
+  const roundOff = items.length === 0 ? 0 : Number((Math.round(rawTotal) - rawTotal).toFixed(2));
+  const grandTotal = items.length === 0 ? 0 : Math.round(rawTotal);
 
   const calculateValidUntil = (startDateStr: string, days: number): string => {
     const d = new Date(startDateStr);
@@ -611,26 +589,48 @@ export const CreateEstimation: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-4">
-              {items.map((item, idx) => (
-                <div
-                  key={item.id || idx}
-                  className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 space-y-3"
+            {items.length === 0 ? (
+              <div className="py-10 px-4 text-center border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl space-y-3 bg-gray-50/50 dark:bg-gray-900/20">
+                <div className="w-12 h-12 rounded-full bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center mx-auto text-amber-600 dark:text-amber-400">
+                  <Calculator className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                    No items added yet.
+                  </h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Click the button below to add your first jewellery item or custom specification.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addItem}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition-colors shadow-sm"
                 >
-                  <div className="flex items-center justify-between pb-2 border-b border-gray-200 dark:border-gray-700">
-                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
-                      Item #{idx + 1} Specifications
-                    </span>
-                    {items.length > 1 && (
+                  <Plus className="w-4 h-4" />
+                  + Add Item
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {items.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 space-y-3"
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-200 dark:border-gray-700">
+                      <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                        Item #{idx + 1} Specifications
+                      </span>
                       <button
                         type="button"
                         onClick={() => removeItem(idx)}
                         className="text-red-500 hover:text-red-700 text-xs inline-flex items-center gap-1"
+                        title="Remove this item"
                       >
                         <Trash2 className="w-3.5 h-3.5" /> Remove
                       </button>
-                    )}
-                  </div>
+                    </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div className="sm:col-span-2">
@@ -827,7 +827,8 @@ export const CreateEstimation: React.FC = () => {
                 </div>
               ))}
             </div>
-          </div>
+          )}
+        </div>
 
           {/* 5. Notes & Customer Requirements */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 shadow-sm space-y-3">
