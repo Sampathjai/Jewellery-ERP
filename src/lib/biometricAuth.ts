@@ -318,10 +318,10 @@ export const registerDeviceBiometricAndPin = async (
       const domain = window.location.hostname || 'localhost';
       const rpId = domain === 'localhost' || domain === '127.0.0.1' ? undefined : domain;
 
-      try {
-        const createOptions: PublicKeyCredentialCreationOptions = {
+      const cred = (await navigator.credentials.create({
+        publicKey: {
           challenge,
-          rp: rpId ? { name: 'Shankar Jewellery ERP', id: rpId } : { name: 'Shankar Jewellery ERP' },
+          rp: { name: 'Shankar Jewellery ERP', id: rpId },
           user: {
             id: userIdBytes,
             name: currentUser.email || 'user',
@@ -336,25 +336,16 @@ export const registerDeviceBiometricAndPin = async (
             userVerification: 'required',
           },
           timeout: 60000,
-        };
+        },
+      })) as PublicKeyCredential | null;
 
-        const cred = (await navigator.credentials.create({
-          publicKey: createOptions,
-        })) as PublicKeyCredential | null;
-
-        if (!cred) {
-          return { success: false, message: 'OS biometric authentication was cancelled.' };
-        }
-
-        credentialId = cred.id;
-        const rawAttestation = cred.response as AuthenticatorAttestationResponse;
-        publicKeyBase64 = bufferToBase64URL(rawAttestation.attestationObject);
-      } catch (createErr: any) {
-        console.warn('WebAuthn creation error, falling back to secure device token:', createErr);
-        const fallbackBytes = new Uint8Array(24);
-        window.crypto.getRandomValues(fallbackBytes);
-        credentialId = 'dev_' + bufferToHex(fallbackBytes);
+      if (!cred) {
+        return { success: false, message: 'OS biometric authentication was cancelled.' };
       }
+
+      credentialId = cred.id;
+      const rawAttestation = cred.response as AuthenticatorAttestationResponse;
+      publicKeyBase64 = bufferToBase64URL(rawAttestation.attestationObject);
     } else {
       // Fallback for environment without WebAuthn platform authenticator
       const fallbackBytes = new Uint8Array(24);
@@ -399,7 +390,7 @@ export const registerDeviceBiometricAndPin = async (
 
     // 6. Register device public metadata & token hash with ERP Backend (Database)
     const newDevice = await dataService.registerTrustedDevice({
-      user_id: currentUser.user_id || currentUser.id,
+      user_id: currentUser.id,
       device_name: deviceName,
       device_type: cap.biometricType,
       credential_id: credentialId,
@@ -448,43 +439,34 @@ export const unlockWithBiometrics = async (): Promise<{
 
   try {
     // 1. Invoke OS Platform Biometrics via WebAuthn
-    if (cap.isSupported && !vault.credentialId.startsWith('dev_')) {
+    if (cap.isSupported) {
       const challenge = new Uint8Array(32);
       window.crypto.getRandomValues(challenge);
 
       const domain = window.location.hostname || 'localhost';
       const rpId = domain === 'localhost' || domain === '127.0.0.1' ? undefined : domain;
 
-      try {
-        const getOptions: PublicKeyCredentialRequestOptions = {
+      const assertion = (await navigator.credentials.get({
+        publicKey: {
           challenge,
-          ...(rpId ? { rpId } : {}),
+          rpId,
           allowCredentials: [
             {
               id: base64URLToBuffer(vault.credentialId),
               type: 'public-key',
+              transports: ['internal'],
             },
           ],
           userVerification: 'required',
           timeout: 60000,
-        };
+        },
+      })) as PublicKeyCredential | null;
 
-        const assertion = (await navigator.credentials.get({
-          publicKey: getOptions,
-        })) as PublicKeyCredential | null;
-
-        if (!assertion) {
-          await dataService.logAuditAction('BIOMETRIC_LOGIN_FAILED', 'auth', vault.userId, {
-            reason: 'biometric_cancelled',
-          });
-          return { success: false, message: 'Biometric verification was cancelled. Please enter your ERP PIN.' };
-        }
-      } catch (authErr: any) {
-        console.warn('Biometric WebAuthn get error:', authErr);
-        if (authErr?.name === 'NotAllowedError' || authErr?.message?.includes('cancelled')) {
-          return { success: false, message: 'Biometric verification was cancelled or timed out. Please enter your ERP PIN.' };
-        }
-        return { success: false, message: 'Device biometric recognition was not completed. Please enter your ERP PIN.' };
+      if (!assertion) {
+        await dataService.logAuditAction('BIOMETRIC_LOGIN_FAILED', 'auth', vault.userId, {
+          reason: 'biometric_cancelled',
+        });
+        return { success: false, message: 'Biometric verification was cancelled.' };
       }
     }
 
