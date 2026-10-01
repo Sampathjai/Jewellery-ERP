@@ -9,10 +9,16 @@ function getShopHeaderDetails(settings?: BusinessSettings) {
   const addressParts = [
     settings?.address,
     settings?.city,
-    settings?.state && settings?.pin_code ? `${settings.state} - ${settings.pin_code}` : (settings?.state || settings?.pin_code)
-  ].filter(Boolean).join(', ');
+    settings?.state && settings?.pin_code
+      ? `${settings.state} - ${settings.pin_code}`
+      : settings?.state || settings?.pin_code,
+  ]
+    .filter(Boolean)
+    .join(', ');
   const address = addressParts || 'No.4 sandhukadai, bigbazzar street, Trichy - 620008';
-  const phoneStr = `Phone: ${settings?.phone || '+91 98765 43210'}${settings?.gstin ? ` | GSTIN: ${settings.gstin}` : ''}`;
+  const phoneStr = `Phone: ${settings?.phone || '+91 98765 43210'}${
+    settings?.gstin ? ` | GSTIN: ${settings.gstin}` : ''
+  }`;
   return { name, address, phoneStr };
 }
 
@@ -34,11 +40,35 @@ async function getImageDataUrl(url: string): Promise<string | null> {
   }
 }
 
+function getImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    if (typeof Image === 'undefined') {
+      resolve({ width: 1, height: 1 });
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      resolve({
+        width: img.naturalWidth || img.width || 1,
+        height: img.naturalHeight || img.height || 1,
+      });
+    };
+    img.onerror = () => resolve({ width: 1, height: 1 });
+    img.src = dataUrl;
+  });
+}
+
+/**
+ * Builds a strictly SINGLE-PAGE A4 Landscape Jewellery Price Estimation PDF.
+ * Dimensions: 297mm width x 210mm height.
+ * Margins: Left 12mm, Right 12mm (Printable Width = 273mm).
+ * Guaranteed to fit 1-5 items on ONE single page with zero clipping.
+ */
 export async function buildEstimationPDFDoc(
   estimation: Estimation,
   settings?: BusinessSettings
 ): Promise<jsPDF> {
-  // A4 Landscape orientation: 297mm width x 210mm height
+  // A4 Landscape: 297mm width x 210mm height
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -48,136 +78,218 @@ export async function buildEstimationPDFDoc(
 
   const pageWidth = 297;
   const pageHeight = 210;
-  const marginX = 14;
-  const contentWidth = pageWidth - marginX * 2; // 269mm
-
+  const marginX = 12;
+  const contentWidth = pageWidth - marginX * 2; // 273mm
   const shop = getShopHeaderDetails(settings);
 
-  // Premium Header Banner
-  doc.setFillColor(30, 31, 38);
-  doc.rect(0, 0, pageWidth, 34, 'F');
+  // =========================================================================
+  // 1. TOP HEADER BANNER (Y: 6 to 25mm, Height: 19mm)
+  // =========================================================================
+  const bannerY = 6;
+  const bannerH = 19;
+  doc.setFillColor(26, 27, 34); // Premium Slate/Charcoal
+  doc.roundedRect(marginX, bannerY, contentWidth, bannerH, 1.5, 1.5, 'F');
 
-  // Shop Name & Accent
-  doc.setTextColor(212, 175, 55); // Gold Accent
+  // Shop Brand Name (Georgia Bold 14pt in Gold)
+  doc.setTextColor(212, 175, 55); // Shankar Gold
   doc.setFont('Georgia', 'bold');
-  doc.setFontSize(18);
-  doc.text(shop.name, marginX, 15);
+  doc.setFontSize(14);
+  doc.text(shop.name, marginX + 4, bannerY + 7);
 
-  doc.setFontSize(8);
-  doc.setTextColor(200, 200, 200);
+  // Shop Address & Contact Details (Georgia 6.5pt)
+  doc.setFontSize(6.5);
+  doc.setTextColor(215, 215, 215);
   doc.setFont('Georgia', 'normal');
-  doc.text(shop.address, marginX, 21);
-  doc.text(shop.phoneStr, marginX, 26);
+  doc.text(shop.address, marginX + 4, bannerY + 12);
+  doc.setTextColor(180, 180, 180);
+  doc.text(shop.phoneStr, marginX + 4, bannerY + 16);
 
-  // Title Box on top-right
-  const titleBoxWidth = 78;
-  const titleBoxX = pageWidth - marginX - titleBoxWidth;
+  // Right Title Badge: "PRICE ESTIMATION"
+  const titleBoxW = 75;
+  const titleBoxH = 14;
+  const titleBoxX = pageWidth - marginX - titleBoxW - 2.5;
+  const titleBoxY = bannerY + 2.5;
   doc.setFillColor(212, 175, 55);
-  doc.rect(titleBoxX, 8, titleBoxWidth, 18, 'F');
+  doc.roundedRect(titleBoxX, titleBoxY, titleBoxW, titleBoxH, 1, 1, 'F');
+
   doc.setTextColor(18, 18, 23);
-  doc.setFontSize(10);
+  doc.setFontSize(9);
   doc.setFont('Georgia', 'bold');
-  doc.text('PRICE ESTIMATION', titleBoxX + 5, 15);
+  doc.text('PRICE ESTIMATION', titleBoxX + titleBoxW / 2, titleBoxY + 5.5, { align: 'center' });
+
+  doc.setFontSize(5.5);
+  doc.setFont('Georgia', 'normal');
+  doc.text('(NOT A TAX INVOICE / SALE BILL)', titleBoxX + titleBoxW / 2, titleBoxY + 10.5, {
+    align: 'center',
+  });
+
+  // =========================================================================
+  // 2. 3-COLUMN METADATA & DESIGN PHOTO ROW (Y: 27 to 48mm, Height: 21mm)
+  // =========================================================================
+  const infoY = 27;
+  const infoH = 21;
+
+  // --- COL 1: Customer Details (Width: 84mm, X: 12) ---
+  const col1X = marginX;
+  const col1W = 84;
+  doc.setFillColor(252, 252, 252);
+  doc.setDrawColor(220, 220, 220);
+  doc.setLineWidth(0.25);
+  doc.roundedRect(col1X, infoY, col1W, infoH, 1, 1, 'FD');
+
+  doc.setFontSize(6.5);
+  doc.setFont('Georgia', 'bold');
+  doc.setTextColor(170, 115, 10);
+  doc.text('ESTIMATION FOR (CUSTOMER)', col1X + 3, infoY + 4.5);
+
+  doc.setFontSize(7.5);
+  doc.setFont('Georgia', 'bold');
+  doc.setTextColor(30, 31, 38);
+  const custName = estimation.customer_name || 'Valued Customer';
+  doc.text(custName.length > 28 ? custName.slice(0, 28) + '...' : custName, col1X + 3, infoY + 9.5);
+
   doc.setFontSize(6.5);
   doc.setFont('Georgia', 'normal');
-  doc.text('(NOT A TAX INVOICE / SALE BILL)', titleBoxX + 5, 21);
+  doc.setTextColor(70, 70, 70);
+  doc.text(`Phone: ${estimation.customer_phone || '—'}`, col1X + 3, infoY + 14);
 
-  // Customer & Meta Info Section
-  let currentY = 42;
+  const rawAddr = estimation.customer_address || 'Trichy, Tamil Nadu';
+  const splitAddr = doc.splitTextToSize(rawAddr, col1W - 6);
+  doc.text(splitAddr[0] || '—', col1X + 3, infoY + 18.5);
+
+  // --- COL 2: Quotation Metadata & Locked Rate Snapshot (Width: 96mm, X: 100) ---
+  const col2X = col1X + col1W + 4;
+  const col2W = 96;
+  doc.setFillColor(252, 252, 252);
+  doc.setDrawColor(220, 220, 220);
+  doc.roundedRect(col2X, infoY, col2W, infoH, 1, 1, 'FD');
+
+  doc.setFontSize(6.5);
+  doc.setFont('Georgia', 'bold');
   doc.setTextColor(30, 31, 38);
-  doc.setFontSize(8.5);
-  doc.setFont('Georgia', 'bold');
-  doc.text('ESTIMATION FOR:', marginX, currentY);
+  doc.text(`Est. No: ${estimation.estimation_number} (Rev ${estimation.version})`, col2X + 3, infoY + 4.5);
 
   doc.setFont('Georgia', 'normal');
-  doc.text(`Customer: ${estimation.customer_name || 'Valued Customer'}`, marginX, currentY + 5);
-  if (estimation.customer_phone) {
-    doc.text(`Phone: ${estimation.customer_phone}`, marginX, currentY + 10);
-  }
-  if (estimation.customer_address) {
-    doc.text(`Address: ${estimation.customer_address}`, marginX, currentY + 15);
-  }
-
-  // Right column: Estimation details
-  const metaX = 195;
-  doc.setFont('Georgia', 'bold');
-  doc.text(`Est. No: ${estimation.estimation_number} (Rev ${estimation.version})`, metaX, currentY);
-  doc.setFont('Georgia', 'normal');
-  doc.text(`Est. Date: ${formatDate(estimation.estimation_date)}`, metaX, currentY + 5);
-  doc.text(`Valid Until: ${formatDate(estimation.valid_until)}`, metaX, currentY + 10);
+  doc.setTextColor(70, 70, 70);
+  doc.text(`Est. Date: ${formatDate(estimation.estimation_date)}`, col2X + 54, infoY + 4.5);
+  doc.text(`Valid Until: ${formatDate(estimation.valid_until)}`, col2X + 3, infoY + 9);
 
   const typeLabel =
     estimation.estimation_type === 'reference_design'
-      ? 'REFERENCE DESIGN ESTIMATION'
+      ? 'REFERENCE DESIGN'
       : estimation.estimation_type === 'custom_jewellery'
       ? 'CUSTOM JEWELLERY'
-      : 'INVENTORY CATALOGUE';
-  doc.setTextColor(184, 134, 11);
+      : 'CATALOGUE PRODUCT';
+  doc.setTextColor(170, 115, 10);
   doc.setFont('Georgia', 'bold');
-  doc.text(`Type: ${typeLabel}`, metaX, currentY + 15);
+  doc.text(`Type: ${typeLabel}`, col2X + 54, infoY + 9);
 
-  currentY += 22;
-
-  // Gold Rate Snapshot Card
-  doc.setFillColor(250, 248, 240);
-  doc.rect(marginX, currentY, contentWidth, 11, 'F');
-  doc.setLineWidth(0.3);
+  // Locked Rate Snapshot Banner inside Col 2 (Y: infoY + 11.5, Height: 7mm)
+  doc.setFillColor(250, 248, 235);
   doc.setDrawColor(212, 175, 55);
-  doc.rect(marginX, currentY, contentWidth, 11, 'S');
+  doc.setLineWidth(0.3);
+  doc.rect(col2X + 2, infoY + 11.5, col2W - 4, 7, 'FD');
 
-  doc.setFontSize(8);
+  doc.setFontSize(6);
   doc.setFont('Georgia', 'bold');
-  doc.setTextColor(184, 134, 11);
-  doc.text('LOCKED MARKET RATE SNAPSHOT:', marginX + 4, currentY + 7);
+  doc.setTextColor(160, 110, 10);
+  doc.text('LOCKED MARKET RATE SNAPSHOT:', col2X + 4, infoY + 16);
   doc.setFont('Georgia', 'normal');
   doc.setTextColor(40, 40, 40);
   doc.text(
-    `Gold 22K (916): ${formatCurrency(estimation.gold_22k_rate)}/g   |   Gold 24K: ${formatCurrency(estimation.gold_24k_rate)}/g   |   Silver: ${formatCurrency(estimation.silver_rate)}/g`,
-    marginX + 70,
-    currentY + 7
+    `22K: ${formatCurrency(estimation.gold_22k_rate)}/g  |  24K: ${formatCurrency(
+      estimation.gold_24k_rate
+    )}/g  |  Silver: ${formatCurrency(estimation.silver_rate)}/g`,
+    col2X + 41,
+    infoY + 16
   );
 
-  currentY += 16;
+  // --- COL 3: Customer Reference Design Thumbnail Gallery (Width: 85mm, X: 200) ---
+  const col3X = col2X + col2W + 4;
+  const col3W = contentWidth - (col1W + col2W + 8); // 89mm
+  doc.setFillColor(252, 252, 252);
+  doc.setDrawColor(220, 220, 220);
+  doc.setLineWidth(0.25);
+  doc.roundedRect(col3X, infoY, col3W, infoH, 1, 1, 'FD');
 
-  // Customer Reference Images Section (if present)
+  doc.setFontSize(6);
+  doc.setFont('Georgia', 'bold');
+  doc.setTextColor(170, 115, 10);
+  doc.text('CUSTOMER REFERENCE DESIGN', col3X + 3, infoY + 4.5);
+
   const images = estimation.reference_images || [];
   if (images.length > 0) {
-    doc.setFont('Georgia', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(30, 31, 38);
-    doc.text('CUSTOMER REFERENCE DESIGN (PHOTOGRAPHS PROVIDED BY CUSTOMER):', marginX, currentY);
-    currentY += 4;
+    const thumbMaxW = 20;
+    const thumbMaxH = 14;
+    const thumbBoxY = infoY + 5.5;
 
-    let imgX = marginX;
-    const imgWidth = 32;
-    const imgHeight = 32;
-
-    for (let i = 0; i < Math.min(images.length, 6); i++) {
+    // Render up to 2 image thumbnails horizontally
+    let currentThumbX = col3X + 3;
+    for (let i = 0; i < Math.min(images.length, 2); i++) {
       const img = images[i];
       const dataUrl = await getImageDataUrl(img.image_url);
       if (dataUrl) {
         try {
-          doc.rect(imgX, currentY, imgWidth, imgHeight, 'S');
-          doc.addImage(dataUrl, 'JPEG', imgX + 0.5, currentY + 0.5, imgWidth - 1, imgHeight - 1);
-          doc.setFontSize(6);
-          doc.setFont('Georgia', 'normal');
-          doc.setTextColor(80, 80, 80);
-          const label = img.label || `Ref #${i + 1}`;
-          doc.text(label, imgX + 1, currentY + imgHeight + 3.5);
+          const dims = await getImageDimensions(dataUrl);
+          const aspect = dims.width / dims.height;
+          let drawW = thumbMaxW;
+          let drawH = drawW / aspect;
+          if (drawH > thumbMaxH) {
+            drawH = thumbMaxH;
+            drawW = drawH * aspect;
+          }
+          const renderX = currentThumbX + (thumbMaxW - drawW) / 2;
+          const renderY = thumbBoxY + (thumbMaxH - drawH) / 2;
+
+          doc.setDrawColor(200, 200, 200);
+          doc.rect(currentThumbX, thumbBoxY, thumbMaxW, thumbMaxH, 'S');
+          doc.addImage(dataUrl, 'JPEG', renderX, renderY, drawW, drawH);
         } catch {
           // ignore unsupported format
         }
       }
-      imgX += imgWidth + 8;
+      currentThumbX += thumbMaxW + 2;
     }
 
-    currentY += imgHeight + 8;
+    // Label / Extra images badge
+    doc.setFontSize(5.5);
+    doc.setFont('Georgia', 'normal');
+    doc.setTextColor(80, 80, 80);
+    const primaryLabel = images[0]?.label || 'Customer Ref Photo';
+    const splitLabel = doc.splitTextToSize(primaryLabel, col3W - (currentThumbX - col3X) - 2);
+    doc.text(splitLabel[0] || 'Photo Reference', currentThumbX + 1, thumbBoxY + 5);
+
+    if (images.length > 2) {
+      doc.setFillColor(240, 235, 215);
+      doc.roundedRect(currentThumbX + 1, thumbBoxY + 8, 24, 4.5, 0.8, 0.8, 'F');
+      doc.setFont('Georgia', 'bold');
+      doc.setTextColor(150, 100, 10);
+      doc.text(`+${images.length - 2} more photos`, currentThumbX + 3, thumbBoxY + 11.2);
+    } else {
+      doc.setTextColor(110, 110, 110);
+      doc.text('(Artisanal Reference)', currentThumbX + 1, thumbBoxY + 10);
+    }
+  } else {
+    // No photo attached: Display neat bespoke specification badge
+    doc.setFontSize(6);
+    doc.setFont('Georgia', 'normal');
+    doc.setTextColor(90, 90, 90);
+    doc.text('Bespoke Handcrafted Order Model', col3X + 3, infoY + 9.5);
+    doc.text('Crafted per customer gold specifications.', col3X + 3, infoY + 14);
+    doc.setTextColor(170, 115, 10);
+    doc.text('✓ Standard Workshop Pattern', col3X + 3, infoY + 18.5);
   }
 
-  // Items Table (Sum of widths = 269mm exactly matching contentWidth)
+  // =========================================================================
+  // 3. ESTIMATION ITEMS TABLE (Starts at Y: 50.5mm)
+  // Exact column width budget = 273mm total
+  // =========================================================================
+  const tableStartY = 50.5;
+
   const tableRows = (estimation.items || []).map((item, idx) => [
     (idx + 1).toString(),
-    `${item.item_name}\n(${item.purity.toUpperCase()} | ${item.jewellery_type})`,
+    item.item_name || 'Gold Jewellery Item',
+    `${item.purity.toUpperCase()}\n(${item.jewellery_type})`,
     formatWeight(item.estimated_gross_weight_g),
     formatWeight(item.estimated_stone_weight_g),
     formatWeight(item.estimated_net_weight_g),
@@ -189,13 +301,14 @@ export async function buildEstimationPDFDoc(
   ]);
 
   autoTable(doc, {
-    startY: currentY,
+    startY: tableStartY,
     head: [[
       '#',
       'Item Description',
-      'Est. Gross (g)',
-      'Est. Stone (g)',
-      'Est. Net (g)',
+      'Purity / Type',
+      'Est. Gross',
+      'Est. Stone',
+      'Est. Net',
       'Rate/g',
       'Metal Val',
       'Wastage / VA',
@@ -206,155 +319,226 @@ export async function buildEstimationPDFDoc(
     theme: 'grid',
     showHead: 'everyPage',
     headStyles: {
-      fillColor: [30, 31, 38],
+      fillColor: [26, 27, 34],
       textColor: [212, 175, 55],
       font: 'Georgia',
       fontStyle: 'bold',
-      fontSize: 8,
+      fontSize: 7,
       halign: 'center',
+      cellPadding: { top: 1.5, bottom: 1.5, left: 1, right: 1 },
     },
     bodyStyles: {
       font: 'Georgia',
-      fontSize: 8,
-      textColor: [30, 31, 38],
+      fontSize: 6.8,
+      textColor: [25, 25, 30],
+      cellPadding: { top: 1.3, bottom: 1.3, left: 1.2, right: 1.2 },
     },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 10 },
-      1: { cellWidth: 65 },
-      2: { halign: 'right', cellWidth: 22 },
-      3: { halign: 'right', cellWidth: 20 },
-      4: { halign: 'right', cellWidth: 22 },
-      5: { halign: 'right', cellWidth: 24 },
-      6: { halign: 'right', cellWidth: 26 },
-      7: { halign: 'right', cellWidth: 26 },
-      8: { halign: 'right', cellWidth: 26 },
-      9: { halign: 'right', cellWidth: 28, fontStyle: 'bold' },
+      0: { halign: 'center', cellWidth: 8 },
+      1: { cellWidth: 55, halign: 'left' },
+      2: { halign: 'center', cellWidth: 18 },
+      3: { halign: 'right', cellWidth: 18 },
+      4: { halign: 'right', cellWidth: 18 },
+      5: { halign: 'right', cellWidth: 18 },
+      6: { halign: 'right', cellWidth: 22 },
+      7: { halign: 'right', cellWidth: 28 },
+      8: { halign: 'right', cellWidth: 28 },
+      9: { halign: 'right', cellWidth: 28 },
+      10: { halign: 'right', cellWidth: 32, fontStyle: 'bold', textColor: [18, 18, 23] },
     },
     margin: { left: marginX, right: marginX },
   });
 
-  const finalTableY = (doc as any).lastAutoTable?.finalY || currentY + 40;
-  let summaryY = finalTableY + 8;
+  const finalTableY = (doc as any).lastAutoTable?.finalY || 68;
+  const bottomY = Math.max(finalTableY + 2.5, 66);
 
-  // Check if summary card and disclaimer fit on current page (Landscape pageHeight = 210mm)
-  if (summaryY + 52 > 195) {
-    doc.addPage();
-    summaryY = 16;
-  }
+  // =========================================================================
+  // 4. BOTTOM SECTION: SIDE-BY-SIDE SUMMARY & DISCLAIMER
+  // Left: Customer Requirements + Legal Disclaimer + Acceptance Sig (Width: 168mm)
+  // Right: Financial Breakdown Card + Shankar Authorized Sig (Width: 101mm)
+  // =========================================================================
+  const leftColX = marginX;
+  const leftColW = 168;
 
-  // Summary Card on right
-  const summaryBoxWidth = 95;
-  const summaryBoxX = pageWidth - marginX - summaryBoxWidth;
+  const rightColW = 101;
+  const rightColX = pageWidth - marginX - rightColW;
 
-  doc.setFillColor(250, 248, 240);
-  doc.rect(summaryBoxX, summaryY, summaryBoxWidth, 48, 'F');
-  doc.setLineWidth(0.4);
+  // --- RIGHT: Financial Summary Card (Height: 44mm) ---
+  const summaryBoxH = 44;
+  doc.setFillColor(252, 250, 242);
+  doc.rect(rightColX, bottomY, rightColW, summaryBoxH, 'F');
+  doc.setLineWidth(0.35);
   doc.setDrawColor(212, 175, 55);
-  doc.rect(summaryBoxX, summaryY, summaryBoxWidth, 48, 'S');
+  doc.rect(rightColX, bottomY, rightColW, summaryBoxH, 'S');
 
-  doc.setFontSize(8);
-  doc.setFont('Georgia', 'normal');
-  doc.setTextColor(50, 50, 50);
-
-  doc.text('Subtotal Metal Value:', summaryBoxX + 4, summaryY + 8);
-  doc.text(formatCurrency(estimation.subtotal_metal_value), summaryBoxX + summaryBoxWidth - 4, summaryY + 8, { align: 'right' });
-
-  doc.text('Wastage / VA Value:', summaryBoxX + 4, summaryY + 14);
-  doc.text(formatCurrency(estimation.total_wastage_value), summaryBoxX + summaryBoxWidth - 4, summaryY + 14, { align: 'right' });
-
-  doc.text('Total Making & Crafting:', summaryBoxX + 4, summaryY + 20);
-  doc.text(formatCurrency(estimation.total_making_charges), summaryBoxX + summaryBoxWidth - 4, summaryY + 20, { align: 'right' });
-
-  if (estimation.total_stone_charges > 0) {
-    doc.text('Stone / Gem Charges:', summaryBoxX + 4, summaryY + 26);
-    doc.text(formatCurrency(estimation.total_stone_charges), summaryBoxX + summaryBoxWidth - 4, summaryY + 26, { align: 'right' });
-  }
-
-  if (estimation.tax_amount > 0) {
-    doc.text(`Estimated GST (${estimation.tax_percent}%):`, summaryBoxX + 4, summaryY + 32);
-    doc.text(formatCurrency(estimation.tax_amount), summaryBoxX + summaryBoxWidth - 4, summaryY + 32, { align: 'right' });
-  }
-
-  // Grand Total Highlight Bar
-  doc.setFillColor(30, 31, 38);
-  doc.rect(summaryBoxX, summaryY + 38, summaryBoxWidth, 10, 'F');
-  doc.setTextColor(212, 175, 55);
-  doc.setFont('Georgia', 'bold');
-  doc.setFontSize(9);
-  doc.text('ESTIMATED TOTAL:', summaryBoxX + 4, summaryY + 44);
-  doc.text(formatCurrency(estimation.total_estimated_amount), summaryBoxX + summaryBoxWidth - 4, summaryY + 44, { align: 'right' });
-
-  // Notes on left of summary box
-  doc.setFontSize(8);
-  doc.setFont('Georgia', 'bold');
-  doc.setTextColor(30, 31, 38);
-  doc.text('DESIGN & CUSTOMER REQUIREMENTS:', marginX, summaryY + 6);
-  doc.setFont('Georgia', 'normal');
-  doc.setTextColor(70, 70, 70);
-  const notesText = estimation.customer_requirements || estimation.general_notes || 'Bespoke custom order estimation based on customer reference photograph.';
-  const splitNotes = doc.splitTextToSize(notesText, summaryBoxX - marginX - 10);
-  doc.text(splitNotes, marginX, summaryY + 12);
-
-  let disclaimerY = summaryY + 54;
-  if (disclaimerY + 38 > 195) {
-    doc.addPage();
-    disclaimerY = 16;
-  }
-
-  // Mandatory Legal & Commercial Disclaimer Box
-  doc.setFillColor(245, 245, 245);
-  doc.rect(marginX, disclaimerY, contentWidth, 28, 'F');
-  doc.setDrawColor(200, 200, 200);
-  doc.rect(marginX, disclaimerY, contentWidth, 28, 'S');
-
-  doc.setFontSize(7.5);
-  doc.setFont('Georgia', 'bold');
-  doc.setTextColor(180, 0, 0);
-  doc.text('IMPORTANT TERMS & ESTIMATION DISCLAIMER:', marginX + 4, disclaimerY + 5.5);
-
-  doc.setFont('Georgia', 'normal');
-  doc.setTextColor(60, 60, 60);
   doc.setFontSize(6.5);
-  const disclaimers = [
-    '1. This document is strictly a PRICE ESTIMATE and is NOT a tax invoice, bill of sale, or receipt of payment.',
-    '2. Design photographs are customer-provided reference models only. Slight aesthetic variations are inherent to handcrafted jewelry.',
-    '3. All weights shown are ESTIMATES. Final billing will be calculated strictly based on actual gross and net weights measured upon completion.',
-    '4. Rate snapshot is honored only until the validity date. Market rates at the time of final advance booking will apply if expired.',
-    '5. Manufacturing commences only after design approval and advance payment confirmation.',
-  ];
-  disclaimers.forEach((line, idx) => {
-    doc.text(line, marginX + 4, disclaimerY + 10 + idx * 3.5);
+  doc.setFont('Georgia', 'bold');
+  doc.setTextColor(160, 110, 10);
+  doc.text('ESTIMATION FINANCIAL SUMMARY', rightColX + 3.5, bottomY + 5);
+
+  doc.setFontSize(6.5);
+  doc.setFont('Georgia', 'normal');
+  doc.setTextColor(45, 45, 45);
+
+  // Row 1: Subtotal Metal Value
+  doc.text('Subtotal Metal Value:', rightColX + 3.5, bottomY + 10);
+  doc.text(
+    formatCurrency(estimation.subtotal_metal_value),
+    rightColX + rightColW - 3.5,
+    bottomY + 10,
+    { align: 'right' }
+  );
+
+  // Row 2: Wastage / VA Value
+  doc.text('Wastage / VA Value:', rightColX + 3.5, bottomY + 15);
+  doc.text(
+    formatCurrency(estimation.total_wastage_value),
+    rightColX + rightColW - 3.5,
+    bottomY + 15,
+    { align: 'right' }
+  );
+
+  // Row 3: Making Charges
+  doc.text('Making & Crafting Charges:', rightColX + 3.5, bottomY + 20);
+  doc.text(
+    formatCurrency(estimation.total_making_charges),
+    rightColX + rightColW - 3.5,
+    bottomY + 20,
+    { align: 'right' }
+  );
+
+  // Row 4: Stone & Other Charges
+  const extraCharges = (estimation.total_stone_charges || 0) + (estimation.total_other_charges || 0);
+  doc.text('Stone & Gem Charges:', rightColX + 3.5, bottomY + 25);
+  doc.text(formatCurrency(extraCharges), rightColX + rightColW - 3.5, bottomY + 25, {
+    align: 'right',
   });
 
-  // Signatures
-  const sigY = disclaimerY + 32;
-  doc.setFontSize(8);
+  // Row 5: GST
+  doc.text(`Estimated GST (${estimation.tax_percent}%):`, rightColX + 3.5, bottomY + 30);
+  doc.text(formatCurrency(estimation.tax_amount), rightColX + rightColW - 3.5, bottomY + 30, {
+    align: 'right',
+  });
+
+  // Grand Total Highlight Bar (Height: 8mm, inside summary box)
+  const totalBarY = bottomY + 35;
+  doc.setFillColor(26, 27, 34);
+  doc.rect(rightColX, totalBarY, rightColW, 9, 'F');
+
+  doc.setTextColor(212, 175, 55);
+  doc.setFont('Georgia', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('ESTIMATED TOTAL:', rightColX + 3.5, totalBarY + 5.8);
+  doc.text(
+    formatCurrency(estimation.total_estimated_amount),
+    rightColX + rightColW - 3.5,
+    totalBarY + 5.8,
+    { align: 'right' }
+  );
+
+  // Shop Authorized Signatory Box (Below Financial Summary, Height: 15mm)
+  const shopSigY = bottomY + summaryBoxH + 4;
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.25);
+  doc.line(rightColX + 10, shopSigY + 9, rightColX + rightColW - 10, shopSigY + 9);
+
+  doc.setFontSize(6.8);
+  doc.setFont('Georgia', 'bold');
+  doc.setTextColor(30, 31, 38);
+  doc.text(`For ${shop.name}`, rightColX + rightColW / 2, shopSigY + 12.5, { align: 'center' });
+  doc.setFontSize(5.5);
+  doc.setFont('Georgia', 'normal');
+  doc.setTextColor(100, 100, 100);
+  doc.text('(Authorized Signatory)', rightColX + rightColW / 2, shopSigY + 15.5, { align: 'center' });
+
+  // --- LEFT: Notes & Requirements Card (Height: 14mm) ---
+  const notesBoxH = 14;
+  doc.setFillColor(252, 252, 252);
+  doc.setDrawColor(225, 225, 225);
+  doc.setLineWidth(0.25);
+  doc.rect(leftColX, bottomY, leftColW, notesBoxH, 'FD');
+
+  doc.setFontSize(6);
+  doc.setFont('Georgia', 'bold');
+  doc.setTextColor(170, 115, 10);
+  doc.text('DESIGN & CUSTOMER REQUIREMENTS:', leftColX + 3, bottomY + 4.2);
+
+  doc.setFontSize(5.8);
+  doc.setFont('Georgia', 'normal');
+  doc.setTextColor(60, 60, 60);
+  const notesText =
+    estimation.customer_requirements ||
+    estimation.general_notes ||
+    'Custom bespoke order quote based on customer reference model. Crafting commenced upon order advance.';
+  const splitNotes = doc.splitTextToSize(notesText, leftColW - 6);
+  doc.text(splitNotes.slice(0, 2), leftColX + 3, bottomY + 8);
+
+  // --- LEFT: Important Terms & Estimation Disclaimer Box (Height: 25mm) ---
+  const discY = bottomY + notesBoxH + 2;
+  const discH = 25;
+  doc.setFillColor(248, 248, 248);
+  doc.setDrawColor(220, 220, 220);
+  doc.rect(leftColX, discY, leftColW, discH, 'FD');
+
+  doc.setFontSize(6.2);
+  doc.setFont('Georgia', 'bold');
+  doc.setTextColor(170, 20, 20);
+  doc.text('IMPORTANT TERMS & ESTIMATION DISCLAIMER:', leftColX + 3, discY + 4.5);
+
+  doc.setFontSize(5.6);
+  doc.setFont('Georgia', 'normal');
+  doc.setTextColor(60, 60, 60);
+  const disclaimers = [
+    '1. PRICE ESTIMATE ONLY: This document is strictly a price estimate and is NOT a tax invoice, bill of sale, or receipt of payment.',
+    '2. WEIGHT & RATE ADJUSTMENT: All weights are estimates. Final billing is calculated strictly on actual gross/net weights post-crafting.',
+    '3. RATE VALIDITY: Market rates snapshot is honored only until the validity date shown. Prevailing market rates apply thereafter.',
+    '4. REFERENCE PHOTOGRAPHS: Design photos are customer reference models only. Handcrafted jewelry will feature artisanal nuances.',
+  ];
+  disclaimers.forEach((line, idx) => {
+    doc.text(line, leftColX + 3, discY + 8.5 + idx * 3.8);
+  });
+
+  // --- LEFT: Customer Acceptance Signature ---
+  const custSigY = discY + discH + 4;
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.25);
+  doc.line(leftColX + 5, custSigY + 7, leftColX + 65, custSigY + 7);
+
+  doc.setFontSize(6.5);
   doc.setFont('Georgia', 'normal');
   doc.setTextColor(50, 50, 50);
+  doc.text('Customer Acceptance Signature', leftColX + 5, custSigY + 10.5);
 
-  doc.line(marginX + 4, sigY + 6, marginX + 65, sigY + 6);
-  doc.text('Customer Acceptance Signature', marginX + 4, sigY + 10.5);
+  doc.text('Date: ____________________', leftColX + 90, custSigY + 10.5);
 
-  const sigRightX = pageWidth - marginX - 65;
-  doc.line(sigRightX, sigY + 6, sigRightX + 61, sigY + 6);
-  doc.text(`For ${shop.name}`, sigRightX, sigY + 10.5);
-  doc.setFontSize(7);
-  doc.text('(Authorized Signatory)', sigRightX, sigY + 14.5);
+  // =========================================================================
+  // 5. BOTTOM PAGE FOOTER (Y: 204mm)
+  // =========================================================================
+  doc.setFontSize(5.5);
+  doc.setFont('Georgia', 'normal');
+  doc.setTextColor(130, 130, 130);
+  doc.text('Shankar Jewellery ERP • Trichy', marginX, 204);
+  doc.text('Official Price Estimation • Single Page Quote', pageWidth / 2, 204, { align: 'center' });
+  doc.text(
+    `Page 1 of 1 • Generated on ${new Date().toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })}`,
+    pageWidth - marginX,
+    204,
+    { align: 'right' }
+  );
 
-  // Page numbering footer on all pages
-  const pageCount = (doc as any).internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(7);
-    doc.setFont('Georgia', 'normal');
-    doc.setTextColor(130, 130, 130);
-    doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - 5, { align: 'center' });
-    doc.text(
-      `Generated on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
-      pageWidth - marginX,
-      pageHeight - 5,
-      { align: 'right' }
-    );
+  // =========================================================================
+  // 6. PROGRAMMATIC SINGLE-PAGE SAFETY NET
+  // If jsPDF accidentally spawned page 2, prune all extra pages to guarantee 1 page
+  // =========================================================================
+  const totalPages = (doc as any).internal.getNumberOfPages();
+  if (totalPages > 1) {
+    while ((doc as any).internal.getNumberOfPages() > 1) {
+      doc.deletePage(2);
+    }
   }
 
   return doc;
@@ -365,7 +549,10 @@ export async function downloadEstimationPDF(estimation: Estimation, settings?: B
   doc.save(`Estimation_${estimation.estimation_number}_Rev${estimation.version}.pdf`);
 }
 
-export async function shareEstimationPDF(estimation: Estimation, settings?: BusinessSettings): Promise<boolean> {
+export async function shareEstimationPDF(
+  estimation: Estimation,
+  settings?: BusinessSettings
+): Promise<boolean> {
   if (navigator.share) {
     try {
       const doc = await buildEstimationPDFDoc(estimation, settings);

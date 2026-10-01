@@ -439,41 +439,34 @@ export const unlockWithBiometrics = async (): Promise<{
 
   try {
     // 1. Invoke OS Platform Biometrics via WebAuthn
-    if (cap.isSupported && !vault.credentialId.startsWith('dev_')) {
+    if (cap.isSupported) {
       const challenge = new Uint8Array(32);
       window.crypto.getRandomValues(challenge);
 
       const domain = window.location.hostname || 'localhost';
       const rpId = domain === 'localhost' || domain === '127.0.0.1' ? undefined : domain;
 
-      try {
-        const assertion = (await navigator.credentials.get({
-          publicKey: {
-            challenge,
-            rpId,
-            allowCredentials: [
-              {
-                id: base64URLToBuffer(vault.credentialId),
-                type: 'public-key',
-                transports: ['internal'],
-              },
-            ],
-            userVerification: 'required',
-            timeout: 60000,
-          },
-        })) as PublicKeyCredential | null;
+      const assertion = (await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          rpId,
+          allowCredentials: [
+            {
+              id: base64URLToBuffer(vault.credentialId),
+              type: 'public-key',
+              transports: ['internal'],
+            },
+          ],
+          userVerification: 'required',
+          timeout: 60000,
+        },
+      })) as PublicKeyCredential | null;
 
-        if (!assertion) {
-          await dataService.logAuditAction('BIOMETRIC_LOGIN_FAILED', 'auth', vault.userId, {
-            reason: 'biometric_cancelled',
-          });
-          return { success: false, message: 'Biometric verification was cancelled.' };
-        }
-      } catch (authErr: any) {
-        if (authErr?.name === 'NotAllowedError') {
-          return { success: false, message: 'Biometric verification was cancelled or timed out. Please enter your ERP PIN.' };
-        }
-        throw authErr;
+      if (!assertion) {
+        await dataService.logAuditAction('BIOMETRIC_LOGIN_FAILED', 'auth', vault.userId, {
+          reason: 'biometric_cancelled',
+        });
+        return { success: false, message: 'Biometric verification was cancelled.' };
       }
     }
 

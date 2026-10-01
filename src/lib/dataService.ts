@@ -2262,32 +2262,11 @@ export const dataService = {
 
       await this.logAuditAction('ALL_DEVICES_REVOKED', 'auth', userId, {});
       syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { user_id: userId, status: 'revoked' });
+      return true;
     } catch (e) {
       console.warn('Failed to revoke all devices in Supabase:', e);
+      return false;
     }
-
-    // Local cache and vault update
-    if (typeof localStorage !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('shankar_erp_trusted_devices_cache');
-        if (stored) {
-          const list: TrustedDevice[] = JSON.parse(stored);
-          list.forEach((d) => {
-            if (d.user_id === userId) d.status = 'revoked';
-          });
-          localStorage.setItem('shankar_erp_trusted_devices_cache', JSON.stringify(list));
-        }
-        const vaultStr = localStorage.getItem('shankar_erp_device_vault');
-        if (vaultStr) {
-          const v = JSON.parse(vaultStr);
-          if (v && v.userId === userId) {
-            localStorage.removeItem('shankar_erp_device_vault');
-          }
-        }
-      } catch {}
-    }
-
-    return true;
   },
 
   async verifyDeviceCredential(
@@ -2297,122 +2276,68 @@ export const dataService = {
     try {
       const db = checkSupabaseClient();
 
-      // 1. Try secure RPC verification first if function exists in Supabase
-      try {
-        const { data: rpcData, error: rpcErr } = await db.rpc('verify_device_unlock_and_authenticate', {
-          p_credential_id: credentialId,
-          p_device_token_hash: deviceTokenHash,
-        });
+      // 1. Try secure RPC verification first
+      const { data: rpcData, error: rpcErr } = await db.rpc('verify_device_unlock_and_authenticate', {
+        p_credential_id: credentialId,
+        p_device_token_hash: deviceTokenHash,
+      });
 
-        if (!rpcErr && rpcData) {
-          if (!rpcData.success) {
-            return { success: false, message: rpcData.message || 'Device authentication failed.' };
-          }
-          return {
-            success: true,
-            userProfile: rpcData.user_profile as UserProfile,
-          };
+      if (!rpcErr && rpcData) {
+        if (!rpcData.success) {
+          return { success: false, message: rpcData.message || 'Device authentication failed.' };
         }
-      } catch {
-        // RPC not loaded in Supabase schema cache
+        return {
+          success: true,
+          userProfile: rpcData.user_profile as UserProfile,
+        };
       }
 
-      // 2. Check remote database for explicit revocation if table exists
-      let remoteRevoked = false;
-      let remoteDisabledOrDeleted = false;
-      try {
-        const { data: device, error: devErr } = await db
-          .from('trusted_devices')
-          .select('*')
-          .eq('credential_id', credentialId)
-          .maybeSingle();
+      // 2. Direct fallback query if RPC is not yet loaded in Supabase
+      const { data: device, error: devErr } = await db
+        .from('trusted_devices')
+        .select('*')
+        .eq('credential_id', credentialId)
+        .eq('status', 'active')
+        .is('revoked_at', null)
+        .maybeSingle();
 
-        if (!devErr && device) {
-          if (device.status === 'revoked' || device.revoked_at) {
-            remoteRevoked = true;
-          } else {
-            // Check if user is disabled or deleted in Supabase
-            const { data: profile } = await db
-              .from('profiles')
-              .select('*')
-              .eq('id', device.user_id)
-              .maybeSingle();
-
-            if (profile) {
-              if (profile.deleted_at || profile.status === 'deleted') {
-                remoteDisabledOrDeleted = true;
-              } else if (profile.is_active === false || profile.status === 'disabled') {
-                return { success: false, message: 'User account is disabled. Please contact your administrator.' };
-              } else {
-                // Update last_used_at asynchronously
-                try {
-                  await db.from('trusted_devices')
-                    .update({ last_used_at: new Date().toISOString() })
-                    .eq('id', device.id);
-                } catch {}
-
-                return {
-                  success: true,
-                  userProfile: profile as UserProfile,
-                };
-              }
-            }
-          }
-        }
-      } catch {
-        // Table not present yet in remote schema
+      if (devErr || !device) {
+        return { success: false, message: 'Device credential is invalid or has been revoked.' };
       }
 
-      if (remoteRevoked) {
-        return { success: false, message: 'This device credential has been revoked by an administrator.' };
+      // Verify token hash
+      if (device.device_token_hash && device.device_token_hash !== deviceTokenHash) {
+        return { success: false, message: 'Device token mismatch. Authentication rejected.' };
       }
-      if (remoteDisabledOrDeleted) {
+
+      // Authoritative check on profile
+      const { data: profile, error: profErr } = await db
+        .from('profiles')
+        .select('*')
+        .eq('id', device.user_id)
+        .maybeSingle();
+
+      if (profErr || !profile || profile.deleted_at || profile.status === 'deleted') {
         return { success: false, message: 'User account has been removed or deleted.' };
       }
 
-      // 3. Authoritative Local Cryptographic Device Vault & Cache Verification
-      if (typeof localStorage !== 'undefined') {
-        // Check if device was revoked in local cache
-        const storedDevices = localStorage.getItem('shankar_erp_trusted_devices_cache');
-        if (storedDevices) {
-          try {
-            const list: TrustedDevice[] = JSON.parse(storedDevices);
-            const found = list.find((d) => d.credential_id === credentialId);
-            if (found && (found.status === 'revoked' || (found as any).revoked_at)) {
-              return { success: false, message: 'This device credential has been revoked.' };
-            }
-          } catch {}
-        }
-
-        // Check local device vault
-        const storedVault = localStorage.getItem('shankar_erp_device_vault');
-        if (storedVault) {
-          try {
-            const vault = JSON.parse(storedVault);
-            if (vault && vault.credentialId === credentialId) {
-              // Construct verified profile from the securely stored vault
-              const verifiedProfile: UserProfile = {
-                id: vault.userId,
-                user_id: vault.userId,
-                full_name: vault.userFullName || vault.userEmail?.split('@')[0] || 'Staff User',
-                email: vault.userEmail || '',
-                phone: '',
-                role: (vault.userRole || 'admin') as UserRole,
-                branch: 'Trichy - Sandhukadai',
-                is_active: true,
-                last_login_at: new Date().toISOString(),
-              };
-
-              return {
-                success: true,
-                userProfile: verifiedProfile,
-              };
-            }
-          } catch {}
-        }
+      if (profile.is_active === false || profile.status === 'disabled') {
+        return { success: false, message: 'User account is disabled. Please contact your administrator.' };
       }
 
-      return { success: false, message: 'Device credential is invalid or has been revoked.' };
+      // Touch last_used_at
+      try {
+        await db.from('trusted_devices')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('id', device.id);
+      } catch (err) {
+        console.warn('Could not update last_used_at:', err);
+      }
+
+      return {
+        success: true,
+        userProfile: profile as UserProfile,
+      };
     } catch (e: any) {
       console.error('Failed to verify device credential:', e);
       return { success: false, message: e?.message || 'Server error verifying device credential.' };
