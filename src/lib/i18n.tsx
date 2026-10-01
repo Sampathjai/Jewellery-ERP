@@ -35,6 +35,8 @@ export interface Translations {
   wholesale_ledger: string;
   crm_financials: string;
   customers_crm: string;
+  estimations: string;
+  custom_orders: string;
   payment_receipts: string;
   suppliers: string;
   purchases: string;
@@ -105,7 +107,6 @@ export interface Translations {
   rings: string;
   necklaces: string;
   silver_items: string;
-  custom_orders: string;
 
   // Wholesale & Touch Settlement Calculations
   profit_share: string;
@@ -162,6 +163,8 @@ const translations: Record<Language, Translations> = {
     wholesale_ledger: 'Wholesale Ledger',
     crm_financials: 'CRM & FINANCIALS',
     customers_crm: 'Customers CRM',
+    estimations: 'Estimations & Quotes',
+    custom_orders: 'Custom Orders',
     payment_receipts: 'Payment Receipts',
     suppliers: 'Suppliers',
     purchases: 'Purchases',
@@ -230,7 +233,6 @@ const translations: Record<Language, Translations> = {
     rings: 'Rings',
     necklaces: 'Necklaces',
     silver_items: 'Silver Items',
-    custom_orders: 'Custom Orders',
 
     profit_share: 'Profit Share',
     customer_share: 'Partner Profit Share',
@@ -284,6 +286,8 @@ const translations: Record<Language, Translations> = {
     wholesale_ledger: 'மொத்த வியாபாரப் பேரேடு',
     crm_financials: 'வாடிக்கையாளர் & நிதி',
     customers_crm: 'வாடிக்கையாளர்கள்',
+    estimations: 'நகை மதிப்பீடுகள் (Estimations)',
+    custom_orders: 'வடிவமைப்பு ஆர்டர்கள் (Custom Orders)',
     payment_receipts: 'பணப் ரசீதுகள்',
     suppliers: 'பொருள் வழங்குனர்கள்',
     purchases: 'தங்கக் கொள்முதல்',
@@ -352,7 +356,6 @@ const translations: Record<Language, Translations> = {
     rings: 'மோதிரம்',
     necklaces: 'ஆரம் / நெக்லஸ்',
     silver_items: 'வெள்ளிப் பொருட்கள்',
-    custom_orders: 'ஆர்டர் நகைகள்',
 
     profit_share: 'லாபப் பங்கு',
     customer_share: 'வியாபாரி லாபப் பங்கு',

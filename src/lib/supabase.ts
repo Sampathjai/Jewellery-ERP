@@ -25,6 +25,8 @@ import {
   Purchase,
   PurchasePayment,
   UserPasskey,
+  Estimation,
+  CustomOrder,
 } from '@/types';
 
 const getEnvVar = (key: string): string => {
@@ -128,6 +130,8 @@ interface DbStore {
   notifications: NotificationItem[];
   whatsappMessages: WhatsAppMessage[];
   passkeys?: UserPasskey[];
+  estimations: Estimation[];
+  customOrders: CustomOrder[];
 }
 
 const defaultSeedStore: DbStore = {
@@ -858,6 +862,8 @@ const defaultSeedStore: DbStore = {
     },
   ],
   whatsappMessages: [],
+  estimations: [],
+  customOrders: [],
 };
 
 // ============================================================================
@@ -888,6 +894,8 @@ export const getCleanStore = (): DbStore => ({
   auditLogs: [],
   notifications: [],
   whatsappMessages: [],
+  estimations: [],
+  customOrders: [],
 });
 
 let memoryStore: DbStore | null = null;

@@ -44,6 +44,11 @@ import { Settings } from '@/pages/Settings';
 import { SyncSettings } from '@/pages/SyncSettings';
 import { StorageDatabaseSettings } from '@/pages/StorageDatabaseSettings';
 import { AuditLogs } from '@/pages/AuditLogs';
+import { EstimationsList } from '@/pages/EstimationsList';
+import { CreateEstimation } from '@/pages/CreateEstimation';
+import { EstimationDetails } from '@/pages/EstimationDetails';
+import { CustomOrdersList } from '@/pages/CustomOrdersList';
+import { CustomOrderDetails } from '@/pages/CustomOrderDetails';
 
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { ErrorPage } from '@/components/common/ErrorPage';
@@ -133,6 +138,13 @@ export const App: React.FC = () => {
               <Route path="/customers/add" element={<ProtectedRoute><AddCustomer /></ProtectedRoute>} />
               <Route path="/customers/edit/:id" element={<ProtectedRoute><EditCustomer /></ProtectedRoute>} />
               <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetails /></ProtectedRoute>} />
+
+              {/* Jewellery Estimations & Bespoke Orders */}
+              <Route path="/estimations" element={<ProtectedRoute><EstimationsList /></ProtectedRoute>} />
+              <Route path="/estimations/new" element={<ProtectedRoute><CreateEstimation /></ProtectedRoute>} />
+              <Route path="/estimations/:id" element={<ProtectedRoute><EstimationDetails /></ProtectedRoute>} />
+              <Route path="/custom-orders" element={<ProtectedRoute><CustomOrdersList /></ProtectedRoute>} />
+              <Route path="/custom-orders/:id" element={<ProtectedRoute><CustomOrderDetails /></ProtectedRoute>} />
 
               <Route path="/products" element={<ProtectedRoute><ProductsList /></ProtectedRoute>} />
               <Route path="/products/add" element={<ProtectedRoute><AddProduct /></ProtectedRoute>} />

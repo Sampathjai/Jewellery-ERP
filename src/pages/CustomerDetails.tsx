@@ -6,7 +6,7 @@ import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { openWhatsAppClickToChat, buildWhatsAppPaymentReminder } from '@/lib/whatsapp';
 import { CameraModal } from '@/components/common/CameraModal';
-import { Customer, BusinessSettings } from '@/types';
+import { Customer, BusinessSettings, Estimation, CustomOrder } from '@/types';
 import {
   ArrowLeft,
   MessageSquare,
@@ -19,6 +19,13 @@ import {
   Edit,
   Loader2,
   RotateCcw,
+  Sparkles,
+  Plus,
+  FileText,
+  Image as ImageIcon,
+  Maximize2,
+  X,
+  Hammer,
 } from 'lucide-react';
 
 interface LedgerEntry {
@@ -39,6 +46,10 @@ export const CustomerDetails: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
+  const [customerEstimations, setCustomerEstimations] = useState<Estimation[]>([]);
+  const [customerCustomOrders, setCustomerCustomOrders] = useState<CustomOrder[]>([]);
+  const [activeTab, setActiveTab] = useState<'ledger' | 'estimations' | 'designs' | 'orders'>('ledger');
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; label?: string; date?: string; estNo?: string } | null>(null);
   const [totalOutstanding, setTotalOutstanding] = useState<number>(0);
   const [settings, setSettings] = useState<BusinessSettings | null>(null);
   const [goldRate, setGoldRate] = useState<number>(6850);
@@ -128,6 +139,32 @@ export const CustomerDetails: React.FC = () => {
         return;
       }
       const custId = targetCustomer.id;
+
+      // Load Estimations & Custom Orders for this customer
+      try {
+        const [allEsts, allOrders] = await Promise.all([
+          dataService.getEstimations(),
+          dataService.getCustomOrders(),
+        ]);
+        const cEsts = allEsts.filter(
+          (e) =>
+            e.customer_id === custId ||
+            (targetCustomer?.full_name && e.customer_name?.toLowerCase() === targetCustomer.full_name.toLowerCase()) ||
+            (targetCustomer?.phone && e.customer_phone === targetCustomer.phone)
+        );
+        const cOrds = allOrders.filter(
+          (o) =>
+            o.customer_id === custId ||
+            (targetCustomer?.full_name && o.customer_name?.toLowerCase() === targetCustomer.full_name.toLowerCase()) ||
+            (targetCustomer?.phone && o.customer_phone === targetCustomer.phone)
+        );
+        if (isMounted) {
+          setCustomerEstimations(cEsts);
+          setCustomerCustomOrders(cOrds);
+        }
+      } catch (err) {
+        console.error('Error querying customer estimations:', err);
+      }
 
       // Retail Invoices (Debit)
       invoices.forEach((inv) => {
@@ -402,6 +439,12 @@ export const CustomerDetails: React.FC = () => {
               </button>
             )}
             <button
+              onClick={() => navigate(`/estimations/new?customerId=${customer.id}`)}
+              className="flex items-center gap-1 rounded-xl bg-amber-500/10 border border-amber-500/30 px-3.5 py-2 text-xs font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-500/20"
+            >
+              <Sparkles className="h-4 w-4 text-amber-600" /> New Estimation
+            </button>
+            <button
               onClick={handlePrintLedger}
               className="flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-charcoal-800 dark:text-slate-300"
             >
@@ -552,62 +595,334 @@ export const CustomerDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Customer Ledger Transaction Table */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm">
-        <h3 className="font-serif text-lg font-bold text-charcoal-900 dark:text-slate-100 mb-4">
-          Customer Transaction Ledger
-        </h3>
+      {/* Tab Navigation for Ledger, Estimations, Custom Design History, and Custom Orders */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm space-y-4">
+        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-charcoal-800 pb-3 overflow-x-auto">
+          {[
+            { id: 'ledger', label: `Transaction Ledger (${ledgerEntries.length})`, icon: HandCoins },
+            { id: 'estimations', label: `Estimations & Quotes (${customerEstimations.length})`, icon: Sparkles },
+            {
+              id: 'designs',
+              label: `Custom Design History (${customerEstimations.reduce((acc, e) => acc + (e.reference_images?.length || 0), 0)})`,
+              icon: ImageIcon,
+            },
+            { id: 'orders', label: `Custom Orders (${customerCustomOrders.length})`, icon: Hammer },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                  isActive
+                    ? 'bg-amber-500/10 text-amber-900 dark:text-amber-300 border border-amber-500/30'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-charcoal-800'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 text-amber-600" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
-            <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500 uppercase dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-400">
-              <tr>
-                <th className="p-3">Date</th>
-                <th className="p-3">Reference / Voucher</th>
-                <th className="p-3">Type</th>
-                <th className="p-3 text-right">Debit (INR)</th>
-                <th className="p-3 text-right">Credit (INR)</th>
-                <th className="p-3 text-right">Running Balance</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
-              {ledgerEntries.length === 0 ? (
+        {/* Tab 1: Ledger */}
+        {activeTab === 'ledger' && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
+              <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500 uppercase dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-400">
                 <tr>
-                  <td colSpan={6} className="p-12 text-center text-slate-400 dark:text-slate-500 font-medium">
-                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">No transactions yet.</p>
-                    <p className="text-xs text-slate-500">
-                      This customer has no invoices, payments, returns, wholesale issues, or ledger entries.
-                    </p>
-                  </td>
+                  <th className="p-3">Date</th>
+                  <th className="p-3">Reference / Voucher</th>
+                  <th className="p-3">Type</th>
+                  <th className="p-3 text-right">Debit (INR)</th>
+                  <th className="p-3 text-right">Credit (INR)</th>
+                  <th className="p-3 text-right">Running Balance</th>
                 </tr>
-              ) : (
-                ledgerEntries.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-slate-50 dark:hover:bg-charcoal-800/50">
-                    <td className="p-3 font-mono">{formatDate(entry.date)}</td>
-                    <td className="p-3 font-semibold text-charcoal-900 dark:text-slate-100">
-                      {entry.reference}
-                    </td>
-                    <td className="p-3">
-                      <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${entry.typeBadgeClass}`}>
-                        {entry.type}
-                      </span>
-                    </td>
-                    <td className="p-3 text-right font-semibold">
-                      {entry.debit > 0 ? formatCurrency(entry.debit) : '-'}
-                    </td>
-                    <td className="p-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">
-                      {entry.credit > 0 ? formatCurrency(entry.credit) : '-'}
-                    </td>
-                    <td className="p-3 text-right font-bold text-amber-900 dark:text-gold-300">
-                      {formatCurrency(entry.runningBalance || 0)}
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
+                {ledgerEntries.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-12 text-center text-slate-400 dark:text-slate-500 font-medium">
+                      <p className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">No transactions yet.</p>
+                      <p className="text-xs text-slate-500">
+                        This customer has no invoices, payments, returns, wholesale issues, or ledger entries.
+                      </p>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  ledgerEntries.map((entry) => (
+                    <tr key={entry.id} className="hover:bg-slate-50 dark:hover:bg-charcoal-800/50">
+                      <td className="p-3 font-mono">{formatDate(entry.date)}</td>
+                      <td className="p-3 font-semibold text-charcoal-900 dark:text-slate-100">
+                        {entry.reference}
+                      </td>
+                      <td className="p-3">
+                        <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${entry.typeBadgeClass}`}>
+                          {entry.type}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right font-semibold">
+                        {entry.debit > 0 ? formatCurrency(entry.debit) : '-'}
+                      </td>
+                      <td className="p-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                        {entry.credit > 0 ? formatCurrency(entry.credit) : '-'}
+                      </td>
+                      <td className="p-3 text-right font-bold text-amber-900 dark:text-gold-300">
+                        {formatCurrency(entry.runningBalance || 0)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Tab 2: Estimations */}
+        {activeTab === 'estimations' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500">
+                Quotations created for this customer based on reference models or catalogue.
+              </span>
+              <button
+                type="button"
+                onClick={() => navigate(`/estimations/new?customerId=${customer.id}`)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
+              >
+                <Plus className="w-3.5 h-3.5" /> Create Estimation
+              </button>
+            </div>
+
+            {customerEstimations.length === 0 ? (
+              <div className="p-12 text-center text-slate-400">
+                <FileText className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                <p className="text-xs font-medium">No estimations created for this customer yet.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-charcoal-800 text-slate-500 font-bold uppercase text-[10px]">
+                    <tr>
+                      <th className="p-2.5">Est. No</th>
+                      <th className="p-2.5">Date</th>
+                      <th className="p-2.5">Type</th>
+                      <th className="p-2.5">Items</th>
+                      <th className="p-2.5 text-right">Est. Total</th>
+                      <th className="p-2.5">Status</th>
+                      <th className="p-2.5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
+                    {customerEstimations.map((est) => (
+                      <tr key={est.id} className="hover:bg-amber-50/20">
+                        <td className="p-2.5 font-bold text-amber-700 dark:text-amber-400">
+                          {est.estimation_number} {est.version > 1 && `(Rev ${est.version})`}
+                        </td>
+                        <td className="p-2.5">{formatDate(est.estimation_date)}</td>
+                        <td className="p-2.5">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900">
+                            {est.estimation_type === 'reference_design' ? 'Reference Design' : 'Custom'}
+                          </span>
+                        </td>
+                        <td className="p-2.5">
+                          {(est.items || []).map((it) => it.item_name).join(', ')}
+                        </td>
+                        <td className="p-2.5 text-right font-bold">
+                          {formatCurrency(est.total_estimated_amount)}
+                        </td>
+                        <td className="p-2.5 uppercase text-[10px] font-semibold">{est.status}</td>
+                        <td className="p-2.5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/estimations/${est.id}`)}
+                            className="text-amber-600 hover:underline font-bold text-xs"
+                          >
+                            View Details
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 3: Custom Design History Gallery */}
+        {activeTab === 'designs' && (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500">
+              Visual reference archive of all jewellery model photos submitted by this customer for estimations & bespoke orders.
+            </p>
+
+            {(() => {
+              const allImages: {
+                id: string;
+                url: string;
+                label?: string;
+                notes?: string;
+                estNo: string;
+                estId: string;
+                date: string;
+              }[] = [];
+              customerEstimations.forEach((est) => {
+                (est.reference_images || []).forEach((img) => {
+                  allImages.push({
+                    id: img.id,
+                    url: img.image_url,
+                    label: img.label,
+                    notes: img.notes,
+                    estNo: est.estimation_number,
+                    estId: est.id,
+                    date: est.estimation_date,
+                  });
+                });
+              });
+
+              if (allImages.length === 0) {
+                return (
+                  <div className="p-12 text-center text-slate-400">
+                    <ImageIcon className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                    <p className="text-xs font-medium">No custom reference designs uploaded for this customer yet.</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                  {allImages.map((img, idx) => (
+                    <div
+                      key={img.id || idx}
+                      className="group relative rounded-xl overflow-hidden border border-slate-200 dark:border-charcoal-800 bg-slate-100 dark:bg-charcoal-800 aspect-square shadow-sm flex flex-col justify-end"
+                    >
+                      <img
+                        src={img.url}
+                        alt="Customer Reference"
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform cursor-pointer"
+                        onClick={() =>
+                          setLightboxImage({
+                            url: img.url,
+                            label: img.label,
+                            date: img.date,
+                            estNo: img.estNo,
+                          })
+                        }
+                      />
+                      <div className="relative z-10 p-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent text-white">
+                        <span className="text-[10px] font-bold block truncate">
+                          {img.label || 'Reference Model'}
+                        </span>
+                        <span
+                          className="text-[9px] text-amber-300 hover:underline cursor-pointer block truncate"
+                          onClick={() => navigate(`/estimations/${img.estId}`)}
+                        >
+                          {img.estNo}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Tab 4: Custom Orders */}
+        {activeTab === 'orders' && (
+          <div className="space-y-3">
+            {customerCustomOrders.length === 0 ? (
+              <div className="p-12 text-center text-slate-400">
+                <Hammer className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                <p className="text-xs font-medium">No custom workshop orders for this customer yet.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-charcoal-800 text-slate-500 font-bold uppercase text-[10px]">
+                    <tr>
+                      <th className="p-2.5">Order No</th>
+                      <th className="p-2.5">Date</th>
+                      <th className="p-2.5">Est Ref</th>
+                      <th className="p-2.5 text-right">Est. Total</th>
+                      <th className="p-2.5 text-right">Advance Paid</th>
+                      <th className="p-2.5 text-right">Balance</th>
+                      <th className="p-2.5">Status</th>
+                      <th className="p-2.5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-charcoal-800">
+                    {customerCustomOrders.map((ord) => (
+                      <tr key={ord.id} className="hover:bg-amber-50/20">
+                        <td className="p-2.5 font-bold text-charcoal-900 dark:text-slate-100">
+                          {ord.order_number}
+                        </td>
+                        <td className="p-2.5">{formatDate(ord.order_date)}</td>
+                        <td className="p-2.5 text-amber-600">{ord.estimation_number}</td>
+                        <td className="p-2.5 text-right font-medium">
+                          {formatCurrency(ord.estimated_total)}
+                        </td>
+                        <td className="p-2.5 text-right text-emerald-600 font-medium">
+                          {formatCurrency(ord.advance_paid)}
+                        </td>
+                        <td className="p-2.5 text-right text-amber-700 font-bold">
+                          {formatCurrency(ord.balance_due)}
+                        </td>
+                        <td className="p-2.5 uppercase text-[10px] font-semibold">{ord.status}</td>
+                        <td className="p-2.5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/custom-orders/${ord.id}`)}
+                            className="text-amber-600 hover:underline font-bold text-xs"
+                          >
+                            View Order
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Lightbox Modal for Design Zoom */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div
+            className="relative max-w-2xl max-h-[85vh] w-full flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setLightboxImage(null)}
+              className="absolute -top-10 right-0 p-1.5 rounded-full bg-white/20 hover:bg-white/40 text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img
+              src={lightboxImage.url}
+              alt="Design Preview"
+              className="max-h-[75vh] w-auto object-contain rounded-xl shadow-2xl"
+            />
+            <div className="mt-3 text-center text-white">
+              <p className="font-bold text-sm text-amber-400">{lightboxImage.label || 'Reference Design'}</p>
+              <p className="text-xs text-slate-300">
+                Quotation: {lightboxImage.estNo} | Date: {formatDate(lightboxImage.date || '')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Agreed Customer Touch Modal */}
       {isEditingTouch && (

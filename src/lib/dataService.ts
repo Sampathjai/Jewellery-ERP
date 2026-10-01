@@ -28,6 +28,13 @@ import {
   WhatsAppMessage,
   UserPasskey,
   TrustedDevice,
+  Estimation,
+  EstimationItem,
+  EstimationReferenceImage,
+  EstimationStatus,
+  EstimationType,
+  CustomOrder,
+  CustomOrderStatus,
 } from '@/types';
 
 // ============================================================================
@@ -2234,27 +2241,7 @@ export const dataService = {
     } catch (e) {
       console.warn('Could not revoke device by credentialId:', e);
     }
-
-    // Local cache update
-    if (typeof localStorage !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('shankar_erp_trusted_devices_cache');
-        if (stored) {
-          const list: TrustedDevice[] = JSON.parse(stored);
-          const item = list.find((d) => d.credential_id === credentialId);
-          if (item) item.status = 'revoked';
-          localStorage.setItem('shankar_erp_trusted_devices_cache', JSON.stringify(list));
-        }
-        const vaultStr = localStorage.getItem('shankar_erp_device_vault');
-        if (vaultStr) {
-          const v = JSON.parse(vaultStr);
-          if (v && v.credentialId === credentialId) {
-            localStorage.removeItem('shankar_erp_device_vault');
-          }
-        }
-      } catch {}
-    }
-    return true;
+    return false;
   },
 
   async revokeAllTrustedDevices(userId: string): Promise<boolean> {
@@ -2264,42 +2251,22 @@ export const dataService = {
       if (!rpcErr && rpcRes?.success) {
         await this.logAuditAction('ALL_DEVICES_REVOKED', 'auth', userId, {});
         syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { user_id: userId, status: 'revoked' });
-      } else {
-        await db
-          .from('trusted_devices')
-          .update({ status: 'revoked', revoked_at: new Date().toISOString() })
-          .eq('user_id', userId)
-          .eq('status', 'active');
-
-        await this.logAuditAction('ALL_DEVICES_REVOKED', 'auth', userId, {});
-        syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { user_id: userId, status: 'revoked' });
+        return true;
       }
+
+      await db
+        .from('trusted_devices')
+        .update({ status: 'revoked', revoked_at: new Date().toISOString() })
+        .eq('user_id', userId)
+        .eq('status', 'active');
+
+      await this.logAuditAction('ALL_DEVICES_REVOKED', 'auth', userId, {});
+      syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { user_id: userId, status: 'revoked' });
+      return true;
     } catch (e) {
       console.warn('Failed to revoke all devices in Supabase:', e);
+      return false;
     }
-
-    // Local cache update
-    if (typeof localStorage !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('shankar_erp_trusted_devices_cache');
-        if (stored) {
-          const list: TrustedDevice[] = JSON.parse(stored);
-          list.forEach((d) => {
-            if (d.user_id === userId) d.status = 'revoked';
-          });
-          localStorage.setItem('shankar_erp_trusted_devices_cache', JSON.stringify(list));
-        }
-        const vaultStr = localStorage.getItem('shankar_erp_device_vault');
-        if (vaultStr) {
-          const v = JSON.parse(vaultStr);
-          if (v && v.userId === userId) {
-            localStorage.removeItem('shankar_erp_device_vault');
-          }
-        }
-      } catch {}
-    }
-
-    return true;
   },
 
   async verifyDeviceCredential(
@@ -2309,122 +2276,68 @@ export const dataService = {
     try {
       const db = checkSupabaseClient();
 
-      // 1. Try secure RPC verification first if function exists in Supabase
-      try {
-        const { data: rpcData, error: rpcErr } = await db.rpc('verify_device_unlock_and_authenticate', {
-          p_credential_id: credentialId,
-          p_device_token_hash: deviceTokenHash,
-        });
+      // 1. Try secure RPC verification first
+      const { data: rpcData, error: rpcErr } = await db.rpc('verify_device_unlock_and_authenticate', {
+        p_credential_id: credentialId,
+        p_device_token_hash: deviceTokenHash,
+      });
 
-        if (!rpcErr && rpcData) {
-          if (!rpcData.success) {
-            return { success: false, message: rpcData.message || 'Device authentication failed.' };
-          }
-          return {
-            success: true,
-            userProfile: rpcData.user_profile as UserProfile,
-          };
+      if (!rpcErr && rpcData) {
+        if (!rpcData.success) {
+          return { success: false, message: rpcData.message || 'Device authentication failed.' };
         }
-      } catch {
-        // RPC not loaded in Supabase schema cache
+        return {
+          success: true,
+          userProfile: rpcData.user_profile as UserProfile,
+        };
       }
 
-      // 2. Check remote database for explicit revocation if table exists
-      let remoteRevoked = false;
-      let remoteDisabledOrDeleted = false;
-      try {
-        const { data: device, error: devErr } = await db
-          .from('trusted_devices')
-          .select('*')
-          .eq('credential_id', credentialId)
-          .maybeSingle();
+      // 2. Direct fallback query if RPC is not yet loaded in Supabase
+      const { data: device, error: devErr } = await db
+        .from('trusted_devices')
+        .select('*')
+        .eq('credential_id', credentialId)
+        .eq('status', 'active')
+        .is('revoked_at', null)
+        .maybeSingle();
 
-        if (!devErr && device) {
-          if (device.status === 'revoked' || device.revoked_at) {
-            remoteRevoked = true;
-          } else {
-            // Check if user is disabled or deleted in Supabase
-            const { data: profile } = await db
-              .from('profiles')
-              .select('*')
-              .eq('id', device.user_id)
-              .maybeSingle();
-
-            if (profile) {
-              if (profile.deleted_at || profile.status === 'deleted') {
-                remoteDisabledOrDeleted = true;
-              } else if (profile.is_active === false || profile.status === 'disabled') {
-                return { success: false, message: 'User account is disabled. Please contact your administrator.' };
-              } else {
-                // Update last_used_at asynchronously
-                try {
-                  await db.from('trusted_devices')
-                    .update({ last_used_at: new Date().toISOString() })
-                    .eq('id', device.id);
-                } catch {}
-
-                return {
-                  success: true,
-                  userProfile: profile as UserProfile,
-                };
-              }
-            }
-          }
-        }
-      } catch {
-        // Table not present yet in remote schema
+      if (devErr || !device) {
+        return { success: false, message: 'Device credential is invalid or has been revoked.' };
       }
 
-      if (remoteRevoked) {
-        return { success: false, message: 'This device credential has been revoked by an administrator.' };
+      // Verify token hash
+      if (device.device_token_hash && device.device_token_hash !== deviceTokenHash) {
+        return { success: false, message: 'Device token mismatch. Authentication rejected.' };
       }
-      if (remoteDisabledOrDeleted) {
+
+      // Authoritative check on profile
+      const { data: profile, error: profErr } = await db
+        .from('profiles')
+        .select('*')
+        .eq('id', device.user_id)
+        .maybeSingle();
+
+      if (profErr || !profile || profile.deleted_at || profile.status === 'deleted') {
         return { success: false, message: 'User account has been removed or deleted.' };
       }
 
-      // 3. Authoritative Local Cryptographic Device Vault & Cache Verification
-      if (typeof localStorage !== 'undefined') {
-        // Check if device was revoked in local cache
-        const storedDevices = localStorage.getItem('shankar_erp_trusted_devices_cache');
-        if (storedDevices) {
-          try {
-            const list: TrustedDevice[] = JSON.parse(storedDevices);
-            const found = list.find((d) => d.credential_id === credentialId);
-            if (found && (found.status === 'revoked' || (found as any).revoked_at)) {
-              return { success: false, message: 'This device credential has been revoked.' };
-            }
-          } catch {}
-        }
-
-        // Check local device vault
-        const storedVault = localStorage.getItem('shankar_erp_device_vault');
-        if (storedVault) {
-          try {
-            const vault = JSON.parse(storedVault);
-            if (vault && vault.credentialId === credentialId) {
-              // Construct verified profile from the securely stored vault
-              const verifiedProfile: UserProfile = {
-                id: vault.userId,
-                user_id: vault.userId,
-                full_name: vault.userFullName || vault.userEmail?.split('@')[0] || 'Staff User',
-                email: vault.userEmail || '',
-                phone: '',
-                role: (vault.userRole || 'admin') as UserRole,
-                branch: 'Trichy - Sandhukadai',
-                is_active: true,
-                last_login_at: new Date().toISOString(),
-              };
-
-              return {
-                success: true,
-                userProfile: verifiedProfile,
-              };
-            }
-          } catch {}
-        }
+      if (profile.is_active === false || profile.status === 'disabled') {
+        return { success: false, message: 'User account is disabled. Please contact your administrator.' };
       }
 
-      return { success: false, message: 'Device credential is invalid or has been revoked.' };
+      // Touch last_used_at
+      try {
+        await db.from('trusted_devices')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('id', device.id);
+      } catch (err) {
+        console.warn('Could not update last_used_at:', err);
+      }
+
+      return {
+        success: true,
+        userProfile: profile as UserProfile,
+      };
     } catch (e: any) {
       console.error('Failed to verify device credential:', e);
       return { success: false, message: e?.message || 'Server error verifying device credential.' };
@@ -3287,4 +3200,851 @@ export const dataService = {
 
     return { restoredCounts: counts };
   },
+
+  // --------------------------------------------------------------------------
+  // CUSTOM / REFERENCE JEWELLERY ESTIMATION & ORDER MODULE
+  // --------------------------------------------------------------------------
+
+  async generateEstimationNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `EST-${year}-`;
+    try {
+      const db = checkSupabaseClient();
+      const { data } = await db
+        .from('estimations')
+        .select('estimation_number')
+        .ilike('estimation_number', `${prefix}%`)
+        .order('estimation_number', { ascending: false })
+        .limit(1);
+
+      if (data && data.length > 0) {
+        const lastNumStr = data[0].estimation_number.replace(prefix, '').split('-')[0];
+        const lastNum = parseInt(lastNumStr, 10);
+        if (!isNaN(lastNum)) {
+          return `${prefix}${String(lastNum + 1).padStart(4, '0')}`;
+        }
+      }
+    } catch {
+      // Fallback to local store
+    }
+
+    const localDb = getLocalDb();
+    const existing = (localDb.estimations || []).filter((e) => e.estimation_number?.startsWith(prefix));
+    const nextNum = existing.length + 1;
+    return `${prefix}${String(nextNum).padStart(4, '0')}`;
+  },
+
+  async generateCustomOrderNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `ORD-${year}-`;
+    try {
+      const db = checkSupabaseClient();
+      const { data } = await db
+        .from('custom_orders')
+        .select('order_number')
+        .ilike('order_number', `${prefix}%`)
+        .order('order_number', { ascending: false })
+        .limit(1);
+
+      if (data && data.length > 0) {
+        const lastNumStr = data[0].order_number.replace(prefix, '').split('-')[0];
+        const lastNum = parseInt(lastNumStr, 10);
+        if (!isNaN(lastNum)) {
+          return `${prefix}${String(lastNum + 1).padStart(4, '0')}`;
+        }
+      }
+    } catch {
+      // Fallback
+    }
+
+    const localDb = getLocalDb();
+    const existing = (localDb.customOrders || []).filter((o) => o.order_number?.startsWith(prefix));
+    const nextNum = existing.length + 1;
+    return `${prefix}${String(nextNum).padStart(4, '0')}`;
+  },
+
+  async uploadEstimationReferenceImage(
+    file: File | Blob,
+    metadata?: { fileName?: string; label?: string; notes?: string } | string
+  ): Promise<EstimationReferenceImage> {
+    const db = checkSupabaseClient();
+    const id = ensureValidUUID();
+    const timestamp = Date.now();
+    const metaObj = typeof metadata === 'string' ? { label: metadata } : (metadata || {});
+    const baseName = metaObj.fileName || (file instanceof File ? file.name : `reference_${timestamp}.jpg`);
+    const cleanName = baseName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `reference-designs/${timestamp}_${cleanName}`;
+    const fileType = file.type || 'image/jpeg';
+    const fileSize = file.size || 0;
+
+    let imageUrl = '';
+
+    // 1. Try uploading to Supabase Storage bucket
+    try {
+      const { data: uploadData, error: uploadErr } = await db.storage
+        .from('estimation-designs')
+        .upload(storagePath, file, {
+          contentType: fileType,
+          upsert: true,
+        });
+
+      if (!uploadErr && uploadData?.path) {
+        const { data: publicUrlData } = db.storage
+          .from('estimation-designs')
+          .getPublicUrl(uploadData.path);
+
+        imageUrl = publicUrlData?.publicUrl || '';
+      }
+    } catch (e) {
+      console.warn('Supabase storage upload notice, falling back to secure Data URL:', e);
+    }
+
+    // 2. Resilient fallback: Convert to Data URL for instant preview, offline & zero-setup operation
+    if (!imageUrl) {
+      imageUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    const refImage: EstimationReferenceImage = {
+      id,
+      image_url: imageUrl,
+      storage_path: storagePath,
+      file_name: baseName,
+      file_type: fileType,
+      file_size: fileSize,
+      label: metaObj.label || 'Front View',
+      notes: metaObj.notes,
+      uploaded_at: new Date().toISOString(),
+    };
+
+    this.logAuditAction('REFERENCE_IMAGE_UPLOADED', 'estimation', id, {
+      file_name: refImage.file_name,
+      file_size: refImage.file_size,
+      label: refImage.label,
+    }).catch(() => {});
+
+    return refImage;
+  },
+
+  async getEstimations(options?: {
+    customerId?: string;
+    status?: EstimationStatus;
+    search?: string;
+  }): Promise<Estimation[]> {
+    const localDb = getLocalDb();
+    let estimations: Estimation[] = [];
+
+    try {
+      const db = checkSupabaseClient();
+      let query = db.from('estimations').select('*').order('created_at', { ascending: false });
+
+      if (options?.customerId) {
+        query = query.eq('customer_id', options.customerId);
+      }
+      if (options?.status) {
+        query = query.eq('status', options.status);
+      }
+
+      const { data, error } = await query;
+      if (!error && data) {
+        estimations = data as Estimation[];
+      } else {
+        estimations = localDb.estimations || [];
+      }
+    } catch {
+      estimations = localDb.estimations || [];
+    }
+
+    if (options?.customerId) {
+      estimations = estimations.filter((e) => e.customer_id === options.customerId);
+    }
+    if (options?.status) {
+      estimations = estimations.filter((e) => e.status === options.status);
+    }
+
+    if (options?.search) {
+      const q = options.search.toLowerCase().trim();
+      estimations = estimations.filter((e) => {
+        const estNumMatch = e.estimation_number?.toLowerCase().includes(q);
+        const custNameMatch = e.customer_name?.toLowerCase().includes(q);
+        const phoneMatch = e.customer_phone?.includes(q);
+        const itemMatch = e.items?.some(
+          (i) => i.item_name?.toLowerCase().includes(q) || i.jewellery_type?.toLowerCase().includes(q)
+        );
+        return estNumMatch || custNameMatch || phoneMatch || itemMatch;
+      });
+    }
+
+    return estimations;
+  },
+
+  async getEstimationById(id: string): Promise<Estimation | null> {
+    const validId = ensureValidUUID(id);
+    const localDb = getLocalDb();
+
+    try {
+      const db = checkSupabaseClient();
+      const { data, error } = await db
+        .from('estimations')
+        .select('*')
+        .or(`id.eq.${validId},estimation_number.eq.${id}`)
+        .maybeSingle();
+
+      if (!error && data) {
+        return data as Estimation;
+      }
+    } catch {
+      // Fallback
+    }
+
+    return (
+      (localDb.estimations || []).find((e) => e.id === validId || e.estimation_number === id) || null
+    );
+  },
+
+  async getEstimationRevisions(rootOrParentId: string): Promise<Estimation[]> {
+    const validId = ensureValidUUID(rootOrParentId);
+    const all = await this.getEstimations();
+    return all.filter(
+      (e) =>
+        e.id === validId ||
+        e.parent_estimation_id === validId ||
+        e.root_estimation_id === validId
+    ).sort((a, b) => (a.version || 1) - (b.version || 1));
+  },
+
+  async saveEstimation(estimationData: Partial<Estimation>): Promise<Estimation> {
+    const db = checkSupabaseClient();
+    const validId = ensureValidUUID(estimationData.id);
+    const isNew = !estimationData.id || !estimationData.created_at;
+    const now = new Date().toISOString();
+
+    const estimationNumber =
+      estimationData.estimation_number || (await this.generateEstimationNumber());
+
+    // Fetch active metal rates for rate snapshot if not provided
+    let gold22kRate = estimationData.gold_22k_rate || 0;
+    let gold24kRate = estimationData.gold_24k_rate || 0;
+    let silverRate = estimationData.silver_rate || 0;
+
+    if (!gold22kRate || !silverRate) {
+      const rates = await this.getMetalRates();
+      if (rates && rates.length > 0) {
+        gold24kRate = gold24kRate || rates[0].gold_24k_per_gram;
+        gold22kRate = gold22kRate || rates[0].gold_22k_per_gram;
+        silverRate = silverRate || rates[0].silver_per_gram;
+      }
+    }
+
+    // Process & calculate items
+    const rawItems = estimationData.items || [];
+    let subtotalMetal = 0;
+    let totalMaking = 0;
+    let totalWastage = 0;
+    let totalStones = 0;
+    let totalOther = 0;
+    let totalDiscount = 0;
+
+    const computedItems: EstimationItem[] = rawItems.map((item) => {
+      const itemId = ensureValidUUID(item.id);
+      const gross = Number(item.estimated_gross_weight_g || 0);
+      const stoneWeight = Number(item.estimated_stone_weight_g || 0);
+      const netWeight = Math.max(0, Number(item.estimated_net_weight_g ?? (gross - stoneWeight)));
+
+      const metalType = item.metal_type || 'gold';
+      const applicableRate =
+        Number(item.metal_rate_per_gram || 0) > 0
+          ? Number(item.metal_rate_per_gram)
+          : metalType === 'silver'
+          ? silverRate
+          : gold22kRate;
+
+      const metalVal = Math.round(netWeight * applicableRate);
+
+      let makingAmt = 0;
+      const makingRate = Number(item.making_charge_rate || 0);
+      if (item.making_charge_type === 'percentage') {
+        makingAmt = Math.round(metalVal * (makingRate / 100));
+      } else if (item.making_charge_type === 'flat') {
+        makingAmt = Math.round(makingRate);
+      } else {
+        makingAmt = Math.round(netWeight * makingRate);
+      }
+
+      const wastagePct = Number(item.wastage_percent || 0);
+      const wastageWt = Number(((netWeight * wastagePct) / 100).toFixed(3));
+      const wastageVal = Math.round(wastageWt * applicableRate);
+
+      const stoneAmt = Number(item.stone_charge || 0);
+      const otherAmt = Number(item.other_charge || 0);
+      const discAmt = Number(item.discount || 0);
+
+      const lineTot = Math.max(0, metalVal + makingAmt + wastageVal + stoneAmt + otherAmt - discAmt);
+
+      subtotalMetal += metalVal;
+      totalMaking += makingAmt;
+      totalWastage += wastageVal;
+      totalStones += stoneAmt;
+      totalOther += otherAmt;
+      totalDiscount += discAmt;
+
+      return {
+        id: itemId,
+        estimation_id: validId,
+        item_type: item.item_type || estimationData.estimation_type || 'reference_design',
+        product_id: item.product_id ? ensureValidUUID(item.product_id) : null, // Nullable!
+        item_name: item.item_name || 'Custom Jewellery',
+        jewellery_type: item.jewellery_type || 'Other',
+        metal_type: metalType,
+        purity: item.purity || '22k',
+        quantity: Math.max(1, Number(item.quantity || 1)),
+        estimated_gross_weight_g: gross,
+        estimated_stone_weight_g: stoneWeight,
+        estimated_net_weight_g: netWeight,
+        metal_rate_per_gram: applicableRate,
+        metal_value: metalVal,
+        making_charge_type: item.making_charge_type || 'per_gram',
+        making_charge_rate: makingRate,
+        making_charge_amount: makingAmt,
+        wastage_percent: wastagePct,
+        wastage_weight_g: wastageWt,
+        wastage_value: wastageVal,
+        stone_charge: stoneAmt,
+        other_charge: otherAmt,
+        discount: discAmt,
+        line_total: lineTot,
+        design_description: item.design_description,
+        customer_requirements: item.customer_requirements,
+        reference_images: item.reference_images || [],
+      };
+    });
+
+    const overallDiscount = Number(estimationData.discount_amount ?? totalDiscount);
+    const taxableAmount = Math.max(0, subtotalMetal + totalMaking + totalWastage + totalStones + totalOther - overallDiscount);
+    const taxPercent = Number(estimationData.tax_percent ?? 3.0);
+    const taxAmount = Math.round(taxableAmount * (taxPercent / 100));
+    const rawTotal = taxableAmount + taxAmount;
+    const roundedTotal = Math.round(rawTotal);
+    const roundOff = Number((roundedTotal - rawTotal).toFixed(2));
+
+    const record: Estimation = {
+      id: validId,
+      estimation_number: estimationNumber,
+      version: Number(estimationData.version || 1),
+      parent_estimation_id: estimationData.parent_estimation_id
+        ? ensureValidUUID(estimationData.parent_estimation_id)
+        : null,
+      root_estimation_id: estimationData.root_estimation_id
+        ? ensureValidUUID(estimationData.root_estimation_id)
+        : null,
+      estimation_type: estimationData.estimation_type || 'reference_design',
+      customer_id: estimationData.customer_id ? ensureValidUUID(estimationData.customer_id) : undefined,
+      customer_name: (estimationData.customer_name || '').trim() || 'Valued Customer',
+      customer_phone: estimationData.customer_phone || '',
+      customer_email: estimationData.customer_email || '',
+      customer_address: estimationData.customer_address || '',
+      estimation_date: estimationData.estimation_date || now.split('T')[0],
+      valid_until:
+        estimationData.valid_until ||
+        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      rate_snapshot_date: estimationData.rate_snapshot_date || now.split('T')[0],
+      gold_22k_rate: gold22kRate,
+      gold_24k_rate: gold24kRate,
+      silver_rate: silverRate,
+      subtotal_metal_value: subtotalMetal,
+      total_making_charges: totalMaking,
+      total_wastage_value: totalWastage,
+      total_stone_charges: totalStones,
+      total_other_charges: totalOther,
+      discount_amount: overallDiscount,
+      tax_percent: taxPercent,
+      tax_amount: taxAmount,
+      round_off: roundOff,
+      total_estimated_amount: roundedTotal,
+      status: estimationData.status || 'draft',
+      items: computedItems,
+      reference_images: estimationData.reference_images || [],
+      general_notes: estimationData.general_notes || '',
+      customer_requirements: estimationData.customer_requirements || '',
+      converted_order_id: estimationData.converted_order_id || null,
+      created_by: estimationData.created_by,
+      created_at: estimationData.created_at || now,
+      updated_at: now,
+    };
+
+    // 1. Try Supabase upsert
+    try {
+      const { error } = await db.from('estimations').upsert(record);
+      if (error) {
+        console.warn('Supabase estimation upsert notice:', error.message);
+      }
+    } catch (e) {
+      console.warn('Supabase estimation upsert exception:', e);
+    }
+
+    // 2. Update local database cache
+    const localDb = getLocalDb();
+    const existingIndex = (localDb.estimations || []).findIndex((e) => e.id === record.id);
+    if (existingIndex >= 0) {
+      localDb.estimations[existingIndex] = record;
+    } else {
+      localDb.estimations = [record, ...(localDb.estimations || [])];
+    }
+    saveLocalDb(localDb);
+
+    syncEngine.notifyDataChange('estimations', isNew ? 'INSERT' : 'UPDATE', record);
+
+    this.logAuditAction(
+      isNew ? 'CUSTOM_ESTIMATION_CREATED' : 'CUSTOM_ESTIMATION_UPDATED',
+      'estimation',
+      record.id,
+      {
+        estimation_number: record.estimation_number,
+        customer_name: record.customer_name,
+        type: record.estimation_type,
+        amount: record.total_estimated_amount,
+        items_count: record.items.length,
+      }
+    ).catch(() => {});
+
+    return record;
+  },
+
+  async createEstimationRevision(
+    parentEstimationId: string,
+    revisionNotesOrOverrides?: string | Partial<Estimation>,
+    maybeOverrides?: Partial<Estimation>
+  ): Promise<Estimation> {
+    const parent = await this.getEstimationById(parentEstimationId);
+    if (!parent) {
+      throw new Error('Parent estimation not found for creating revision.');
+    }
+
+    const revisionNotes = typeof revisionNotesOrOverrides === 'string' ? revisionNotesOrOverrides : undefined;
+    const overrides = typeof revisionNotesOrOverrides === 'object' ? revisionNotesOrOverrides : maybeOverrides;
+
+    const nextVersion = (parent.version || 1) + 1;
+    const baseNumber = parent.estimation_number.split('-V')[0];
+    const newEstNumber = `${baseNumber}-V${nextVersion}`;
+    const newId = ensureValidUUID();
+
+    // Mark parent status as revision_requested
+    await this.updateEstimationStatus(parent.id, 'revision_requested');
+
+    // Fetch current rates for snapshot
+    const rates = await this.getMetalRates();
+    const current22k = rates?.[0]?.gold_22k_per_gram || parent.gold_22k_rate;
+    const current24k = rates?.[0]?.gold_24k_per_gram || parent.gold_24k_rate;
+    const currentSilver = rates?.[0]?.silver_per_gram || parent.silver_rate;
+
+    const revisionPayload: Partial<Estimation> = {
+      ...parent,
+      ...(overrides || {}),
+      id: newId,
+      estimation_number: newEstNumber,
+      version: nextVersion,
+      parent_estimation_id: parent.id,
+      root_estimation_id: parent.root_estimation_id || parent.id,
+      status: overrides?.status || 'draft',
+      estimation_date: overrides?.estimation_date || new Date().toISOString().split('T')[0],
+      rate_snapshot_date: overrides?.rate_snapshot_date || new Date().toISOString().split('T')[0],
+      gold_22k_rate: overrides?.gold_22k_rate || current22k,
+      gold_24k_rate: overrides?.gold_24k_rate || current24k,
+      silver_rate: overrides?.silver_rate || currentSilver,
+      general_notes: revisionNotes
+        ? `Revision Notes: ${revisionNotes}\n\n${parent.general_notes || ''}`
+        : (overrides?.general_notes || parent.general_notes),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const createdRevision = await this.saveEstimation(revisionPayload);
+
+    this.logAuditAction('CUSTOM_ESTIMATION_REVISION_CREATED', 'estimation', createdRevision.id, {
+      parent_estimation_id: parent.id,
+      parent_number: parent.estimation_number,
+      new_number: createdRevision.estimation_number,
+      version: nextVersion,
+    }).catch(() => {});
+
+    return createdRevision;
+  },
+
+  async updateEstimationStatus(id: string, status: EstimationStatus): Promise<boolean> {
+    const validId = ensureValidUUID(id);
+    const now = new Date().toISOString();
+
+    try {
+      const db = checkSupabaseClient();
+      await db.from('estimations').update({ status, updated_at: now }).eq('id', validId);
+    } catch {}
+
+    const localDb = getLocalDb();
+    const item = (localDb.estimations || []).find((e) => e.id === validId);
+    if (item) {
+      item.status = status;
+      item.updated_at = now;
+      saveLocalDb(localDb);
+    }
+
+    syncEngine.notifyDataChange('estimations', 'UPDATE', { id: validId, status });
+
+    if (status === 'approved') {
+      this.logAuditAction('CUSTOM_ESTIMATION_APPROVED', 'estimation', validId, { status }).catch(() => {});
+    }
+
+    return true;
+  },
+
+  async deleteEstimation(id: string): Promise<boolean> {
+    const validId = ensureValidUUID(id);
+
+    try {
+      const db = checkSupabaseClient();
+      await db.from('estimations').delete().eq('id', validId);
+    } catch {}
+
+    const localDb = getLocalDb();
+    localDb.estimations = (localDb.estimations || []).filter((e) => e.id !== validId);
+    saveLocalDb(localDb);
+
+    syncEngine.notifyDataChange('estimations', 'DELETE', { id: validId });
+    return true;
+  },
+
+  async convertEstimationToCustomOrder(
+    estimationId: string,
+    advancePaidOrDetails?: number | { expectedDeliveryDate?: string; advancePaid?: number; notes?: string },
+    expectedDeliveryDate?: string,
+    notes?: string
+  ): Promise<CustomOrder> {
+    const estimation = await this.getEstimationById(estimationId);
+    if (!estimation) {
+      throw new Error('Estimation not found for order conversion.');
+    }
+
+    const orderId = ensureValidUUID();
+    const orderNumber = await this.generateCustomOrderNumber();
+    const now = new Date().toISOString();
+
+    let advance = 0;
+    let deliveryDate: string | undefined;
+    let orderNotes: string | undefined;
+
+    if (typeof advancePaidOrDetails === 'object' && advancePaidOrDetails !== null) {
+      advance = advancePaidOrDetails.advancePaid || 0;
+      deliveryDate = advancePaidOrDetails.expectedDeliveryDate;
+      orderNotes = advancePaidOrDetails.notes;
+    } else {
+      advance = Number(advancePaidOrDetails || 0);
+      deliveryDate = expectedDeliveryDate;
+      orderNotes = notes;
+    }
+
+    const balance = Math.max(0, estimation.total_estimated_amount - advance);
+
+    const customOrder: CustomOrder = {
+      id: orderId,
+      order_number: orderNumber,
+      estimation_id: estimation.id,
+      estimation_number: estimation.estimation_number,
+      customer_id: estimation.customer_id,
+      customer_name: estimation.customer_name,
+      customer_phone: estimation.customer_phone,
+      order_date: now.split('T')[0],
+      expected_delivery_date: deliveryDate,
+      status: 'design_confirmed',
+      items: estimation.items || [],
+      reference_images: estimation.reference_images || [],
+      estimated_total: estimation.total_estimated_amount,
+      advance_paid: advance,
+      balance_due: balance,
+      converted_invoice_id: null,
+      notes: orderNotes || estimation.general_notes,
+      created_at: now,
+      updated_at: now,
+    };
+
+    // 1. Save custom order to Supabase
+    try {
+      const db = checkSupabaseClient();
+      await db.from('custom_orders').upsert(customOrder);
+    } catch (e) {
+      console.warn('Supabase custom order upsert notice:', e);
+    }
+
+    // 2. Update local DB
+    const localDb = getLocalDb();
+    localDb.customOrders = [customOrder, ...(localDb.customOrders || [])];
+    saveLocalDb(localDb);
+
+    // 3. Mark estimation as converted
+    await this.updateEstimationStatus(estimation.id, 'converted_to_order');
+
+    syncEngine.notifyDataChange('custom_orders', 'INSERT', customOrder);
+
+    this.logAuditAction('CUSTOM_ESTIMATION_CONVERTED', 'custom_order', orderId, {
+      order_number: customOrder.order_number,
+      estimation_number: estimation.estimation_number,
+      customer_name: customOrder.customer_name,
+      estimated_total: customOrder.estimated_total,
+      advance_paid: customOrder.advance_paid,
+    }).catch(() => {});
+
+    return customOrder;
+  },
+
+  async getCustomOrders(options?: {
+    customerId?: string;
+    status?: CustomOrderStatus;
+  }): Promise<CustomOrder[]> {
+    const localDb = getLocalDb();
+    let orders: CustomOrder[] = [];
+
+    try {
+      const db = checkSupabaseClient();
+      let query = db.from('custom_orders').select('*').order('created_at', { ascending: false });
+
+      if (options?.customerId) query = query.eq('customer_id', options.customerId);
+      if (options?.status) query = query.eq('status', options.status);
+
+      const { data, error } = await query;
+      if (!error && data) {
+        orders = data as CustomOrder[];
+      } else {
+        orders = localDb.customOrders || [];
+      }
+    } catch {
+      orders = localDb.customOrders || [];
+    }
+
+    if (options?.customerId) {
+      orders = orders.filter((o) => o.customer_id === options.customerId);
+    }
+    if (options?.status) {
+      orders = orders.filter((o) => o.status === options.status);
+    }
+
+    return orders;
+  },
+
+  async getCustomOrderById(id: string): Promise<CustomOrder | null> {
+    const validId = ensureValidUUID(id);
+    const localDb = getLocalDb();
+
+    try {
+      const db = checkSupabaseClient();
+      const { data, error } = await db
+        .from('custom_orders')
+        .select('*')
+        .or(`id.eq.${validId},order_number.eq.${id}`)
+        .maybeSingle();
+
+      if (!error && data) {
+        return data as CustomOrder;
+      }
+    } catch {}
+
+    return (
+      (localDb.customOrders || []).find((o) => o.id === validId || o.order_number === id) || null
+    );
+  },
+
+  async updateCustomOrderStatus(id: string, status: CustomOrderStatus): Promise<boolean> {
+    const validId = ensureValidUUID(id);
+    const now = new Date().toISOString();
+
+    try {
+      const db = checkSupabaseClient();
+      await db.from('custom_orders').update({ status, updated_at: now }).eq('id', validId);
+    } catch {}
+
+    const localDb = getLocalDb();
+    const item = (localDb.customOrders || []).find((o) => o.id === validId);
+    if (item) {
+      item.status = status;
+      item.updated_at = now;
+      saveLocalDb(localDb);
+    }
+
+    syncEngine.notifyDataChange('custom_orders', 'UPDATE', { id: validId, status });
+    return true;
+  },
+
+  async convertCustomOrderToInvoice(
+    orderId: string,
+    actualValues: {
+      actualGrossWeight?: number;
+      actual_gross_weight_g?: number;
+      actualStoneWeight?: number;
+      actual_stone_weight_g?: number;
+      actualNetWeight?: number;
+      actual_net_weight_g?: number;
+      actualMetalRate?: number;
+      actual_metal_rate?: number;
+      actualMakingCharges?: number;
+      actual_making_charges?: number;
+      actualWastageValue?: number;
+      actual_wastage_value?: number;
+      actualStoneCharges?: number;
+      actual_stone_charges?: number;
+      actualOtherCharges?: number;
+      actual_other_charges?: number;
+      final_invoice_amount?: number;
+      paymentMode?: any;
+      paymentReference?: string;
+      notes?: string;
+    },
+    paymentModeArg?: any,
+    paymentRefArg?: string
+  ): Promise<{ invoice: RetailInvoice; order: CustomOrder }> {
+    const order = await this.getCustomOrderById(orderId);
+    if (!order) {
+      throw new Error('Custom order not found for invoice generation.');
+    }
+
+    // 1. Calculate actual bill values (supports both camelCase and snake_case)
+    const actualGross = Number(actualValues.actualGrossWeight ?? actualValues.actual_gross_weight_g ?? 0);
+    const actualStone = Number(actualValues.actualStoneWeight ?? actualValues.actual_stone_weight_g ?? 0);
+    const actualNet = Number(actualValues.actualNetWeight ?? actualValues.actual_net_weight_g ?? Math.max(0, actualGross - actualStone));
+    const actualRate = Number(actualValues.actualMetalRate ?? actualValues.actual_metal_rate ?? 0);
+    const actualMetalVal = Math.round(actualNet * actualRate);
+    const actualMaking = Math.round(Number(actualValues.actualMakingCharges ?? actualValues.actual_making_charges ?? 0));
+    const actualWastage = Math.round(Number(actualValues.actualWastageValue ?? actualValues.actual_wastage_value ?? 0));
+    const actualStones = Math.round(Number(actualValues.actualStoneCharges ?? actualValues.actual_stone_charges ?? 0));
+    const actualOther = Math.round(Number(actualValues.actualOtherCharges ?? actualValues.actual_other_charges ?? 0));
+
+    const subtotal = actualMetalVal + actualMaking + actualWastage + actualStones + actualOther;
+    const taxPercent = 3.0;
+    const taxAmt = Math.round(subtotal * (taxPercent / 100));
+    const finalTotal = actualValues.final_invoice_amount ?? Math.round(subtotal + taxAmt);
+
+    // 2. Generate actual RetailInvoice
+    const invoiceNumber = await this.generateUniqueInvoiceNumber();
+    const invoiceId = ensureValidUUID();
+    const now = new Date().toISOString();
+
+    const invoicePayload: Partial<RetailInvoice> = {
+      id: invoiceId,
+      invoice_number: invoiceNumber,
+      customer_id: order.customer_id,
+      customer_name: order.customer_name,
+      customer_phone: order.customer_phone,
+      invoice_date: now.split('T')[0],
+      subtotal_metal_value: actualMetalVal,
+      total_making_charges: actualMaking,
+      total_labour_charges: 0,
+      total_wastage_value: actualWastage,
+      discount_amount: 0,
+      tax_percent: taxPercent,
+      tax_amount: taxAmt,
+      round_off: 0,
+      total_amount: finalTotal,
+      paid_amount: order.advance_paid || 0,
+      balance_due: Math.max(0, finalTotal - (order.advance_paid || 0)),
+      payment_status: order.advance_paid >= finalTotal ? 'paid' : order.advance_paid > 0 ? 'partial' : 'unpaid',
+      status: 'finalized',
+      items: (order.items || []).map((it) => ({
+        id: ensureValidUUID(),
+        invoice_id: invoiceId,
+        product_id: it.product_id || ensureValidUUID(),
+        product_name_snapshot: it.item_name,
+        sku_snapshot: `CUST-${order.order_number}`,
+        metal_type: it.metal_type,
+        purity: it.purity,
+        gross_weight_g: actualGross,
+        stone_weight_g: actualStone,
+        net_weight_g: actualNet,
+        quantity: it.quantity || 1,
+        metal_rate_snapshot: actualRate,
+        metal_value: actualMetalVal,
+        making_charge: actualMaking,
+        labour_charge: 0,
+        wastage_percent: it.wastage_percent || 0,
+        wastage_weight_g: Number(((actualNet * (it.wastage_percent || 0)) / 100).toFixed(3)),
+        wastage_value: actualWastage,
+        discount: 0,
+        line_total: finalTotal,
+      })),
+      notes: `Generated from Custom Order ${order.order_number}. ${actualValues.notes || ''}`.trim(),
+    };
+
+    const invoice = await this.createRetailInvoice(invoicePayload);
+
+    // 3. Update CustomOrder with actual values and status = delivered
+    const updatedOrder: CustomOrder = {
+      ...order,
+      status: 'delivered',
+      converted_invoice_id: invoice.id,
+      actual_gross_weight_g: actualValues.actualGrossWeight,
+      actual_stone_weight_g: actualValues.actualStoneWeight,
+      actual_net_weight_g: actualValues.actualNetWeight,
+      actual_metal_rate: actualRate,
+      actual_making_charges: actualMaking,
+      actual_wastage_value: actualWastage,
+      actual_stone_charges: actualStones,
+      actual_other_charges: actualOther,
+      final_invoice_amount: finalTotal,
+      updated_at: now,
+    };
+
+    try {
+      const db = checkSupabaseClient();
+      await db.from('custom_orders').upsert(updatedOrder);
+    } catch {}
+
+    const localDb = getLocalDb();
+    const idx = (localDb.customOrders || []).findIndex((o) => o.id === updatedOrder.id);
+    if (idx >= 0) localDb.customOrders[idx] = updatedOrder;
+    saveLocalDb(localDb);
+
+    syncEngine.notifyDataChange('custom_orders', 'UPDATE', updatedOrder);
+
+    this.logAuditAction('CUSTOM_ORDER_INVOICED', 'custom_order', order.id, {
+      order_number: order.order_number,
+      invoice_number: invoice.invoice_number,
+      final_amount: finalTotal,
+    }).catch(() => {});
+
+    return { invoice, order: updatedOrder };
+  },
+
+  async getEstimationMetrics(): Promise<{
+    totalEstimations: number;
+    customEstimationsCount: number;
+    customEstimatedValue: number;
+    customOrdersCount: number;
+    customOrderValue: number;
+    conversionRate: number;
+  }> {
+    const estimations = await this.getEstimations();
+    const orders = await this.getCustomOrders();
+
+    const customEsts = estimations.filter(
+      (e) => e.estimation_type === 'reference_design' || e.estimation_type === 'custom_jewellery'
+    );
+    const customEstValue = customEsts.reduce((sum, e) => sum + (e.total_estimated_amount || 0), 0);
+
+    const convertedCount = estimations.filter((e) => e.status === 'converted_to_order').length;
+    const conversionRate =
+      estimations.length > 0 ? Number(((convertedCount / estimations.length) * 100).toFixed(1)) : 0;
+
+    const orderValue = orders.reduce((sum, o) => sum + (o.estimated_total || 0), 0);
+
+    return {
+      totalEstimations: estimations.length,
+      customEstimationsCount: customEsts.length,
+      customEstimatedValue: customEstValue,
+      customOrdersCount: orders.length,
+      customOrderValue: orderValue,
+      conversionRate,
+    };
+  },
 };
+
+export const uploadEstimationReferenceImage = (file: File, label?: string) =>
+  dataService.uploadEstimationReferenceImage(file, label);

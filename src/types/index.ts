@@ -61,7 +61,17 @@ export type PermissionCode =
   | 'settings.view'
   | 'settings.edit'
   | 'branches.view'
-  | 'branches.manage';
+  | 'branches.manage'
+  | 'view_estimations'
+  | 'create_estimations'
+  | 'edit_estimations'
+  | 'delete_estimations'
+  | 'upload_estimation_images'
+  | 'approve_estimations'
+  | 'convert_estimation'
+  | 'export_estimation'
+  | 'share_estimation'
+  | 'view_custom_designs';
 
 export interface UserProfile {
   id: string;
@@ -629,4 +639,174 @@ export interface WhatsAppMessage {
   read_at?: string;
   created_at: string;
 }
+
+// ============================================================================
+// CUSTOM / REFERENCE JEWELLERY ESTIMATION & ORDER SYSTEM
+// ============================================================================
+
+export type EstimationType = 'inventory_product' | 'custom_jewellery' | 'reference_design';
+
+export type EstimationStatus =
+  | 'draft'
+  | 'sent'
+  | 'viewed'
+  | 'approved'
+  | 'revision_requested'
+  | 'converted_to_order'
+  | 'expired'
+  | 'cancelled';
+
+export type JewelleryType =
+  | 'Chain'
+  | 'Necklace'
+  | 'Bangle'
+  | 'Bracelet'
+  | 'Ring'
+  | 'Earrings'
+  | 'Pendant'
+  | 'Mangalsutra'
+  | 'Thali'
+  | 'Nose Ring'
+  | 'Anklet'
+  | 'Hip Chain'
+  | 'Har'
+  | 'Bangles Set'
+  | 'Necklace Set'
+  | 'Custom'
+  | 'Other';
+
+export type ReferenceImageLabel =
+  | 'Front View'
+  | 'Side View'
+  | 'Close-up'
+  | 'Design Detail'
+  | 'Customer Photo'
+  | 'Other';
+
+export interface EstimationReferenceImage {
+  id: string;
+  estimation_id?: string;
+  image_url: string;
+  storage_path?: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  label?: ReferenceImageLabel | string;
+  notes?: string;
+  uploaded_at: string;
+}
+
+export interface EstimationItem {
+  id: string;
+  estimation_id?: string;
+  item_type: EstimationType;
+  product_id?: string | null;
+  item_name: string;
+  jewellery_type: JewelleryType | string;
+  metal_type: MetalType;
+  purity: MetalPurity;
+  quantity: number;
+  // Estimated weights (clearly marked as estimate, never actual)
+  estimated_gross_weight_g: number;
+  estimated_stone_weight_g: number;
+  estimated_net_weight_g: number;
+  // Rates & charges
+  metal_rate_per_gram: number;
+  metal_value: number;
+  making_charge_type: 'per_gram' | 'percentage' | 'flat';
+  making_charge_rate: number;
+  making_charge_amount: number;
+  wastage_percent: number;
+  wastage_weight_g: number;
+  wastage_value: number;
+  stone_charge: number;
+  other_charge: number;
+  discount: number;
+  line_total: number;
+  // Design specifications
+  design_description?: string;
+  customer_requirements?: string;
+  reference_images?: EstimationReferenceImage[];
+}
+
+export interface Estimation {
+  id: string;
+  estimation_number: string;
+  version: number;
+  parent_estimation_id?: string | null;
+  root_estimation_id?: string | null;
+  estimation_type: EstimationType;
+  customer_id?: string;
+  customer_name: string;
+  customer_phone?: string;
+  customer_email?: string;
+  customer_address?: string;
+  estimation_date: string;
+  valid_until: string;
+  // Locked rate snapshot on creation
+  rate_snapshot_date: string;
+  gold_22k_rate: number;
+  gold_24k_rate: number;
+  silver_rate: number;
+  // Financial breakdown
+  subtotal_metal_value: number;
+  total_making_charges: number;
+  total_wastage_value: number;
+  total_stone_charges: number;
+  total_other_charges: number;
+  discount_amount: number;
+  tax_percent: number;
+  tax_amount: number;
+  round_off: number;
+  total_estimated_amount: number;
+  status: EstimationStatus;
+  items: EstimationItem[];
+  reference_images: EstimationReferenceImage[];
+  general_notes?: string;
+  customer_requirements?: string;
+  converted_order_id?: string | null;
+  created_by?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export type CustomOrderStatus =
+  | 'design_confirmed'
+  | 'manufacturing'
+  | 'ready'
+  | 'delivered'
+  | 'cancelled';
+
+export interface CustomOrder {
+  id: string;
+  order_number: string;
+  estimation_id: string;
+  estimation_number: string;
+  customer_id?: string;
+  customer_name: string;
+  customer_phone?: string;
+  order_date: string;
+  expected_delivery_date?: string;
+  status: CustomOrderStatus;
+  items: EstimationItem[];
+  reference_images: EstimationReferenceImage[];
+  estimated_total: number;
+  advance_paid: number;
+  balance_due: number;
+  converted_invoice_id?: string | null;
+  // Actual values recorded upon manufacturing completion
+  actual_gross_weight_g?: number;
+  actual_stone_weight_g?: number;
+  actual_net_weight_g?: number;
+  actual_metal_rate?: number;
+  actual_making_charges?: number;
+  actual_wastage_value?: number;
+  actual_stone_charges?: number;
+  actual_other_charges?: number;
+  final_invoice_amount?: number;
+  notes?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 

@@ -68,6 +68,42 @@ Thank you!
 _${shopName}_`;
 }
 
+export function buildWhatsAppEstimationMessage(estimation: any, settings?: BusinessSettings): string {
+  const shopName = settings?.shop_name || defaultShopName;
+  const phone = settings?.phone || defaultPhone;
+  const itemsSummary = (estimation.items || [])
+    .map((item: any, i: number) => `  ${i + 1}. *${item.item_name}* (${item.purity?.toUpperCase()} ${item.jewellery_type}) - Est. Net: ${item.estimated_net_weight_g}g`)
+    .join('\n');
+
+  return `Hello ${estimation.customer_name || 'Valued Customer'},
+
+Greetings from *${shopName}*!
+
+Here is your jewellery quotation based on your reference design:
+
+*Estimation No:* ${estimation.estimation_number} (Rev ${estimation.version})
+*Date:* ${formatDate(estimation.estimation_date)}
+*Valid Until:* ${formatDate(estimation.valid_until)}
+*Type:* ${estimation.estimation_type === 'reference_design' ? 'Customer Reference Design' : 'Custom Jewellery'}
+
+*Design / Item Details:*
+${itemsSummary}
+
+*Rate Snapshot:*
+Gold 22K (916): ${formatCurrency(estimation.gold_22k_rate)}/g
+
+*Financial Estimate:*
+Metal Value: ${formatCurrency(estimation.subtotal_metal_value)}
+VA / Wastage: ${formatCurrency(estimation.total_wastage_value)}
+Making Charges: ${formatCurrency(estimation.total_making_charges)}
+*Estimated Total:* *${formatCurrency(estimation.total_estimated_amount)}*
+
+_Note: This is an estimated price based on reference design specifications. Final billing will be calculated based on actual measured net weight upon completion of manufacturing._
+
+Feel free to reply or visit our showroom to confirm this design!
+*${shopName}* | Phone: ${phone}`;
+}
+
 export function openWhatsAppClickToChat(phone: string, message: string) {
   const cleanPhone = phone.replace(/[^0-9]/g, '');
   const encodedMsg = encodeURIComponent(message);

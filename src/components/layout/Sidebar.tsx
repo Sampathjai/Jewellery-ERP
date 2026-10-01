@@ -17,6 +17,7 @@ import {
   Building2,
   DollarSign,
   BarChart3,
+  Sparkles,
   MessageSquare,
   Bell,
   UserCheck,
@@ -90,6 +91,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       groupNameKey: 'crm_financials',
       items: [
         { titleKey: 'customers_crm', path: '/customers', icon: Users, permission: 'manage_customers' },
+        { titleKey: 'estimations', path: '/estimations', icon: Sparkles, permission: 'view_dashboard', badge: 'Quotes' },
+        { titleKey: 'custom_orders', path: '/custom-orders', icon: Hammer, permission: 'view_dashboard' },
         { titleKey: 'payment_receipts', path: '/payments', icon: DollarSign, permission: 'manage_payments' },
         { titleKey: 'suppliers', path: '/suppliers', icon: Building2, permission: 'view_reports' },
         { titleKey: 'purchases', path: '/purchases', icon: Truck, permission: 'manage_inventory' },

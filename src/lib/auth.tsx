@@ -186,34 +186,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 localStorage.removeItem(LAST_ACTIVITY_KEY);
               }
             } else {
-              // Check if we have an active device-unlocked session
-              const isDeviceSession = localStorage.getItem('sampath_auth_device_unlocked') === 'true';
-              const storedUser = localStorage.getItem('sampath_auth_user');
-              if (isDeviceSession && storedUser) {
-                try {
-                  const parsed = JSON.parse(storedUser);
-                  if (parsed && parsed.is_active !== false) {
-                    setUser(parsed);
-                    setRole(parsed.role);
-                    recordActivity();
-                  } else {
-                    setUser(null);
-                    localStorage.removeItem('sampath_auth_user');
-                    localStorage.removeItem('sampath_auth_device_unlocked');
-                    localStorage.removeItem(LAST_ACTIVITY_KEY);
-                  }
-                } catch {
-                  setUser(null);
-                  localStorage.removeItem('sampath_auth_user');
-                  localStorage.removeItem('sampath_auth_device_unlocked');
-                  localStorage.removeItem(LAST_ACTIVITY_KEY);
-                }
-              } else {
-                setUser(null);
-                localStorage.removeItem('sampath_auth_user');
-                localStorage.removeItem('sampath_auth_device_unlocked');
-                localStorage.removeItem(LAST_ACTIVITY_KEY);
-              }
+              setUser(null);
+              localStorage.removeItem('sampath_auth_user');
+              localStorage.removeItem(LAST_ACTIVITY_KEY);
             }
           }
         }
@@ -232,12 +207,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (supabase) {
       const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_OUT' || !session) {
-          const isDeviceSession = typeof localStorage !== 'undefined' && localStorage.getItem('sampath_auth_device_unlocked') === 'true';
-          if (!isDeviceSession) {
-            setUser(null);
-            localStorage.removeItem('sampath_auth_user');
-            localStorage.removeItem(LAST_ACTIVITY_KEY);
-          }
+          setUser(null);
+          localStorage.removeItem('sampath_auth_user');
+          localStorage.removeItem(LAST_ACTIVITY_KEY);
         } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
           const profile = await syncUserProfileFromAuth(session.user);
           if (profile && profile.is_active !== false) {
@@ -278,7 +250,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setRole('admin');
     localStorage.removeItem('sampath_auth_user');
-    localStorage.removeItem('sampath_auth_device_unlocked');
     localStorage.removeItem(LAST_ACTIVITY_KEY);
     try {
       sessionStorage.clear();
@@ -523,7 +494,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(profile);
     setRole(profile.role);
     localStorage.setItem('sampath_auth_user', JSON.stringify(profile));
-    localStorage.setItem('sampath_auth_device_unlocked', 'true');
     recordActivity();
   };
 
