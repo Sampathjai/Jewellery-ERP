@@ -85,34 +85,7 @@ export const CreateEstimation: React.FC = () => {
   const [referenceImages, setReferenceImages] = useState<EstimationReferenceImage[]>([]);
 
   // Items
-  const [items, setItems] = useState<EstimationItem[]>([
-    {
-      id: `item-${Date.now()}`,
-      item_type: 'reference_design',
-      product_id: null,
-      item_name: 'Customer Reference Jewellery',
-      jewellery_type: 'Necklace',
-      metal_type: 'gold',
-      purity: '22k',
-      quantity: 1,
-      estimated_gross_weight_g: 16.0,
-      estimated_stone_weight_g: 1.0,
-      estimated_net_weight_g: 15.0,
-      metal_rate_per_gram: 7100,
-      metal_value: 15.0 * 7100,
-      making_charge_type: 'percentage',
-      making_charge_rate: 8.0,
-      making_charge_amount: 15.0 * 7100 * 0.08,
-      wastage_percent: 10.0,
-      wastage_weight_g: 1.5,
-      wastage_value: 1.5 * 7100,
-      stone_charge: 1200,
-      other_charge: 0,
-      discount: 0,
-      line_total: 15.0 * 7100 + 15.0 * 7100 * 0.08 + 1.5 * 7100 + 1200,
-      customer_requirements: '',
-    },
-  ]);
+  const [items, setItems] = useState<EstimationItem[]>([]);
 
   // Overall Financial adjustments
   const [discountAmount, setDiscountAmount] = useState<number>(0);
@@ -287,8 +260,7 @@ export const CreateEstimation: React.FC = () => {
   };
 
   const removeItem = (index: number) => {
-    if (items.length <= 1) return;
-    setItems(items.filter((_, idx) => idx !== index));
+    setItems((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   const handleCustomerSelect = (id: string) => {
@@ -310,17 +282,22 @@ export const CreateEstimation: React.FC = () => {
   const totalOtherCharges = items.reduce((acc, it) => acc + (it.other_charge || 0), 0);
 
   const subtotalBeforeTax =
-    subtotalMetalValue +
-    totalWastageValue +
-    totalMakingCharges +
-    totalStoneCharges +
-    totalOtherCharges -
-    discountAmount;
+    items.length === 0
+      ? 0
+      : Math.max(
+          0,
+          subtotalMetalValue +
+            totalWastageValue +
+            totalMakingCharges +
+            totalStoneCharges +
+            totalOtherCharges -
+            discountAmount
+        );
 
-  const taxAmount = Math.round((Math.max(0, subtotalBeforeTax) * (taxPercent || 0)) / 100);
-  const rawTotal = Math.max(0, subtotalBeforeTax) + taxAmount;
-  const roundOff = Number((Math.round(rawTotal) - rawTotal).toFixed(2));
-  const grandTotal = Math.round(rawTotal);
+  const taxAmount = items.length === 0 ? 0 : Math.round((subtotalBeforeTax * (taxPercent || 0)) / 100);
+  const rawTotal = items.length === 0 ? 0 : subtotalBeforeTax + taxAmount;
+  const roundOff = items.length === 0 ? 0 : Number((Math.round(rawTotal) - rawTotal).toFixed(2));
+  const grandTotal = items.length === 0 ? 0 : Math.round(rawTotal);
 
   const calculateValidUntil = (startDateStr: string, days: number): string => {
     const d = new Date(startDateStr);
@@ -611,26 +588,45 @@ export const CreateEstimation: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-4">
-              {items.map((item, idx) => (
-                <div
-                  key={item.id || idx}
-                  className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 space-y-3"
+            {items.length === 0 ? (
+              <div className="py-12 px-4 text-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20 space-y-3">
+                <Calculator className="w-10 h-10 text-amber-500/70 mx-auto" />
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                    No items added yet.
+                  </h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm mx-auto mt-1">
+                    Click <strong>&quot;+ Add Item&quot;</strong> below or in the top right to add jewellery items, gross weight, wastage, and making charges.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addItem}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition-colors shadow-sm"
                 >
-                  <div className="flex items-center justify-between pb-2 border-b border-gray-200 dark:border-gray-700">
-                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
-                      Item #{idx + 1} Specifications
-                    </span>
-                    {items.length > 1 && (
+                  <Plus className="w-4 h-4" />
+                  + Add Item
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {items.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 space-y-3"
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-200 dark:border-gray-700">
+                      <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                        Item #{idx + 1} Specifications
+                      </span>
                       <button
                         type="button"
                         onClick={() => removeItem(idx)}
-                        className="text-red-500 hover:text-red-700 text-xs inline-flex items-center gap-1"
+                        className="text-red-500 hover:text-red-700 text-xs inline-flex items-center gap-1 transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" /> Remove
                       </button>
-                    )}
-                  </div>
+                    </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div className="sm:col-span-2">
@@ -827,7 +823,8 @@ export const CreateEstimation: React.FC = () => {
                 </div>
               ))}
             </div>
-          </div>
+          )}
+        </div>
 
           {/* 5. Notes & Customer Requirements */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 shadow-sm space-y-3">

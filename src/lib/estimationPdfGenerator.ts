@@ -38,60 +38,73 @@ export async function buildEstimationPDFDoc(
   estimation: Estimation,
   settings?: BusinessSettings
 ): Promise<jsPDF> {
-  const doc = new jsPDF();
+  // A4 Landscape orientation: 297mm width x 210mm height
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
   loadPdfFont(doc);
+
+  const pageWidth = 297;
+  const pageHeight = 210;
+  const marginX = 14;
+  const contentWidth = pageWidth - marginX * 2; // 269mm
 
   const shop = getShopHeaderDetails(settings);
 
   // Premium Header Banner
   doc.setFillColor(30, 31, 38);
-  doc.rect(0, 0, 210, 38, 'F');
+  doc.rect(0, 0, pageWidth, 34, 'F');
 
   // Shop Name & Accent
   doc.setTextColor(212, 175, 55); // Gold Accent
   doc.setFont('Georgia', 'bold');
-  doc.setFontSize(20);
-  doc.text(shop.name, 14, 17);
+  doc.setFontSize(18);
+  doc.text(shop.name, marginX, 15);
 
   doc.setFontSize(8);
   doc.setTextColor(200, 200, 200);
   doc.setFont('Georgia', 'normal');
-  doc.text(shop.address, 14, 24);
-  doc.text(shop.phoneStr, 14, 30);
+  doc.text(shop.address, marginX, 21);
+  doc.text(shop.phoneStr, marginX, 26);
 
-  // Title Box
+  // Title Box on top-right
+  const titleBoxWidth = 78;
+  const titleBoxX = pageWidth - marginX - titleBoxWidth;
   doc.setFillColor(212, 175, 55);
-  doc.rect(130, 10, 66, 18, 'F');
+  doc.rect(titleBoxX, 8, titleBoxWidth, 18, 'F');
   doc.setTextColor(18, 18, 23);
   doc.setFontSize(10);
   doc.setFont('Georgia', 'bold');
-  doc.text('PRICE ESTIMATION', 133, 17);
-  doc.setFontSize(7);
+  doc.text('PRICE ESTIMATION', titleBoxX + 5, 15);
+  doc.setFontSize(6.5);
   doc.setFont('Georgia', 'normal');
-  doc.text('(NOT A TAX INVOICE / SALE BILL)', 133, 24);
+  doc.text('(NOT A TAX INVOICE / SALE BILL)', titleBoxX + 5, 21);
 
   // Customer & Meta Info Section
-  let currentY = 48;
+  let currentY = 42;
   doc.setTextColor(30, 31, 38);
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setFont('Georgia', 'bold');
-  doc.text('ESTIMATION FOR:', 14, currentY);
+  doc.text('ESTIMATION FOR:', marginX, currentY);
 
   doc.setFont('Georgia', 'normal');
-  doc.text(`Customer: ${estimation.customer_name || 'Valued Customer'}`, 14, currentY + 6);
+  doc.text(`Customer: ${estimation.customer_name || 'Valued Customer'}`, marginX, currentY + 5);
   if (estimation.customer_phone) {
-    doc.text(`Phone: ${estimation.customer_phone}`, 14, currentY + 12);
+    doc.text(`Phone: ${estimation.customer_phone}`, marginX, currentY + 10);
   }
   if (estimation.customer_address) {
-    doc.text(`Address: ${estimation.customer_address}`, 14, currentY + 18);
+    doc.text(`Address: ${estimation.customer_address}`, marginX, currentY + 15);
   }
 
   // Right column: Estimation details
+  const metaX = 195;
   doc.setFont('Georgia', 'bold');
-  doc.text(`Est. No: ${estimation.estimation_number} (Rev ${estimation.version})`, 130, currentY);
+  doc.text(`Est. No: ${estimation.estimation_number} (Rev ${estimation.version})`, metaX, currentY);
   doc.setFont('Georgia', 'normal');
-  doc.text(`Est. Date: ${formatDate(estimation.estimation_date)}`, 130, currentY + 6);
-  doc.text(`Valid Until: ${formatDate(estimation.valid_until)}`, 130, currentY + 12);
+  doc.text(`Est. Date: ${formatDate(estimation.estimation_date)}`, metaX, currentY + 5);
+  doc.text(`Valid Until: ${formatDate(estimation.valid_until)}`, metaX, currentY + 10);
 
   const typeLabel =
     estimation.estimation_type === 'reference_design'
@@ -101,67 +114,67 @@ export async function buildEstimationPDFDoc(
       : 'INVENTORY CATALOGUE';
   doc.setTextColor(184, 134, 11);
   doc.setFont('Georgia', 'bold');
-  doc.text(`Type: ${typeLabel}`, 130, currentY + 18);
+  doc.text(`Type: ${typeLabel}`, metaX, currentY + 15);
 
-  currentY += 28;
+  currentY += 22;
 
   // Gold Rate Snapshot Card
   doc.setFillColor(250, 248, 240);
-  doc.rect(14, currentY, 182, 14, 'F');
+  doc.rect(marginX, currentY, contentWidth, 11, 'F');
   doc.setLineWidth(0.3);
   doc.setDrawColor(212, 175, 55);
-  doc.rect(14, currentY, 182, 14, 'S');
+  doc.rect(marginX, currentY, contentWidth, 11, 'S');
 
   doc.setFontSize(8);
   doc.setFont('Georgia', 'bold');
   doc.setTextColor(184, 134, 11);
-  doc.text('LOCKED MARKET RATE SNAPSHOT:', 18, currentY + 9);
+  doc.text('LOCKED MARKET RATE SNAPSHOT:', marginX + 4, currentY + 7);
   doc.setFont('Georgia', 'normal');
   doc.setTextColor(40, 40, 40);
   doc.text(
-    `Gold 22K (916): ${formatCurrency(estimation.gold_22k_rate)}/g  |  Gold 24K: ${formatCurrency(estimation.gold_24k_rate)}/g  |  Silver: ${formatCurrency(estimation.silver_rate)}/g`,
-    80,
-    currentY + 9
+    `Gold 22K (916): ${formatCurrency(estimation.gold_22k_rate)}/g   |   Gold 24K: ${formatCurrency(estimation.gold_24k_rate)}/g   |   Silver: ${formatCurrency(estimation.silver_rate)}/g`,
+    marginX + 70,
+    currentY + 7
   );
 
-  currentY += 20;
+  currentY += 16;
 
   // Customer Reference Images Section (if present)
   const images = estimation.reference_images || [];
   if (images.length > 0) {
     doc.setFont('Georgia', 'bold');
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setTextColor(30, 31, 38);
-    doc.text('CUSTOMER REFERENCE DESIGN (PHOTOGRAPHS PROVIDED BY CUSTOMER):', 14, currentY);
-    currentY += 5;
+    doc.text('CUSTOMER REFERENCE DESIGN (PHOTOGRAPHS PROVIDED BY CUSTOMER):', marginX, currentY);
+    currentY += 4;
 
-    let imgX = 14;
-    const imgWidth = 35;
-    const imgHeight = 35;
+    let imgX = marginX;
+    const imgWidth = 32;
+    const imgHeight = 32;
 
-    for (let i = 0; i < Math.min(images.length, 4); i++) {
+    for (let i = 0; i < Math.min(images.length, 6); i++) {
       const img = images[i];
       const dataUrl = await getImageDataUrl(img.image_url);
       if (dataUrl) {
         try {
           doc.rect(imgX, currentY, imgWidth, imgHeight, 'S');
-          doc.addImage(dataUrl, 'JPEG', imgX + 1, currentY + 1, imgWidth - 2, imgHeight - 2);
-          doc.setFontSize(6.5);
+          doc.addImage(dataUrl, 'JPEG', imgX + 0.5, currentY + 0.5, imgWidth - 1, imgHeight - 1);
+          doc.setFontSize(6);
           doc.setFont('Georgia', 'normal');
           doc.setTextColor(80, 80, 80);
           const label = img.label || `Ref #${i + 1}`;
-          doc.text(label, imgX + 2, currentY + imgHeight + 4);
+          doc.text(label, imgX + 1, currentY + imgHeight + 3.5);
         } catch {
-          // In case jsPDF encounters unsupported image format
+          // ignore unsupported format
         }
       }
       imgX += imgWidth + 8;
     }
 
-    currentY += imgHeight + 9;
+    currentY += imgHeight + 8;
   }
 
-  // Items Table
+  // Items Table (Sum of widths = 269mm exactly matching contentWidth)
   const tableRows = (estimation.items || []).map((item, idx) => [
     (idx + 1).toString(),
     `${item.item_name}\n(${item.purity.toUpperCase()} | ${item.jewellery_type})`,
@@ -191,46 +204,47 @@ export async function buildEstimationPDFDoc(
     ]],
     body: tableRows,
     theme: 'grid',
+    showHead: 'everyPage',
     headStyles: {
       fillColor: [30, 31, 38],
       textColor: [212, 175, 55],
       font: 'Georgia',
       fontStyle: 'bold',
-      fontSize: 7.5,
+      fontSize: 8,
       halign: 'center',
     },
     bodyStyles: {
       font: 'Georgia',
-      fontSize: 7.5,
+      fontSize: 8,
       textColor: [30, 31, 38],
     },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 8 },
-      1: { cellWidth: 42 },
-      2: { halign: 'right', cellWidth: 16 },
-      3: { halign: 'right', cellWidth: 16 },
-      4: { halign: 'right', cellWidth: 16 },
-      5: { halign: 'right', cellWidth: 18 },
-      6: { halign: 'right', cellWidth: 20 },
-      7: { halign: 'right', cellWidth: 24 },
-      8: { halign: 'right', cellWidth: 20 },
-      9: { halign: 'right', cellWidth: 22, fontStyle: 'bold' },
+      0: { halign: 'center', cellWidth: 10 },
+      1: { cellWidth: 65 },
+      2: { halign: 'right', cellWidth: 22 },
+      3: { halign: 'right', cellWidth: 20 },
+      4: { halign: 'right', cellWidth: 22 },
+      5: { halign: 'right', cellWidth: 24 },
+      6: { halign: 'right', cellWidth: 26 },
+      7: { halign: 'right', cellWidth: 26 },
+      8: { halign: 'right', cellWidth: 26 },
+      9: { halign: 'right', cellWidth: 28, fontStyle: 'bold' },
     },
-    margin: { left: 14, right: 14 },
+    margin: { left: marginX, right: marginX },
   });
 
   const finalTableY = (doc as any).lastAutoTable?.finalY || currentY + 40;
   let summaryY = finalTableY + 8;
 
-  // If near page bottom, add a new page
-  if (summaryY > 210) {
+  // Check if summary card and disclaimer fit on current page (Landscape pageHeight = 210mm)
+  if (summaryY + 52 > 195) {
     doc.addPage();
-    summaryY = 20;
+    summaryY = 16;
   }
 
   // Summary Card on right
-  const summaryBoxWidth = 85;
-  const summaryBoxX = 210 - 14 - summaryBoxWidth;
+  const summaryBoxWidth = 95;
+  const summaryBoxX = pageWidth - marginX - summaryBoxWidth;
 
   doc.setFillColor(250, 248, 240);
   doc.rect(summaryBoxX, summaryY, summaryBoxWidth, 48, 'F');
@@ -274,29 +288,29 @@ export async function buildEstimationPDFDoc(
   doc.setFontSize(8);
   doc.setFont('Georgia', 'bold');
   doc.setTextColor(30, 31, 38);
-  doc.text('DESIGN & CUSTOMER REQUIREMENTS:', 14, summaryY + 6);
+  doc.text('DESIGN & CUSTOMER REQUIREMENTS:', marginX, summaryY + 6);
   doc.setFont('Georgia', 'normal');
   doc.setTextColor(70, 70, 70);
   const notesText = estimation.customer_requirements || estimation.general_notes || 'Bespoke custom order estimation based on customer reference photograph.';
-  const splitNotes = doc.splitTextToSize(notesText, 90);
-  doc.text(splitNotes, 14, summaryY + 12);
+  const splitNotes = doc.splitTextToSize(notesText, summaryBoxX - marginX - 10);
+  doc.text(splitNotes, marginX, summaryY + 12);
 
-  let disclaimerY = summaryY + 56;
-  if (disclaimerY > 230) {
+  let disclaimerY = summaryY + 54;
+  if (disclaimerY + 38 > 195) {
     doc.addPage();
-    disclaimerY = 20;
+    disclaimerY = 16;
   }
 
   // Mandatory Legal & Commercial Disclaimer Box
   doc.setFillColor(245, 245, 245);
-  doc.rect(14, disclaimerY, 182, 32, 'F');
+  doc.rect(marginX, disclaimerY, contentWidth, 28, 'F');
   doc.setDrawColor(200, 200, 200);
-  doc.rect(14, disclaimerY, 182, 32, 'S');
+  doc.rect(marginX, disclaimerY, contentWidth, 28, 'S');
 
   doc.setFontSize(7.5);
   doc.setFont('Georgia', 'bold');
   doc.setTextColor(180, 0, 0);
-  doc.text('IMPORTANT TERMS & ESTIMATION DISCLAIMER:', 18, disclaimerY + 6);
+  doc.text('IMPORTANT TERMS & ESTIMATION DISCLAIMER:', marginX + 4, disclaimerY + 5.5);
 
   doc.setFont('Georgia', 'normal');
   doc.setTextColor(60, 60, 60);
@@ -309,22 +323,39 @@ export async function buildEstimationPDFDoc(
     '5. Manufacturing commences only after design approval and advance payment confirmation.',
   ];
   disclaimers.forEach((line, idx) => {
-    doc.text(line, 18, disclaimerY + 11 + idx * 4);
+    doc.text(line, marginX + 4, disclaimerY + 10 + idx * 3.5);
   });
 
   // Signatures
-  const sigY = disclaimerY + 40;
+  const sigY = disclaimerY + 32;
   doc.setFontSize(8);
   doc.setFont('Georgia', 'normal');
   doc.setTextColor(50, 50, 50);
 
-  doc.line(18, sigY + 8, 70, sigY + 8);
-  doc.text('Customer Acceptance Signature', 18, sigY + 13);
+  doc.line(marginX + 4, sigY + 6, marginX + 65, sigY + 6);
+  doc.text('Customer Acceptance Signature', marginX + 4, sigY + 10.5);
 
-  doc.line(140, sigY + 8, 192, sigY + 8);
-  doc.text(`For ${shop.name}`, 140, sigY + 13);
+  const sigRightX = pageWidth - marginX - 65;
+  doc.line(sigRightX, sigY + 6, sigRightX + 61, sigY + 6);
+  doc.text(`For ${shop.name}`, sigRightX, sigY + 10.5);
   doc.setFontSize(7);
-  doc.text('(Authorized Signatory)', 140, sigY + 17);
+  doc.text('(Authorized Signatory)', sigRightX, sigY + 14.5);
+
+  // Page numbering footer on all pages
+  const pageCount = (doc as any).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setFont('Georgia', 'normal');
+    doc.setTextColor(130, 130, 130);
+    doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - 5, { align: 'center' });
+    doc.text(
+      `Generated on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
+      pageWidth - marginX,
+      pageHeight - 5,
+      { align: 'right' }
+    );
+  }
 
   return doc;
 }
