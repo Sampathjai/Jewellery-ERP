@@ -754,23 +754,43 @@ ALTER TABLE public.trusted_devices ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "trusted_devices_select_policy" ON public.trusted_devices;
 CREATE POLICY "trusted_devices_select_policy" ON public.trusted_devices
     FOR SELECT TO authenticated
-    USING (user_id = auth.uid() OR public.is_admin());
+    USING (
+        user_id = auth.uid() 
+        OR user_id IN (SELECT id FROM public.profiles WHERE user_id = auth.uid() OR id = auth.uid())
+        OR public.is_admin()
+    );
 
 DROP POLICY IF EXISTS "trusted_devices_insert_policy" ON public.trusted_devices;
 CREATE POLICY "trusted_devices_insert_policy" ON public.trusted_devices
     FOR INSERT TO authenticated
-    WITH CHECK (user_id = auth.uid() OR public.is_admin());
+    WITH CHECK (
+        user_id = auth.uid() 
+        OR user_id IN (SELECT id FROM public.profiles WHERE user_id = auth.uid() OR id = auth.uid())
+        OR public.is_admin()
+    );
 
 DROP POLICY IF EXISTS "trusted_devices_update_policy" ON public.trusted_devices;
 CREATE POLICY "trusted_devices_update_policy" ON public.trusted_devices
     FOR UPDATE TO authenticated
-    USING (user_id = auth.uid() OR public.is_admin())
-    WITH CHECK (user_id = auth.uid() OR public.is_admin());
+    USING (
+        user_id = auth.uid() 
+        OR user_id IN (SELECT id FROM public.profiles WHERE user_id = auth.uid() OR id = auth.uid())
+        OR public.is_admin()
+    )
+    WITH CHECK (
+        user_id = auth.uid() 
+        OR user_id IN (SELECT id FROM public.profiles WHERE user_id = auth.uid() OR id = auth.uid())
+        OR public.is_admin()
+    );
 
 DROP POLICY IF EXISTS "trusted_devices_delete_policy" ON public.trusted_devices;
 CREATE POLICY "trusted_devices_delete_policy" ON public.trusted_devices
     FOR DELETE TO authenticated
-    USING (user_id = auth.uid() OR public.is_admin());
+    USING (
+        user_id = auth.uid() 
+        OR user_id IN (SELECT id FROM public.profiles WHERE user_id = auth.uid() OR id = auth.uid())
+        OR public.is_admin()
+    );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.trusted_devices TO authenticated;
 GRANT ALL ON public.trusted_devices TO service_role;
@@ -803,7 +823,7 @@ BEGIN
 
     SELECT * INTO v_profile
     FROM public.profiles
-    WHERE id = v_device.user_id
+    WHERE id = v_device.user_id OR user_id = v_device.user_id
     LIMIT 1;
 
     IF v_profile.id IS NULL OR v_profile.deleted_at IS NOT NULL OR v_profile.status = 'deleted' THEN
@@ -836,6 +856,8 @@ BEGIN
     );
 END;
 $$;
+
+GRANT EXECUTE ON FUNCTION public.verify_device_unlock_and_authenticate(TEXT, TEXT) TO anon, authenticated;
 
 -- Secure RPC: Revoke Device
 CREATE OR REPLACE FUNCTION public.revoke_trusted_device(p_device_id UUID)
