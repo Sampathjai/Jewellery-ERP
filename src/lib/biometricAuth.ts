@@ -1,4 +1,4 @@
-import { UserProfile, TrustedDevice, DeviceBiometricType } from '../types/index';
+import { UserProfile, UserRole, TrustedDevice, DeviceBiometricType } from '../types/index';
 import { dataService } from './dataService';
 
 // Storage key for the local encrypted device vault
@@ -477,7 +477,14 @@ export const unlockWithBiometrics = async (): Promise<{
     // 3. Authoritative Backend Validation against trusted_devices & profiles in Supabase
     const backendRes = await dataService.verifyDeviceCredential(
       vault.credentialId,
-      deviceTokenHash
+      deviceTokenHash,
+      {
+        id: vault.userId,
+        user_id: vault.userId,
+        email: vault.userEmail,
+        full_name: vault.userFullName,
+        role: vault.userRole as UserRole,
+      }
     );
 
     if (!backendRes.success || !backendRes.userProfile) {
@@ -581,7 +588,14 @@ export const unlockWithPin = async (
     // 4. Authoritative Backend Validation against trusted_devices & profiles in Supabase
     const backendRes = await dataService.verifyDeviceCredential(
       vault.credentialId,
-      deviceTokenHash
+      deviceTokenHash,
+      {
+        id: vault.userId,
+        user_id: vault.userId,
+        email: vault.userEmail,
+        full_name: vault.userFullName,
+        role: vault.userRole as UserRole,
+      }
     );
 
     if (!backendRes.success || !backendRes.userProfile) {

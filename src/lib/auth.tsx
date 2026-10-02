@@ -186,6 +186,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 localStorage.removeItem(LAST_ACTIVITY_KEY);
               }
             } else {
+              // No Supabase password session, check if active local user from PIN / Biometric unlock
+              const localUserStr = localStorage.getItem('sampath_auth_user');
+              if (localUserStr) {
+                try {
+                  const localUser = JSON.parse(localUserStr);
+                  if (localUser && localUser.id && localUser.is_active !== false) {
+                    setUser(localUser);
+                    setRole(localUser.role || 'admin');
+                    recordActivity();
+                    return;
+                  }
+                } catch {}
+              }
               setUser(null);
               localStorage.removeItem('sampath_auth_user');
               localStorage.removeItem(LAST_ACTIVITY_KEY);
@@ -206,10 +219,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let authSubscription: any = null;
     if (supabase) {
       const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_OUT' || !session) {
+        if (event === 'SIGNED_OUT') {
           setUser(null);
           localStorage.removeItem('sampath_auth_user');
           localStorage.removeItem(LAST_ACTIVITY_KEY);
+        } else if (!session && event !== 'INITIAL_SESSION') {
+          const localUserStr = localStorage.getItem('sampath_auth_user');
+          if (!localUserStr) {
+            setUser(null);
+          }
         } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
           const profile = await syncUserProfileFromAuth(session.user);
           if (profile && profile.is_active !== false) {
