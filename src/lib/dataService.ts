@@ -1820,10 +1820,11 @@ export const dataService = {
     const { data, error } = await db
       .from('metal_rates')
       .select('*')
+      .gt('rate_date', '2000-01-01')
       .order('rate_date', { ascending: false })
       .order('created_at', { ascending: false });
     if (error || !data) {
-      return getLocalDb().metalRates || [];
+      return (getLocalDb().metalRates || []).filter(r => r.rate_date > '2000-01-01');
     }
     // Update local cache
     const localDb = getLocalDb();
