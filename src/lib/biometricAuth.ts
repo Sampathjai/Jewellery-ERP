@@ -428,24 +428,16 @@ export const unlockWithBiometrics = async (): Promise<{
   userProfile?: UserProfile;
 }> => {
   const vault = getLocalDeviceVault();
-  const cap = await detectBiometricCapability();
-
-  if (!vault && !cap.isSupported) {
+  if (!vault) {
     return {
       success: false,
       message: 'No registered biometric credential found on this device. Please log in with your password and register this device.',
     };
   }
 
+  const cap = await detectBiometricCapability();
+
   try {
-    let credentialId = vault?.credentialId || '';
-    let deviceTokenHash = '';
-
-    if (vault) {
-      const tokenBytes = hexToBuffer(vault.rawDeviceTokenHex);
-      deviceTokenHash = await sha256(tokenBytes);
-    }
-
     // 1. Invoke OS Platform Biometrics via WebAuthn
     if (cap.isSupported) {
       const challenge = new Uint8Array(32);
@@ -454,85 +446,55 @@ export const unlockWithBiometrics = async (): Promise<{
       const domain = window.location.hostname || 'localhost';
       const rpId = domain === 'localhost' || domain === '127.0.0.1' ? undefined : domain;
 
-      const publicKeyOptions: PublicKeyCredentialRequestOptions = {
-        challenge,
-        rpId,
-        userVerification: 'required',
-        timeout: 60000,
-      };
-
-      if (vault?.credentialId) {
-        publicKeyOptions.allowCredentials = [
-          {
-            id: base64URLToBuffer(vault.credentialId),
-            type: 'public-key',
-            transports: ['internal'],
-          },
-        ];
-      }
-
       const assertion = (await navigator.credentials.get({
-        publicKey: publicKeyOptions,
+        publicKey: {
+          challenge,
+          rpId,
+          allowCredentials: [
+            {
+              id: base64URLToBuffer(vault.credentialId),
+              type: 'public-key',
+              transports: ['internal'],
+            },
+          ],
+          userVerification: 'required',
+          timeout: 60000,
+        },
       })) as PublicKeyCredential | null;
 
       if (!assertion) {
-        if (vault) {
-          await dataService.logAuditAction('BIOMETRIC_LOGIN_FAILED', 'auth', vault.userId, {
-            reason: 'biometric_cancelled',
-          }).catch(() => {});
-        }
+        await dataService.logAuditAction('BIOMETRIC_LOGIN_FAILED', 'auth', vault.userId, {
+          reason: 'biometric_cancelled',
+        });
         return { success: false, message: 'Biometric verification was cancelled.' };
       }
-
-      credentialId = assertion.id;
     }
 
-    // 2. Authoritative Backend Validation against trusted_devices & profiles in Supabase
+    // 2. Compute device token hash from vault
+    const tokenBytes = hexToBuffer(vault.rawDeviceTokenHex);
+    const deviceTokenHash = await sha256(tokenBytes);
+
+    // 3. Authoritative Backend Validation against trusted_devices & profiles in Supabase
     const backendRes = await dataService.verifyDeviceCredential(
-      credentialId,
+      vault.credentialId,
       deviceTokenHash
     );
 
     if (!backendRes.success || !backendRes.userProfile) {
-      if (vault) {
-        await dataService.logAuditAction('BIOMETRIC_LOGIN_FAILED', 'auth', vault.userId, {
-          reason: backendRes.message || 'backend_validation_failed',
-        }).catch(() => {});
-      }
+      await dataService.logAuditAction('BIOMETRIC_LOGIN_FAILED', 'auth', vault.userId, {
+        reason: backendRes.message || 'backend_validation_failed',
+      });
       return {
         success: false,
         message: backendRes.message || 'Device credential could not be verified by server.',
       };
     }
 
-    // Restore local device vault if authenticating on fresh browser session
-    if (!vault && backendRes.userProfile) {
-      const u = backendRes.userProfile;
-      const autoVault: LocalDeviceVault = {
-        userId: u.id,
-        userEmail: u.email,
-        userFullName: u.full_name || '',
-        userRole: u.role,
-        credentialId,
-        deviceName: cap.displayName,
-        deviceType: cap.biometricType,
-        saltHex: '',
-        ivHex: '',
-        pinHashHex: '',
-        encryptedTokenHex: '',
-        rawDeviceTokenHex: '',
-        createdAt: new Date().toISOString(),
-      };
-      try {
-        localStorage.setItem(DEVICE_VAULT_KEY, JSON.stringify(autoVault));
-      } catch {}
-    }
-
-    // 3. Verification successful: Log audit event and return user profile
+    // 4. Verification successful: Log audit event and return user profile
     await dataService.logAuditAction('BIOMETRIC_LOGIN_SUCCESS', 'auth', backendRes.userProfile.id, {
-      device_name: vault?.deviceName || cap.displayName,
-      credential_id: credentialId,
-    }).catch(() => {});
+      device_name: vault.deviceName,
+      credential_id: vault.credentialId,
+    });
 
     return { success: true, userProfile: backendRes.userProfile };
   } catch (err: any) {
@@ -541,11 +503,9 @@ export const unlockWithBiometrics = async (): Promise<{
     if (err?.name === 'NotAllowedError' || msg.includes('cancelled')) {
       msg = 'Biometric verification was cancelled or timed out.';
     }
-    if (vault?.userId) {
-      await dataService.logAuditAction('BIOMETRIC_LOGIN_FAILED', 'auth', vault.userId, {
-        reason: msg,
-      }).catch(() => {});
-    }
+    await dataService.logAuditAction('BIOMETRIC_LOGIN_FAILED', 'auth', vault.userId, {
+      reason: msg,
+    }).catch(() => {});
     return { success: false, message: msg };
   }
 };
