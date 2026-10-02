@@ -26,6 +26,7 @@ import {
   BiometricCapability,
 } from '@/lib/biometricAuth';
 import { BiometricSetupModal } from '@/components/auth/BiometricSetupModal';
+import { syncEngine } from '@/lib/syncEngine';
 
 export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const { role, can, user: currentUser } = useAuth();
@@ -87,6 +88,17 @@ export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded =
   useEffect(() => {
     if (isAdmin) {
       loadSettings();
+      const unsub = syncEngine.subscribeDataChange((tableName) => {
+        if (
+          !tableName ||
+          tableName === 'all_tables' ||
+          tableName === 'trusted_devices' ||
+          tableName === 'business_settings'
+        ) {
+          loadSettings();
+        }
+      });
+      return () => unsub();
     } else {
       setIsLoading(false);
     }

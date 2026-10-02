@@ -19,28 +19,43 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 
+import { syncEngine } from '@/lib/syncEngine';
+
 export const WholesaleHoldings: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [metalFilter, setMetalFilter] = useState<'all' | 'gold' | 'silver'>('all');
   const [wholesaleIssues, setWholesaleIssues] = useState<WholesaleIssue[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
 
-  useEffect(() => {
-    async function loadHoldingsData() {
-      try {
-        const [wIssues, custs] = await Promise.all([
-          dataService.getWholesaleIssues(),
-          dataService.getCustomers(),
-        ]);
-        setWholesaleIssues(wIssues.length > 0 ? wIssues : getLocalDb().wholesaleIssues);
-        setCustomers(custs.length > 0 ? custs : getLocalDb().customers);
-      } catch (err) {
-        console.warn('Error loading holdings data from Supabase:', err);
-        setWholesaleIssues(getLocalDb().wholesaleIssues);
-        setCustomers(getLocalDb().customers);
-      }
+  const loadHoldingsData = async () => {
+    try {
+      const [wIssues, custs] = await Promise.all([
+        dataService.getWholesaleIssues(),
+        dataService.getCustomers(),
+      ]);
+      setWholesaleIssues(wIssues);
+      setCustomers(custs);
+    } catch (err) {
+      console.warn('Error loading holdings data from Supabase:', err);
     }
+  };
+
+  useEffect(() => {
     loadHoldingsData();
+    const unsub = syncEngine.subscribeDataChange((tableName) => {
+      if (
+        !tableName ||
+        tableName === 'all_tables' ||
+        tableName === 'wholesale_issues' ||
+        tableName === 'wholesale_issue_items' ||
+        tableName === 'wholesale_returns' ||
+        tableName === 'wholesale_payments' ||
+        tableName === 'customers'
+      ) {
+        loadHoldingsData();
+      }
+    });
+    return () => unsub();
   }, []);
 
   // Filter active consignment issues (where status is active or remaining items > 0)

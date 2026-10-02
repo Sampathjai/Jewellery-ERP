@@ -6,6 +6,8 @@ import { calculateWholesaleProfit } from '@/lib/profitEngine';
 import { formatCurrency, formatWeight, formatDate } from '@/lib/utils';
 import { CircleDot, Plus, Save, Search } from 'lucide-react';
 
+import { syncEngine } from '@/lib/syncEngine';
+
 export const WholesaleSoldItems: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [salesList, setSalesList] = useState<WholesaleSale[]>([]);
@@ -38,6 +40,18 @@ export const WholesaleSoldItems: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const unsub = syncEngine.subscribeDataChange((tableName) => {
+      if (
+        !tableName ||
+        tableName === 'all_tables' ||
+        tableName === 'wholesale_sales' ||
+        tableName === 'wholesale_issues' ||
+        tableName === 'customers'
+      ) {
+        loadData();
+      }
+    });
+    return () => unsub();
   }, []);
 
   const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);

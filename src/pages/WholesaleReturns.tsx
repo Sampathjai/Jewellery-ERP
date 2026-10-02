@@ -5,6 +5,8 @@ import { WholesaleReturn, WholesaleIssue, Customer } from '@/types';
 import { formatWeight, formatDate } from '@/lib/utils';
 import { RotateCcw, Check, Save, AlertCircle } from 'lucide-react';
 
+import { syncEngine } from '@/lib/syncEngine';
+
 export const WholesaleReturns: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [issues, setIssues] = useState<WholesaleIssue[]>([]);
@@ -38,6 +40,19 @@ export const WholesaleReturns: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const unsub = syncEngine.subscribeDataChange((tableName) => {
+      if (
+        !tableName ||
+        tableName === 'all_tables' ||
+        tableName === 'wholesale_returns' ||
+        tableName === 'wholesale_issues' ||
+        tableName === 'wholesale_issue_items' ||
+        tableName === 'customers'
+      ) {
+        loadData();
+      }
+    });
+    return () => unsub();
   }, []);
 
   const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);

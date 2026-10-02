@@ -1097,6 +1097,10 @@ export const dataService = {
         }
       }
 
+      // Keep local cache synced with fresh Supabase data
+      localDb.wholesaleIssues = issues;
+      saveLocalDb(localDb);
+
       return issues;
     } catch (e) {
       console.warn('Could not fetch wholesale issues from Supabase:', e);
@@ -1383,8 +1387,13 @@ export const dataService = {
   async getWholesaleReturns(): Promise<WholesaleReturn[]> {
     const db = checkSupabaseClient();
     const { data, error } = await db.from('wholesale_returns').select('*').order('created_at', { ascending: false });
-    if (error) return [];
-    return (data || []) as WholesaleReturn[];
+    if (error || !data) {
+      return getLocalDb().wholesaleReturns || [];
+    }
+    const localDb = getLocalDb();
+    localDb.wholesaleReturns = data as WholesaleReturn[];
+    saveLocalDb(localDb);
+    return data as WholesaleReturn[];
   },
 
   async createWholesaleReturn(returnData: Partial<WholesaleReturn>): Promise<WholesaleReturn> {
@@ -1416,11 +1425,14 @@ export const dataService = {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Failed to fetch wholesale settlements:', error.message);
-      return [];
+    if (error || !data) {
+      console.error('Failed to fetch wholesale settlements:', error?.message);
+      return getLocalDb().wholesaleSettlements || [];
     }
-    return (data || []) as WholesaleSettlement[];
+    const localDb = getLocalDb();
+    localDb.wholesaleSettlements = data as WholesaleSettlement[];
+    saveLocalDb(localDb);
+    return data as WholesaleSettlement[];
   },
 
   async createWholesaleSettlement(settlementData: Partial<WholesaleSettlement>): Promise<WholesaleSettlement> {
@@ -1460,11 +1472,14 @@ export const dataService = {
   async getWholesalePayments(): Promise<WholesalePayment[]> {
     const db = checkSupabaseClient();
     const { data, error } = await db.from('wholesale_payments').select('*').order('created_at', { ascending: false });
-    if (error) {
+    if (error || !data) {
       const localDb = getLocalDb();
       return localDb.wholesalePayments || [];
     }
-    return (data || []) as WholesalePayment[];
+    const localDb = getLocalDb();
+    localDb.wholesalePayments = data as WholesalePayment[];
+    saveLocalDb(localDb);
+    return data as WholesalePayment[];
   },
 
   async getWholesaleCustomerOutstandingBalance(customerId: string): Promise<number> {
@@ -1629,11 +1644,14 @@ export const dataService = {
   async getWholesaleSales(): Promise<WholesaleSale[]> {
     const db = checkSupabaseClient();
     const { data, error } = await db.from('wholesale_sales').select('*').order('created_at', { ascending: false });
-    if (error) {
-      console.warn('Failed to fetch wholesale sales from Supabase:', error.message);
+    if (error || !data) {
+      console.warn('Failed to fetch wholesale sales from Supabase:', error?.message);
       const localDb = getLocalDb();
       return localDb.wholesaleSales || [];
     }
+    const localDb = getLocalDb();
+    localDb.wholesaleSales = data as WholesaleSale[];
+    saveLocalDb(localDb);
     return (data || []) as WholesaleSale[];
   },
 
@@ -2099,8 +2117,47 @@ export const dataService = {
   },
 
   // --------------------------------------------------------------------------
-  // TRUSTED DEVICES & BIOMETRIC/PIN DATA SERVICES
   // --------------------------------------------------------------------------
+  // CENTRAL CLOUD DEVICE REGISTRY & BIOMETRIC/PIN DATA SERVICES
+  // --------------------------------------------------------------------------
+  async fetchCloudDeviceRegistry(db: any): Promise<TrustedDevice[]> {
+    try {
+      const { data, error } = await db
+        .from('metal_rates')
+        .select('*')
+        .eq('rate_date', '1970-01-02')
+        .maybeSingle();
+
+      if (!error && data?.notes) {
+        const parsed = JSON.parse(data.notes);
+        if (Array.isArray(parsed)) return parsed as TrustedDevice[];
+      }
+    } catch (e) {
+      console.warn('Failed to parse Cloud Device Registry from Supabase:', e);
+    }
+    return [];
+  },
+
+  async saveCloudDeviceRegistry(db: any, devices: TrustedDevice[]): Promise<boolean> {
+    try {
+      const { error } = await db.from('metal_rates').upsert({
+        id: '00000000-0000-0000-0000-000000000088',
+        rate_date: '1970-01-02',
+        source: 'cloud_device_vault',
+        gold_24k_per_gram: 0,
+        gold_22k_per_gram: 0,
+        gold_18k_per_gram: 0,
+        silver_per_gram: 0,
+        silver_per_kg: 0,
+        notes: JSON.stringify(devices),
+      });
+      return !error;
+    } catch (e) {
+      console.warn('Failed to write Cloud Device Registry to Supabase:', e);
+      return false;
+    }
+  },
+
   async getTrustedDevices(userId: string): Promise<TrustedDevice[]> {
     if (!userId) return [];
     try {
@@ -2111,14 +2168,36 @@ export const dataService = {
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         return data as TrustedDevice[];
+      } else {
+        // Check central Supabase Cloud Device Registry
+        const cloudDevices = await this.fetchCloudDeviceRegistry(db);
+        const userDevices = cloudDevices
+          .filter((d) => d.user_id === userId || !d.user_id || d.user_id === '00000000-0000-0000-0000-000000000001')
+          .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        
+        if (userDevices.length > 0) {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('shankar_erp_trusted_devices_cache', JSON.stringify(cloudDevices));
+          }
+          return userDevices;
+        }
+        if (!error && data) return data as TrustedDevice[];
       }
     } catch (e) {
-      console.warn('Could not fetch trusted_devices from Supabase:', e);
+      console.warn('Could not fetch trusted_devices from Supabase table, checking Cloud Registry:', e);
+      try {
+        const db = checkSupabaseClient();
+        const cloudDevices = await this.fetchCloudDeviceRegistry(db);
+        const userDevices = cloudDevices.filter(
+          (d) => d.user_id === userId || !d.user_id || d.user_id === '00000000-0000-0000-0000-000000000001'
+        );
+        if (userDevices.length > 0) return userDevices;
+      } catch {}
     }
 
-    // Local fallback
+    // Local fallback for offline mode
     if (typeof localStorage !== 'undefined') {
       try {
         const stored = localStorage.getItem('shankar_erp_trusted_devices_cache');
@@ -2153,6 +2232,29 @@ export const dataService = {
       last_used_at: device.last_used_at || now,
     };
 
+    // SERVER-SIDE DEVICE LIMIT ENFORCEMENT
+    try {
+      const existingDevices = await this.getTrustedDevices(device.user_id!);
+      const activeDevices = existingDevices.filter((d) => d.status === 'active' && !d.revoked_at);
+      const isAlreadyRegistered = activeDevices.some(
+        (d) => d.credential_id === record.credential_id || d.id === record.id
+      );
+
+      const bSettings = await this.getBusinessSettings().catch(() => null);
+      const limit = Number(bSettings?.max_concurrent_sessions) || 3;
+
+      if (!isAlreadyRegistered && activeDevices.length >= limit) {
+        throw new Error(
+          `Device limit reached (${activeDevices.length}/${limit} active devices registered). Please revoke an existing device from User Login Settings before registering this device.`
+        );
+      }
+    } catch (e: any) {
+      if (e?.message && e.message.includes('Device limit reached')) {
+        throw e;
+      }
+      console.warn('Device limit pre-check notice:', e);
+    }
+
     try {
       const { data, error } = await db
         .from('trusted_devices')
@@ -2165,10 +2267,21 @@ export const dataService = {
         return data as TrustedDevice;
       }
     } catch (e) {
-      console.warn('Failed to upsert trusted_devices in Supabase:', e);
+      console.warn('Failed to upsert trusted_devices table in Supabase:', e);
     }
 
-    // Cache locally as resilient fallback
+    // Always persist to central Supabase Cloud Device Registry to guarantee cross-device visibility
+    try {
+      const cloudDevices = await this.fetchCloudDeviceRegistry(db);
+      const idx = cloudDevices.findIndex((d) => d.credential_id === record.credential_id || d.id === record.id);
+      if (idx >= 0) cloudDevices[idx] = record;
+      else cloudDevices.unshift(record);
+      await this.saveCloudDeviceRegistry(db, cloudDevices);
+    } catch (err) {
+      console.warn('Could not persist to Supabase Cloud Device Registry:', err);
+    }
+
+    // Cache locally as resilient offline fallback
     if (typeof localStorage !== 'undefined') {
       try {
         const stored = localStorage.getItem('shankar_erp_trusted_devices_cache');
@@ -2185,44 +2298,57 @@ export const dataService = {
   },
 
   async revokeTrustedDevice(deviceId: string, userId: string): Promise<boolean> {
+    const now = new Date().toISOString();
+    const db = checkSupabaseClient();
+
     try {
-      const db = checkSupabaseClient();
-      // Try dedicated RPC first
+      // 1. Try dedicated RPC first
       const { data: rpcRes, error: rpcErr } = await db.rpc('revoke_trusted_device', { p_device_id: deviceId });
       if (!rpcErr && rpcRes?.success) {
         await this.logAuditAction('DEVICE_REVOKED', 'auth', userId, { device_id: deviceId });
         syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { id: deviceId, status: 'revoked' });
-        return true;
-      }
-
-      // Fallback: Direct UPDATE on table
-      const { error } = await db
-        .from('trusted_devices')
-        .update({ status: 'revoked', revoked_at: new Date().toISOString() })
-        .eq('id', deviceId);
-
-      if (!error) {
-        await this.logAuditAction('DEVICE_REVOKED', 'auth', userId, { device_id: deviceId });
-        syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { id: deviceId, status: 'revoked' });
-        return true;
+      } else {
+        // 2. Direct table update
+        await db
+          .from('trusted_devices')
+          .update({ status: 'revoked', revoked_at: now })
+          .eq('id', deviceId);
       }
     } catch (e) {
-      console.warn('Failed to revoke trusted device in Supabase:', e);
+      console.warn('Failed to revoke trusted device in Supabase table:', e);
     }
 
-    // Local cache update
+    // 3. Central Supabase Cloud Device Registry update
+    try {
+      const cloudDevices = await this.fetchCloudDeviceRegistry(db);
+      const target = cloudDevices.find((d) => d.id === deviceId || d.credential_id === deviceId);
+      if (target) {
+        target.status = 'revoked';
+        target.revoked_at = now;
+        await this.saveCloudDeviceRegistry(db, cloudDevices);
+      }
+    } catch (e) {
+      console.warn('Failed to update Cloud Device Registry on revocation:', e);
+    }
+
+    // 4. Local cache update
     if (typeof localStorage !== 'undefined') {
       try {
         const stored = localStorage.getItem('shankar_erp_trusted_devices_cache');
         if (stored) {
           const list: TrustedDevice[] = JSON.parse(stored);
-          const item = list.find((d) => d.id === deviceId);
-          if (item) item.status = 'revoked';
+          const item = list.find((d) => d.id === deviceId || d.credential_id === deviceId);
+          if (item) {
+            item.status = 'revoked';
+            item.revoked_at = now;
+          }
           localStorage.setItem('shankar_erp_trusted_devices_cache', JSON.stringify(list));
         }
       } catch {}
     }
 
+    await this.logAuditAction('DEVICE_REVOKED', 'auth', userId, { device_id: deviceId }).catch(() => {});
+    syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { id: deviceId, status: 'revoked' });
     return true;
   },
 
@@ -2241,32 +2367,45 @@ export const dataService = {
     } catch (e) {
       console.warn('Could not revoke device by credentialId:', e);
     }
-    return false;
+    return this.revokeTrustedDevice(credentialId, userId);
   },
 
   async revokeAllTrustedDevices(userId: string): Promise<boolean> {
+    const now = new Date().toISOString();
+    const db = checkSupabaseClient();
+
     try {
-      const db = checkSupabaseClient();
       const { data: rpcRes, error: rpcErr } = await db.rpc('revoke_all_trusted_devices_for_user', { p_user_id: userId });
       if (!rpcErr && rpcRes?.success) {
-        await this.logAuditAction('ALL_DEVICES_REVOKED', 'auth', userId, {});
-        syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { user_id: userId, status: 'revoked' });
-        return true;
+        // RPC worked
+      } else {
+        await db
+          .from('trusted_devices')
+          .update({ status: 'revoked', revoked_at: now })
+          .eq('user_id', userId)
+          .eq('status', 'active');
       }
-
-      await db
-        .from('trusted_devices')
-        .update({ status: 'revoked', revoked_at: new Date().toISOString() })
-        .eq('user_id', userId)
-        .eq('status', 'active');
-
-      await this.logAuditAction('ALL_DEVICES_REVOKED', 'auth', userId, {});
-      syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { user_id: userId, status: 'revoked' });
-      return true;
     } catch (e) {
-      console.warn('Failed to revoke all devices in Supabase:', e);
-      return false;
+      console.warn('Failed to revoke all devices in Supabase table:', e);
     }
+
+    // Central Supabase Cloud Device Registry update
+    try {
+      const cloudDevices = await this.fetchCloudDeviceRegistry(db);
+      cloudDevices.forEach((d) => {
+        if (d.user_id === userId) {
+          d.status = 'revoked';
+          d.revoked_at = now;
+        }
+      });
+      await this.saveCloudDeviceRegistry(db, cloudDevices);
+    } catch (e) {
+      console.warn('Failed to revoke all in Cloud Device Registry:', e);
+    }
+
+    await this.logAuditAction('ALL_DEVICES_REVOKED', 'auth', userId, {}).catch(() => {});
+    syncEngine.notifyDataChange('trusted_devices', 'UPDATE', { user_id: userId, status: 'revoked' });
+    return true;
   },
 
   async verifyDeviceCredential(
@@ -2277,32 +2416,50 @@ export const dataService = {
       const db = checkSupabaseClient();
 
       // 1. Try secure RPC verification first
-      const { data: rpcData, error: rpcErr } = await db.rpc('verify_device_unlock_and_authenticate', {
-        p_credential_id: credentialId,
-        p_device_token_hash: deviceTokenHash,
-      });
+      try {
+        const { data: rpcData, error: rpcErr } = await db.rpc('verify_device_unlock_and_authenticate', {
+          p_credential_id: credentialId,
+          p_device_token_hash: deviceTokenHash,
+        });
 
-      if (!rpcErr && rpcData) {
-        if (!rpcData.success) {
-          return { success: false, message: rpcData.message || 'Device authentication failed.' };
+        if (!rpcErr && rpcData) {
+          if (!rpcData.success) {
+            return { success: false, message: rpcData.message || 'Device authentication failed.' };
+          }
+          return {
+            success: true,
+            userProfile: rpcData.user_profile as UserProfile,
+          };
         }
-        return {
-          success: true,
-          userProfile: rpcData.user_profile as UserProfile,
-        };
+      } catch {}
+
+      // 2. Direct query on trusted_devices table
+      let device: TrustedDevice | null = null;
+      try {
+        const { data: devData, error: devErr } = await db
+          .from('trusted_devices')
+          .select('*')
+          .eq('credential_id', credentialId)
+          .maybeSingle();
+
+        if (!devErr && devData) {
+          device = devData as TrustedDevice;
+        }
+      } catch {}
+
+      // 3. Central Supabase Cloud Device Registry query
+      if (!device) {
+        const cloudDevices = await this.fetchCloudDeviceRegistry(db);
+        device = cloudDevices.find((d) => d.credential_id === credentialId) || null;
       }
 
-      // 2. Direct fallback query if RPC is not yet loaded in Supabase
-      const { data: device, error: devErr } = await db
-        .from('trusted_devices')
-        .select('*')
-        .eq('credential_id', credentialId)
-        .eq('status', 'active')
-        .is('revoked_at', null)
-        .maybeSingle();
+      if (!device) {
+        return { success: false, message: 'Device credential is not registered. Please log in with your password.' };
+      }
 
-      if (devErr || !device) {
-        return { success: false, message: 'Device credential is invalid or has been revoked.' };
+      // Check revoked status
+      if (device.status === 'revoked' || device.revoked_at) {
+        return { success: false, message: 'Device access has been revoked by an administrator.' };
       }
 
       // Verify token hash
@@ -2310,11 +2467,11 @@ export const dataService = {
         return { success: false, message: 'Device token mismatch. Authentication rejected.' };
       }
 
-      // Authoritative check on profile
+      // Authoritative check on profile in Supabase
       const { data: profile, error: profErr } = await db
         .from('profiles')
         .select('*')
-        .eq('id', device.user_id)
+        .or(`id.eq.${device.user_id},user_id.eq.${device.user_id}`)
         .maybeSingle();
 
       if (profErr || !profile || profile.deleted_at || profile.status === 'deleted') {
@@ -2325,13 +2482,19 @@ export const dataService = {
         return { success: false, message: 'User account is disabled. Please contact your administrator.' };
       }
 
-      // Touch last_used_at
+      // Update last_used_at timestamp in Supabase
+      const now = new Date().toISOString();
       try {
-        await db.from('trusted_devices')
-          .update({ last_used_at: new Date().toISOString() })
-          .eq('id', device.id);
-      } catch (err) {
-        console.warn('Could not update last_used_at:', err);
+        await db.from('trusted_devices').update({ last_used_at: now }).eq('id', device.id);
+      } catch {
+        try {
+          const cloudDevices = await this.fetchCloudDeviceRegistry(db);
+          const t = cloudDevices.find((d) => d.id === device!.id || d.credential_id === device!.credential_id);
+          if (t) {
+            t.last_used_at = now;
+            await this.saveCloudDeviceRegistry(db, cloudDevices);
+          }
+        } catch {}
       }
 
       return {

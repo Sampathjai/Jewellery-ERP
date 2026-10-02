@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { getLocalDb } from '@/lib/supabase';
@@ -30,6 +30,8 @@ import {
 import { useAuth } from '@/lib/auth';
 import { BrandLogo } from '@/components/common/BrandLogo';
 
+import { syncEngine } from '@/lib/syncEngine';
+
 export const WholesaleIssueDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -45,58 +47,72 @@ export const WholesaleIssueDetails: React.FC = () => {
 
   const isAdmin = role === 'admin' || role === 'manager';
 
-  useEffect(() => {
-    async function loadIssueAndCustomer() {
-      if (!id) {
-        setIsLoading(false);
-        return;
-      }
-      setIsLoading(true);
-      try {
-        const fetchedIssue = await dataService.getWholesaleIssueById(id);
-        const fetchedSettings = await dataService.getBusinessSettings();
-        setSettings(fetchedSettings);
-
-        if (fetchedIssue) {
-          setIssue(fetchedIssue);
-          let cust: Customer | null = null;
-          if (fetchedIssue.customer_id) {
-            cust = await dataService.getCustomerById(fetchedIssue.customer_id);
-          }
-          if (!cust) {
-            cust = {
-              id: fetchedIssue.customer_id || 'cust-fallback',
-              customer_code: 'CUST-WS',
-              full_name: fetchedIssue.customer_name || 'Wholesale Partner',
-              shop_name: fetchedIssue.customer_shop || 'Dealer Store',
-              customer_type: 'wholesale',
-              phone: '',
-              whatsapp_number: '',
-              email: '',
-              address: 'Trichy, Tamil Nadu',
-              city: 'Trichy',
-              state: 'Tamil Nadu',
-              pin_code: '620008',
-              credit_limit: 0,
-              agreed_profit_percent: fetchedIssue.agreed_profit_percent || 40,
-              profit_sharing_model: fetchedIssue.agreed_profit_model || 'model_a_profit_percent',
-              default_actual_touch: 40,
-              default_profit_touch: 10,
-              default_billing_touch: 50,
-              payment_terms: '30 Days',
-              is_active: true,
-            };
-          }
-          setCustomer(cust);
-        }
-      } catch (err) {
-        console.warn('Error loading wholesale issue details:', err);
-      } finally {
-        setIsLoading(false);
-      }
+  const loadIssueAndCustomer = useCallback(async () => {
+    if (!id) {
+      setIsLoading(false);
+      return;
     }
-    loadIssueAndCustomer();
+    try {
+      const fetchedIssue = await dataService.getWholesaleIssueById(id);
+      const fetchedSettings = await dataService.getBusinessSettings();
+      setSettings(fetchedSettings);
+
+      if (fetchedIssue) {
+        setIssue(fetchedIssue);
+        let cust: Customer | null = null;
+        if (fetchedIssue.customer_id) {
+          cust = await dataService.getCustomerById(fetchedIssue.customer_id);
+        }
+        if (!cust) {
+          cust = {
+            id: fetchedIssue.customer_id || 'cust-fallback',
+            customer_code: 'CUST-WS',
+            full_name: fetchedIssue.customer_name || 'Wholesale Partner',
+            shop_name: fetchedIssue.customer_shop || 'Dealer Store',
+            customer_type: 'wholesale',
+            phone: '',
+            whatsapp_number: '',
+            email: '',
+            address: 'Trichy, Tamil Nadu',
+            city: 'Trichy',
+            state: 'Tamil Nadu',
+            pin_code: '620008',
+            credit_limit: 0,
+            agreed_profit_percent: fetchedIssue.agreed_profit_percent || 40,
+            profit_sharing_model: fetchedIssue.agreed_profit_model || 'model_a_profit_percent',
+            default_actual_touch: 40,
+            default_profit_touch: 10,
+            default_billing_touch: 50,
+            payment_terms: '30 Days',
+            is_active: true,
+          };
+        }
+        setCustomer(cust);
+      }
+    } catch (err) {
+      console.warn('Error loading wholesale issue details:', err);
+    } finally {
+      setIsLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    setIsLoading(true);
+    loadIssueAndCustomer();
+    const unsub = syncEngine.subscribeDataChange((tableName) => {
+      if (
+        !tableName ||
+        tableName === 'all_tables' ||
+        tableName === 'wholesale_issues' ||
+        tableName === 'wholesale_issue_items' ||
+        tableName === 'wholesale_payments' ||
+        tableName === 'wholesale_returns'
+      ) {
+        loadIssueAndCustomer();
+      }
+    });
+    return () => unsub();
+  }, [loadIssueAndCustomer]);
 
   if (isLoading) {
     return (
