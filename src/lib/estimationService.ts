@@ -76,12 +76,10 @@ class EstimationService {
           if (error.code === 'PGRST205') {
             log('Supabase table public.estimations not in schema cache, reading from Supabase Cloud Sync Vault...');
             const vaultList = await this.fetchFromCloudVault(client);
-            if (vaultList && vaultList.length > 0) {
-              estimations = vaultList;
-              isCloudFetchSuccess = true;
-              log(`Cloud Vault fetch succeeded: ${estimations.length} estimations returned`);
-              this.updateLocalCache(estimations);
-            }
+            estimations = vaultList || [];
+            isCloudFetchSuccess = true;
+            log(`Cloud Vault fetch succeeded: ${estimations.length} estimations returned`);
+            this.updateLocalCache(estimations);
           } else {
             logError(`Supabase query failed: ${error.message} (code: ${error.code})`);
           }
@@ -116,16 +114,16 @@ class EstimationService {
       logWarn('Using local cache fallback for estimations');
       const localDb = getLocalDb();
       estimations = localDb.estimations || [];
+    }
 
-      if (options?.customerId) {
-        estimations = estimations.filter((e) => e.customer_id === options.customerId);
-      }
-      if (options?.status && options.status !== ('all' as any)) {
-        estimations = estimations.filter((e) => e.status === options.status);
-      }
-      if (options?.type && options.type !== ('all' as any)) {
-        estimations = estimations.filter((e) => e.estimation_type === options.type);
-      }
+    if (options?.customerId) {
+      estimations = estimations.filter((e) => e.customer_id === options.customerId);
+    }
+    if (options?.status && options.status !== ('all' as any)) {
+      estimations = estimations.filter((e) => e.status === options.status);
+    }
+    if (options?.type && options.type !== ('all' as any)) {
+      estimations = estimations.filter((e) => e.estimation_type === options.type);
     }
 
     // Apply text search filtering if provided
@@ -456,7 +454,11 @@ class EstimationService {
   /**
    * Update the status of an estimation (e.g., draft -> sent -> approved).
    */
-  async updateEstimationStatus(id: string, status: EstimationStatus): Promise<boolean> {
+  async updateEstimationStatus(
+    id: string,
+    status: EstimationStatus,
+    notes?: string
+  ): Promise<boolean> {
     const validId = ensureValidUUID(id);
     const now = new Date().toISOString();
     log(`Updating status for ${validId} -> ${status}`);

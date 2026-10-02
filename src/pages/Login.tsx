@@ -532,7 +532,7 @@ export const Login: React.FC = () => {
                     </p>
                   </div>
 
-                  {deviceVault && (
+                  {deviceVault ? (
                     <div className="mb-4">
                       <button
                         type="button"
@@ -546,7 +546,23 @@ export const Login: React.FC = () => {
                         <span>Back to {deviceVault.deviceName} Unlock</span>
                       </button>
                     </div>
-                  )}
+                  ) : capability?.isSupported ? (
+                    <div className="mb-4">
+                      <button
+                        type="button"
+                        onClick={handleBiometricUnlock}
+                        disabled={isAuthenticatingBiometric}
+                        className="w-full py-2.5 px-3 rounded-xl border border-gold-500/40 bg-gold-500/10 text-xs font-semibold text-gold-300 hover:bg-gold-500/20 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Fingerprint className="h-4 w-4 text-gold-400" />
+                        <span>
+                          {isAuthenticatingBiometric
+                            ? 'Scanning Sensor...'
+                            : capability?.buttonLabel || 'Unlock with Biometrics'}
+                        </span>
+                      </button>
+                    </div>
+                  ) : null}
 
                   <form onSubmit={handleSubmit} className="space-y-4">
                     {/* Email / Username Field */}
