@@ -57,11 +57,24 @@ export const EstimationsList: React.FC = () => {
   useEffect(() => {
     loadEstimations();
     const unsub = syncEngine.subscribeDataChange((tableName) => {
-      if (tableName === 'estimations' || tableName === 'general') {
+      if (tableName === 'estimations' || tableName === 'general' || tableName === 'metal_rates') {
         loadEstimations();
       }
     });
-    return () => unsub();
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        loadEstimations();
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    return () => {
+      unsub();
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
   }, [loadEstimations]);
 
   // Metrics

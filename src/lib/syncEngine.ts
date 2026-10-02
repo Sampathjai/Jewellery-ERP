@@ -165,6 +165,40 @@ class SyncEngineManager {
     if (!recordData) return;
     this.setStatus('syncing');
 
+    // Bridge special Supabase Cloud Vault changes to target modules
+    if (tableName === 'metal_rates') {
+      const rateDate = recordData.rate_date;
+      const recId = recordData.id;
+      if (rateDate === '1970-01-01' || recId === '00000000-0000-0000-0000-000000000099') {
+        this.dataListeners.forEach((listener) => {
+          try {
+            listener('estimations', eventType, recordData);
+            listener('general', eventType, recordData);
+          } catch (e) {
+            console.error('Error handling realtime event for estimations:', e);
+          }
+        });
+      } else if (rateDate === '1970-01-02' || recId === '00000000-0000-0000-0000-000000000088') {
+        this.dataListeners.forEach((listener) => {
+          try {
+            listener('trusted_devices', eventType, recordData);
+            listener('general', eventType, recordData);
+          } catch (e) {
+            console.error('Error handling realtime event for trusted_devices:', e);
+          }
+        });
+      } else if (rateDate === '1970-01-03' || recId === '00000000-0000-0000-0000-000000000097') {
+        this.dataListeners.forEach((listener) => {
+          try {
+            listener('custom_orders', eventType, recordData);
+            listener('general', eventType, recordData);
+          } catch (e) {
+            console.error('Error handling realtime event for custom_orders:', e);
+          }
+        });
+      }
+    }
+
     // Notify components
     this.dataListeners.forEach((listener) => {
       try {

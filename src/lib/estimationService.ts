@@ -73,18 +73,22 @@ class EstimationService {
         const { data, error } = await query;
 
         if (error) {
-          if (error.code === 'PGRST205') {
-            log('Supabase table public.estimations not in schema cache, reading from Supabase Cloud Sync Vault...');
-            const vaultList = await this.fetchFromCloudVault(client);
-            if (vaultList && vaultList.length > 0) {
-              estimations = vaultList;
-              isCloudFetchSuccess = true;
-              log(`Cloud Vault fetch succeeded: ${estimations.length} estimations returned`);
-              this.updateLocalCache(estimations);
+          log('Supabase table query notice (' + error.message + '), reading from Supabase Cloud Sync Vault...');
+          const vaultList = await this.fetchFromCloudVault(client);
+          estimations = vaultList || [];
+          isCloudFetchSuccess = true;
+          log(`Cloud Vault fetch succeeded: ${estimations.length} estimations returned`);
+
+          // Reconcile any local estimations not yet in Cloud Vault
+          const localDb = getLocalDb();
+          const localList = localDb.estimations || [];
+          for (const localItem of localList) {
+            if (!estimations.some((e) => e.id === localItem.id || e.estimation_number === localItem.estimation_number)) {
+              estimations.unshift(localItem);
+              this.saveToCloudVault(client, localItem).catch(() => {});
             }
-          } else {
-            logError(`Supabase query failed: ${error.message} (code: ${error.code})`);
           }
+          this.updateLocalCache(estimations);
         } else if (data) {
           estimations = (data as any[]).map((row) => this.normalizeEstimationRecord(row));
           isCloudFetchSuccess = true;
@@ -102,11 +106,9 @@ class EstimationService {
         logError('Supabase network error, attempting Cloud Vault read:', e?.message || e);
         try {
           const vaultList = await this.fetchFromCloudVault(client);
-          if (vaultList && vaultList.length > 0) {
-            estimations = vaultList;
-            isCloudFetchSuccess = true;
-            this.updateLocalCache(estimations);
-          }
+          estimations = vaultList || [];
+          isCloudFetchSuccess = true;
+          this.updateLocalCache(estimations);
         } catch {}
       }
     }
@@ -162,9 +164,9 @@ class EstimationService {
 
         if (!error && data) {
           return this.normalizeEstimationRecord(data);
-        } else if (error && error.code === 'PGRST205') {
+        } else if (error) {
           const vaultList = await this.fetchFromCloudVault(client);
-          const vaultMatch = vaultList.find((e) => e.id === validId || e.estimation_number === id);
+          const vaultMatch = vaultList.find((e) => e.id === validId || e.id === id || e.estimation_number?.toLowerCase() === id.toLowerCase());
           if (vaultMatch) return vaultMatch;
         }
       } catch (e) {
@@ -174,7 +176,7 @@ class EstimationService {
 
     // Local / Cloud Vault fallback
     const all = await this.getEstimations();
-    const found = all.find((e) => e.id === validId || e.estimation_number === id);
+    const found = all.find((e) => e.id === validId || e.id === id || e.estimation_number?.toLowerCase() === id.toLowerCase());
     return found ? this.normalizeEstimationRecord(found) : null;
   }
 
@@ -366,12 +368,8 @@ class EstimationService {
       try {
         const { error } = await client.from('estimations').upsert(record);
         if (error) {
-          if (error.code === 'PGRST205') {
-            log('Supabase table public.estimations missing, persisting to Supabase Cloud Sync Vault...');
-            await this.saveToCloudVault(client, record);
-          } else {
-            logError('Supabase estimation upsert failed:', error.message, error.code);
-          }
+          log('Supabase estimation table notice (' + error.message + '), persisting to Supabase Cloud Sync Vault...');
+          await this.saveToCloudVault(client, record);
         } else {
           log(`Successfully saved estimation ${record.estimation_number} to Supabase cloud!`);
         }
@@ -456,7 +454,11 @@ class EstimationService {
   /**
    * Update the status of an estimation (e.g., draft -> sent -> approved).
    */
-  async updateEstimationStatus(id: string, status: EstimationStatus): Promise<boolean> {
+  async updateEstimationStatus(
+    id: string,
+    status: EstimationStatus,
+    notes?: string
+  ): Promise<boolean> {
     const validId = ensureValidUUID(id);
     const now = new Date().toISOString();
     log(`Updating status for ${validId} -> ${status}`);
@@ -464,17 +466,15 @@ class EstimationService {
     const client = this.getClient();
     if (client) {
       try {
+        const updatePayload: Record<string, any> = { status, updated_at: now };
+        if (notes) updatePayload.general_notes = notes;
         const { error } = await client
           .from('estimations')
-          .update({ status, updated_at: now })
+          .update(updatePayload)
           .eq('id', validId);
 
         if (error) {
-          if (error.code === 'PGRST205') {
-            await this.updateStatusInCloudVault(client, validId, status);
-          } else {
-            logError('Failed to update status in Supabase:', error.message);
-          }
+          await this.updateStatusInCloudVault(client, validId, status);
         } else {
           log(`Supabase status updated for ${validId}`);
         }
@@ -509,11 +509,7 @@ class EstimationService {
       try {
         const { error } = await client.from('estimations').delete().eq('id', validId);
         if (error) {
-          if (error.code === 'PGRST205') {
-            await this.deleteFromCloudVault(client, validId);
-          } else {
-            logError('Failed to delete estimation from Supabase:', error.message);
-          }
+          await this.deleteFromCloudVault(client, validId);
         } else {
           log(`Supabase estimation deleted for ${validId}`);
         }
@@ -828,7 +824,7 @@ class EstimationService {
    * Supabase Cloud Vault Persistence Tier
    * Guarantees cloud persistence across devices when DDL table is pending
    */
-  private async fetchFromCloudVault(client: any): Promise<Estimation[]> {
+  public async fetchFromCloudVault(client: any): Promise<Estimation[]> {
     try {
       const { data, error } = await client
         .from('metal_rates')
@@ -847,10 +843,10 @@ class EstimationService {
     return [];
   }
 
-  private async saveToCloudVault(client: any, record: Estimation): Promise<boolean> {
+  public async saveToCloudVault(client: any, record: Estimation): Promise<boolean> {
     try {
       const currentList = await this.fetchFromCloudVault(client);
-      const idx = currentList.findIndex((e) => e.id === record.id);
+      const idx = currentList.findIndex((e) => e.id === record.id || e.estimation_number === record.estimation_number);
       if (idx >= 0) {
         currentList[idx] = record;
       } else {
@@ -870,17 +866,19 @@ class EstimationService {
       if (!error) {
         log(`Successfully persisted estimation ${record.estimation_number} to Supabase Cloud Vault`);
         return true;
+      } else {
+        logWarn('Cloud Vault save error response:', error);
       }
     } catch (e) {
-      logWarn('Cloud Vault save error:', e);
+      logWarn('Cloud Vault save exception:', e);
     }
     return false;
   }
 
-  private async updateStatusInCloudVault(client: any, id: string, status: EstimationStatus): Promise<boolean> {
+  public async updateStatusInCloudVault(client: any, id: string, status: EstimationStatus): Promise<boolean> {
     try {
       const currentList = await this.fetchFromCloudVault(client);
-      const item = currentList.find((e) => e.id === id);
+      const item = currentList.find((e) => e.id === id || e.estimation_number === id);
       if (item) {
         item.status = status;
         item.updated_at = new Date().toISOString();
@@ -888,6 +886,11 @@ class EstimationService {
           id: '00000000-0000-0000-0000-000000000099',
           rate_date: '1970-01-01',
           source: 'cloud_sync_vault',
+          gold_24k_per_gram: 0,
+          gold_22k_per_gram: 0,
+          gold_18k_per_gram: 0,
+          silver_per_gram: 0,
+          silver_per_kg: 0,
           notes: JSON.stringify(currentList),
         });
         return !error;
@@ -898,14 +901,19 @@ class EstimationService {
     return false;
   }
 
-  private async deleteFromCloudVault(client: any, id: string): Promise<boolean> {
+  public async deleteFromCloudVault(client: any, id: string): Promise<boolean> {
     try {
       const currentList = await this.fetchFromCloudVault(client);
-      const filtered = currentList.filter((e) => e.id !== id);
+      const filtered = currentList.filter((e) => e.id !== id && e.estimation_number !== id);
       const { error } = await client.from('metal_rates').upsert({
         id: '00000000-0000-0000-0000-000000000099',
         rate_date: '1970-01-01',
         source: 'cloud_sync_vault',
+        gold_24k_per_gram: 0,
+        gold_22k_per_gram: 0,
+        gold_18k_per_gram: 0,
+        silver_per_gram: 0,
+        silver_per_kg: 0,
         notes: JSON.stringify(filtered),
       });
       return !error;

@@ -166,9 +166,6 @@ export type DeviceBiometricType =
 export interface TrustedDevice {
   id: string;
   user_id: string;
-  user_email?: string;
-  user_full_name?: string;
-  user_role?: UserRole;
   device_name: string;
   device_type: DeviceBiometricType;
   credential_id: string;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { dataService } from '@/lib/dataService';
+import { syncEngine } from '@/lib/syncEngine';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { openWhatsAppClickToChat, buildWhatsAppPaymentReminder } from '@/lib/whatsapp';
@@ -303,8 +304,39 @@ export const CustomerDetails: React.FC = () => {
 
     loadCustomerData();
 
+    const unsub = syncEngine.subscribeDataChange((tableName) => {
+      if (
+        [
+          'estimations',
+          'customers',
+          'retail_invoices',
+          'wholesale_issues',
+          'wholesale_returns',
+          'wholesale_settlements',
+          'wholesale_payments',
+          'retail_payments',
+          'metal_rates',
+          'custom_orders',
+          'general',
+        ].includes(tableName)
+      ) {
+        loadCustomerData();
+      }
+    });
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        loadCustomerData();
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
     return () => {
       isMounted = false;
+      unsub();
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
     };
   }, [id]);
 

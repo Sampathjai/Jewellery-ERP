@@ -36,6 +36,7 @@ import {
   CustomOrder,
   CustomOrderStatus,
 } from '@/types';
+import { estimationService } from './estimationService';
 
 // ============================================================================
 // UUID SANITIZATION HELPER
@@ -3523,270 +3524,22 @@ export const dataService = {
     customerId?: string;
     status?: EstimationStatus;
     search?: string;
+    type?: EstimationType;
   }): Promise<Estimation[]> {
-    const localDb = getLocalDb();
-    let estimations: Estimation[] = [];
-
-    try {
-      const db = checkSupabaseClient();
-      let query = db.from('estimations').select('*').order('created_at', { ascending: false });
-
-      if (options?.customerId) {
-        query = query.eq('customer_id', options.customerId);
-      }
-      if (options?.status) {
-        query = query.eq('status', options.status);
-      }
-
-      const { data, error } = await query;
-      if (!error && data) {
-        estimations = data as Estimation[];
-      } else {
-        estimations = localDb.estimations || [];
-      }
-    } catch {
-      estimations = localDb.estimations || [];
-    }
-
-    if (options?.customerId) {
-      estimations = estimations.filter((e) => e.customer_id === options.customerId);
-    }
-    if (options?.status) {
-      estimations = estimations.filter((e) => e.status === options.status);
-    }
-
-    if (options?.search) {
-      const q = options.search.toLowerCase().trim();
-      estimations = estimations.filter((e) => {
-        const estNumMatch = e.estimation_number?.toLowerCase().includes(q);
-        const custNameMatch = e.customer_name?.toLowerCase().includes(q);
-        const phoneMatch = e.customer_phone?.includes(q);
-        const itemMatch = e.items?.some(
-          (i) => i.item_name?.toLowerCase().includes(q) || i.jewellery_type?.toLowerCase().includes(q)
-        );
-        return estNumMatch || custNameMatch || phoneMatch || itemMatch;
-      });
-    }
-
-    return estimations;
+    return estimationService.getEstimations(options);
   },
 
   async getEstimationById(id: string): Promise<Estimation | null> {
-    const validId = ensureValidUUID(id);
-    const localDb = getLocalDb();
-
-    try {
-      const db = checkSupabaseClient();
-      const { data, error } = await db
-        .from('estimations')
-        .select('*')
-        .or(`id.eq.${validId},estimation_number.eq.${id}`)
-        .maybeSingle();
-
-      if (!error && data) {
-        return data as Estimation;
-      }
-    } catch {
-      // Fallback
-    }
-
-    return (
-      (localDb.estimations || []).find((e) => e.id === validId || e.estimation_number === id) || null
-    );
+    return estimationService.getEstimationById(id);
   },
 
   async getEstimationRevisions(rootOrParentId: string): Promise<Estimation[]> {
-    const validId = ensureValidUUID(rootOrParentId);
-    const all = await this.getEstimations();
-    return all.filter(
-      (e) =>
-        e.id === validId ||
-        e.parent_estimation_id === validId ||
-        e.root_estimation_id === validId
-    ).sort((a, b) => (a.version || 1) - (b.version || 1));
+    return estimationService.getEstimationRevisions(rootOrParentId);
   },
 
   async saveEstimation(estimationData: Partial<Estimation>): Promise<Estimation> {
-    const db = checkSupabaseClient();
-    const validId = ensureValidUUID(estimationData.id);
     const isNew = !estimationData.id || !estimationData.created_at;
-    const now = new Date().toISOString();
-
-    const estimationNumber =
-      estimationData.estimation_number || (await this.generateEstimationNumber());
-
-    // Fetch active metal rates for rate snapshot if not provided
-    let gold22kRate = estimationData.gold_22k_rate || 0;
-    let gold24kRate = estimationData.gold_24k_rate || 0;
-    let silverRate = estimationData.silver_rate || 0;
-
-    if (!gold22kRate || !silverRate) {
-      const rates = await this.getMetalRates();
-      if (rates && rates.length > 0) {
-        gold24kRate = gold24kRate || rates[0].gold_24k_per_gram;
-        gold22kRate = gold22kRate || rates[0].gold_22k_per_gram;
-        silverRate = silverRate || rates[0].silver_per_gram;
-      }
-    }
-
-    // Process & calculate items
-    const rawItems = estimationData.items || [];
-    let subtotalMetal = 0;
-    let totalMaking = 0;
-    let totalWastage = 0;
-    let totalStones = 0;
-    let totalOther = 0;
-    let totalDiscount = 0;
-
-    const computedItems: EstimationItem[] = rawItems.map((item) => {
-      const itemId = ensureValidUUID(item.id);
-      const gross = Number(item.estimated_gross_weight_g || 0);
-      const stoneWeight = Number(item.estimated_stone_weight_g || 0);
-      const netWeight = Math.max(0, Number(item.estimated_net_weight_g ?? (gross - stoneWeight)));
-
-      const metalType = item.metal_type || 'gold';
-      const applicableRate =
-        Number(item.metal_rate_per_gram || 0) > 0
-          ? Number(item.metal_rate_per_gram)
-          : metalType === 'silver'
-          ? silverRate
-          : gold22kRate;
-
-      const metalVal = Math.round(netWeight * applicableRate);
-
-      let makingAmt = 0;
-      const makingRate = Number(item.making_charge_rate || 0);
-      if (item.making_charge_type === 'percentage') {
-        makingAmt = Math.round(metalVal * (makingRate / 100));
-      } else if (item.making_charge_type === 'flat') {
-        makingAmt = Math.round(makingRate);
-      } else {
-        makingAmt = Math.round(netWeight * makingRate);
-      }
-
-      const wastagePct = Number(item.wastage_percent || 0);
-      const wastageWt = Number(((netWeight * wastagePct) / 100).toFixed(3));
-      const wastageVal = Math.round(wastageWt * applicableRate);
-
-      const stoneAmt = Number(item.stone_charge || 0);
-      const otherAmt = Number(item.other_charge || 0);
-      const discAmt = Number(item.discount || 0);
-
-      const lineTot = Math.max(0, metalVal + makingAmt + wastageVal + stoneAmt + otherAmt - discAmt);
-
-      subtotalMetal += metalVal;
-      totalMaking += makingAmt;
-      totalWastage += wastageVal;
-      totalStones += stoneAmt;
-      totalOther += otherAmt;
-      totalDiscount += discAmt;
-
-      return {
-        id: itemId,
-        estimation_id: validId,
-        item_type: item.item_type || estimationData.estimation_type || 'reference_design',
-        product_id: item.product_id ? ensureValidUUID(item.product_id) : null, // Nullable!
-        item_name: item.item_name || 'Custom Jewellery',
-        jewellery_type: item.jewellery_type || 'Other',
-        metal_type: metalType,
-        purity: item.purity || '22k',
-        quantity: Math.max(1, Number(item.quantity || 1)),
-        estimated_gross_weight_g: gross,
-        estimated_stone_weight_g: stoneWeight,
-        estimated_net_weight_g: netWeight,
-        metal_rate_per_gram: applicableRate,
-        metal_value: metalVal,
-        making_charge_type: item.making_charge_type || 'per_gram',
-        making_charge_rate: makingRate,
-        making_charge_amount: makingAmt,
-        wastage_percent: wastagePct,
-        wastage_weight_g: wastageWt,
-        wastage_value: wastageVal,
-        stone_charge: stoneAmt,
-        other_charge: otherAmt,
-        discount: discAmt,
-        line_total: lineTot,
-        design_description: item.design_description,
-        customer_requirements: item.customer_requirements,
-        reference_images: item.reference_images || [],
-      };
-    });
-
-    const overallDiscount = Number(estimationData.discount_amount ?? totalDiscount);
-    const taxableAmount = Math.max(0, subtotalMetal + totalMaking + totalWastage + totalStones + totalOther - overallDiscount);
-    const taxPercent = Number(estimationData.tax_percent ?? 3.0);
-    const taxAmount = Math.round(taxableAmount * (taxPercent / 100));
-    const rawTotal = taxableAmount + taxAmount;
-    const roundedTotal = Math.round(rawTotal);
-    const roundOff = Number((roundedTotal - rawTotal).toFixed(2));
-
-    const record: Estimation = {
-      id: validId,
-      estimation_number: estimationNumber,
-      version: Number(estimationData.version || 1),
-      parent_estimation_id: estimationData.parent_estimation_id
-        ? ensureValidUUID(estimationData.parent_estimation_id)
-        : null,
-      root_estimation_id: estimationData.root_estimation_id
-        ? ensureValidUUID(estimationData.root_estimation_id)
-        : null,
-      estimation_type: estimationData.estimation_type || 'reference_design',
-      customer_id: estimationData.customer_id ? ensureValidUUID(estimationData.customer_id) : undefined,
-      customer_name: (estimationData.customer_name || '').trim() || 'Valued Customer',
-      customer_phone: estimationData.customer_phone || '',
-      customer_email: estimationData.customer_email || '',
-      customer_address: estimationData.customer_address || '',
-      estimation_date: estimationData.estimation_date || now.split('T')[0],
-      valid_until:
-        estimationData.valid_until ||
-        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      rate_snapshot_date: estimationData.rate_snapshot_date || now.split('T')[0],
-      gold_22k_rate: gold22kRate,
-      gold_24k_rate: gold24kRate,
-      silver_rate: silverRate,
-      subtotal_metal_value: subtotalMetal,
-      total_making_charges: totalMaking,
-      total_wastage_value: totalWastage,
-      total_stone_charges: totalStones,
-      total_other_charges: totalOther,
-      discount_amount: overallDiscount,
-      tax_percent: taxPercent,
-      tax_amount: taxAmount,
-      round_off: roundOff,
-      total_estimated_amount: roundedTotal,
-      status: estimationData.status || 'draft',
-      items: computedItems,
-      reference_images: estimationData.reference_images || [],
-      general_notes: estimationData.general_notes || '',
-      customer_requirements: estimationData.customer_requirements || '',
-      converted_order_id: estimationData.converted_order_id || null,
-      created_by: estimationData.created_by,
-      created_at: estimationData.created_at || now,
-      updated_at: now,
-    };
-
-    // 1. Try Supabase upsert
-    try {
-      const { error } = await db.from('estimations').upsert(record);
-      if (error) {
-        console.warn('Supabase estimation upsert notice:', error.message);
-      }
-    } catch (e) {
-      console.warn('Supabase estimation upsert exception:', e);
-    }
-
-    // 2. Update local database cache
-    const localDb = getLocalDb();
-    const existingIndex = (localDb.estimations || []).findIndex((e) => e.id === record.id);
-    if (existingIndex >= 0) {
-      localDb.estimations[existingIndex] = record;
-    } else {
-      localDb.estimations = [record, ...(localDb.estimations || [])];
-    }
-    saveLocalDb(localDb);
-
-    syncEngine.notifyDataChange('estimations', isNew ? 'INSERT' : 'UPDATE', record);
-
+    const record = await estimationService.saveEstimation(estimationData);
     this.logAuditAction(
       isNew ? 'CUSTOM_ESTIMATION_CREATED' : 'CUSTOM_ESTIMATION_UPDATED',
       'estimation',
@@ -3799,7 +3552,6 @@ export const dataService = {
         items_count: record.items.length,
       }
     ).catch(() => {});
-
     return record;
   },
 
@@ -3808,101 +3560,33 @@ export const dataService = {
     revisionNotesOrOverrides?: string | Partial<Estimation>,
     maybeOverrides?: Partial<Estimation>
   ): Promise<Estimation> {
-    const parent = await this.getEstimationById(parentEstimationId);
-    if (!parent) {
-      throw new Error('Parent estimation not found for creating revision.');
-    }
-
-    const revisionNotes = typeof revisionNotesOrOverrides === 'string' ? revisionNotesOrOverrides : undefined;
-    const overrides = typeof revisionNotesOrOverrides === 'object' ? revisionNotesOrOverrides : maybeOverrides;
-
-    const nextVersion = (parent.version || 1) + 1;
-    const baseNumber = parent.estimation_number.split('-V')[0];
-    const newEstNumber = `${baseNumber}-V${nextVersion}`;
-    const newId = ensureValidUUID();
-
-    // Mark parent status as revision_requested
-    await this.updateEstimationStatus(parent.id, 'revision_requested');
-
-    // Fetch current rates for snapshot
-    const rates = await this.getMetalRates();
-    const current22k = rates?.[0]?.gold_22k_per_gram || parent.gold_22k_rate;
-    const current24k = rates?.[0]?.gold_24k_per_gram || parent.gold_24k_rate;
-    const currentSilver = rates?.[0]?.silver_per_gram || parent.silver_rate;
-
-    const revisionPayload: Partial<Estimation> = {
-      ...parent,
-      ...(overrides || {}),
-      id: newId,
-      estimation_number: newEstNumber,
-      version: nextVersion,
-      parent_estimation_id: parent.id,
-      root_estimation_id: parent.root_estimation_id || parent.id,
-      status: overrides?.status || 'draft',
-      estimation_date: overrides?.estimation_date || new Date().toISOString().split('T')[0],
-      rate_snapshot_date: overrides?.rate_snapshot_date || new Date().toISOString().split('T')[0],
-      gold_22k_rate: overrides?.gold_22k_rate || current22k,
-      gold_24k_rate: overrides?.gold_24k_rate || current24k,
-      silver_rate: overrides?.silver_rate || currentSilver,
-      general_notes: revisionNotes
-        ? `Revision Notes: ${revisionNotes}\n\n${parent.general_notes || ''}`
-        : (overrides?.general_notes || parent.general_notes),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    const createdRevision = await this.saveEstimation(revisionPayload);
-
+    const createdRevision = await estimationService.createEstimationRevision(
+      parentEstimationId,
+      revisionNotesOrOverrides,
+      maybeOverrides
+    );
     this.logAuditAction('CUSTOM_ESTIMATION_REVISION_CREATED', 'estimation', createdRevision.id, {
-      parent_estimation_id: parent.id,
-      parent_number: parent.estimation_number,
+      parent_estimation_id: parentEstimationId,
       new_number: createdRevision.estimation_number,
-      version: nextVersion,
+      version: createdRevision.version,
     }).catch(() => {});
-
     return createdRevision;
   },
 
-  async updateEstimationStatus(id: string, status: EstimationStatus): Promise<boolean> {
-    const validId = ensureValidUUID(id);
-    const now = new Date().toISOString();
-
-    try {
-      const db = checkSupabaseClient();
-      await db.from('estimations').update({ status, updated_at: now }).eq('id', validId);
-    } catch {}
-
-    const localDb = getLocalDb();
-    const item = (localDb.estimations || []).find((e) => e.id === validId);
-    if (item) {
-      item.status = status;
-      item.updated_at = now;
-      saveLocalDb(localDb);
-    }
-
-    syncEngine.notifyDataChange('estimations', 'UPDATE', { id: validId, status });
-
+  async updateEstimationStatus(
+    id: string,
+    status: EstimationStatus,
+    notes?: string
+  ): Promise<boolean> {
+    const ok = await estimationService.updateEstimationStatus(id, status, notes);
     if (status === 'approved') {
-      this.logAuditAction('CUSTOM_ESTIMATION_APPROVED', 'estimation', validId, { status }).catch(() => {});
+      this.logAuditAction('CUSTOM_ESTIMATION_APPROVED', 'estimation', id, { status }).catch(() => {});
     }
-
-    return true;
+    return ok;
   },
 
   async deleteEstimation(id: string): Promise<boolean> {
-    const validId = ensureValidUUID(id);
-
-    try {
-      const db = checkSupabaseClient();
-      await db.from('estimations').delete().eq('id', validId);
-    } catch {}
-
-    const localDb = getLocalDb();
-    localDb.estimations = (localDb.estimations || []).filter((e) => e.id !== validId);
-    saveLocalDb(localDb);
-
-    syncEngine.notifyDataChange('estimations', 'DELETE', { id: validId });
-    return true;
+    return estimationService.deleteEstimation(id);
   },
 
   async convertEstimationToCustomOrder(
@@ -3961,9 +3645,16 @@ export const dataService = {
     // 1. Save custom order to Supabase
     try {
       const db = checkSupabaseClient();
-      await db.from('custom_orders').upsert(customOrder);
+      const { error } = await db.from('custom_orders').upsert(customOrder);
+      if (error) {
+        await this.saveCustomOrderToCloudVault(db, customOrder);
+      }
     } catch (e) {
       console.warn('Supabase custom order upsert notice:', e);
+      try {
+        const db = checkSupabaseClient();
+        await this.saveCustomOrderToCloudVault(db, customOrder);
+      } catch {}
     }
 
     // 2. Update local DB
@@ -3987,6 +3678,49 @@ export const dataService = {
     return customOrder;
   },
 
+  async fetchCustomOrdersFromCloudVault(db: any): Promise<CustomOrder[]> {
+    try {
+      const { data, error } = await db
+        .from('metal_rates')
+        .select('*')
+        .eq('rate_date', '1970-01-03')
+        .maybeSingle();
+
+      if (!error && data?.notes) {
+        const parsed = JSON.parse(data.notes);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch custom orders from Cloud Vault:', e);
+    }
+    return [];
+  },
+
+  async saveCustomOrderToCloudVault(db: any, order: CustomOrder): Promise<boolean> {
+    try {
+      const currentList = await this.fetchCustomOrdersFromCloudVault(db);
+      const idx = currentList.findIndex((o) => o.id === order.id || o.order_number === order.order_number);
+      if (idx >= 0) currentList[idx] = order;
+      else currentList.unshift(order);
+
+      const { error } = await db.from('metal_rates').upsert({
+        id: '00000000-0000-0000-0000-000000000097',
+        rate_date: '1970-01-03',
+        source: 'cloud_custom_orders_vault',
+        gold_24k_per_gram: 0,
+        gold_22k_per_gram: 0,
+        gold_18k_per_gram: 0,
+        silver_per_gram: 0,
+        silver_per_kg: 0,
+        notes: JSON.stringify(currentList),
+      });
+      return !error;
+    } catch (e) {
+      console.warn('Failed to save custom order to Cloud Vault:', e);
+      return false;
+    }
+  },
+
   async getCustomOrders(options?: {
     customerId?: string;
     status?: CustomOrderStatus;
@@ -4005,10 +3739,19 @@ export const dataService = {
       if (!error && data) {
         orders = data as CustomOrder[];
       } else {
-        orders = localDb.customOrders || [];
+        orders = await this.fetchCustomOrdersFromCloudVault(db);
+        if (!orders || orders.length === 0) {
+          orders = localDb.customOrders || [];
+        }
       }
     } catch {
-      orders = localDb.customOrders || [];
+      try {
+        const db = checkSupabaseClient();
+        orders = await this.fetchCustomOrdersFromCloudVault(db);
+      } catch {}
+      if (!orders || orders.length === 0) {
+        orders = localDb.customOrders || [];
+      }
     }
 
     if (options?.customerId) {
@@ -4036,6 +3779,9 @@ export const dataService = {
       if (!error && data) {
         return data as CustomOrder;
       }
+      const cloudOrders = await this.fetchCustomOrdersFromCloudVault(db);
+      const match = cloudOrders.find((o) => o.id === validId || o.id === id || o.order_number === id);
+      if (match) return match;
     } catch {}
 
     return (
