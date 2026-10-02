@@ -19,7 +19,6 @@ class SyncEngineManager {
   private broadcastChannel: BroadcastChannel | null = null;
   private realtimeSubscription: any = null;
   private isInitialized = false;
-  private clientId: string = `client-${Math.random().toString(36).substring(2, 10)}`;
 
   constructor() {
     this.initBroadcastChannel();
@@ -84,7 +83,7 @@ class SyncEngineManager {
   public notifyDataChange(tableName: string, eventType: 'INSERT' | 'UPDATE' | 'DELETE', payload: any) {
     this.setStatus('syncing');
 
-    // 1. Broadcast across tabs on same device via local BroadcastChannel
+    // Broadcast across tabs on same device
     if (this.broadcastChannel) {
       try {
         this.broadcastChannel.postMessage({
@@ -98,25 +97,7 @@ class SyncEngineManager {
       }
     }
 
-    // 2. Broadcast across devices via Supabase Realtime WebSocket broadcast
-    if (this.realtimeSubscription) {
-      try {
-        this.realtimeSubscription.send({
-          type: 'broadcast',
-          event: 'ERP_CROSS_DEVICE_SYNC',
-          payload: {
-            tableName,
-            eventType,
-            data: payload,
-            senderId: this.clientId,
-          },
-        });
-      } catch (e) {
-        console.warn('Could not broadcast cross-device realtime message:', e);
-      }
-    }
-
-    // 3. Notify local listeners on this tab
+    // Notify local listeners
     this.dataListeners.forEach((listener) => {
       try {
         listener(tableName, eventType, payload);
@@ -151,13 +132,9 @@ class SyncEngineManager {
 
     try {
       this.setStatus('syncing');
-
+      
       const channel = supabase
-        .channel('sj-erp-realtime-global', {
-          config: {
-            broadcast: { self: false },
-          },
-        })
+        .channel('sj-erp-realtime-global')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public' },
@@ -167,18 +144,11 @@ class SyncEngineManager {
             this.handleRemoteRealtimeChange(table, eventType, payload.new || payload.old);
           }
         )
-        .on('broadcast', { event: 'ERP_CROSS_DEVICE_SYNC' }, (event: any) => {
-          const { tableName, eventType, data, senderId } = event?.payload || {};
-          if (senderId && senderId === this.clientId) return; // Ignore messages from self
-          if (tableName && data) {
-            this.handleRemoteRealtimeChange(tableName, eventType || 'UPDATE', data);
-          }
-        })
         .subscribe((status: string) => {
           if (status === 'SUBSCRIBED') {
             this.setStatus('synced');
           } else if (status === 'CHANNEL_ERROR') {
-            this.setStatus('error', 'Supabase realtime channel connection notice');
+            this.setStatus('error', 'Supabase realtime channel connection issue');
           } else if (status === 'CLOSED') {
             this.setStatus('offline', 'Realtime channel closed');
           }
@@ -223,3 +193,4 @@ class SyncEngineManager {
 }
 
 export const syncEngine = new SyncEngineManager();
+

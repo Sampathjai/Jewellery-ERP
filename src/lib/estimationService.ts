@@ -22,10 +22,6 @@ const log = (msg: string, ...args: any[]) => console.log(`${LOG_PREFIX} ${msg}`,
 const logWarn = (msg: string, ...args: any[]) => console.warn(`${LOG_PREFIX} ⚠️ ${msg}`, ...args);
 const logError = (msg: string, ...args: any[]) => console.error(`${LOG_PREFIX} ❌ ${msg}`, ...args);
 
-// Cloud Sync Vault constants (allows cross-device sync even before DDL migration)
-const VAULT_RECORD_ID = '00000000-0000-0000-0000-000000000099';
-const VAULT_DATE = '1970-01-01';
-
 export interface EstimationFilterOptions {
   customerId?: string;
   status?: EstimationStatus;
@@ -36,6 +32,9 @@ export interface EstimationFilterOptions {
 class EstimationService {
   private isSyncingUnsynced = false;
 
+  /**
+   * Helper to check Supabase client availability
+   */
   private getClient() {
     if (!isSupabaseConfigured() || !supabase) {
       return null;
@@ -44,126 +43,9 @@ class EstimationService {
   }
 
   /**
-   * Helper: Fetch estimations from Cloud Sync Vault stored in Supabase
-   */
-  private async fetchFromCloudVault(client: any): Promise<Estimation[]> {
-    try {
-      const { data, error } = await client
-        .from('metal_rates')
-        .select('notes')
-        .eq('rate_date', VAULT_DATE)
-        .maybeSingle();
-
-      if (!error && data && data.notes) {
-        const parsed = JSON.parse(data.notes);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          log(`Loaded ${parsed.length} estimations from Supabase Cloud Sync Vault`);
-          return parsed.map((item) => this.normalizeEstimationRecord(item));
-        }
-      }
-    } catch (e) {
-      logWarn('Cloud Vault fetch notice:', e);
-    }
-    return [];
-  }
-
-  /**
-   * Helper: Persist estimations list into Supabase Cloud Sync Vault
-   */
-  private async saveToCloudVault(client: any, record: Estimation) {
-    try {
-      const currentVault = await this.fetchFromCloudVault(client);
-      const localDb = getLocalDb();
-      const base = currentVault.length > 0 ? currentVault : (localDb.estimations || []);
-
-      const idx = base.findIndex((e) => e.id === record.id);
-      let updated: Estimation[];
-      if (idx >= 0) {
-        updated = [...base];
-        updated[idx] = record;
-      } else {
-        updated = [record, ...base];
-      }
-
-      await client.from('metal_rates').upsert(
-        {
-          id: VAULT_RECORD_ID,
-          rate_date: VAULT_DATE,
-          gold_24k_per_gram: 0,
-          gold_22k_per_gram: 0,
-          gold_18k_per_gram: 0,
-          silver_per_gram: 0,
-          silver_per_kg: 0,
-          source: 'cloud_sync_vault',
-          notes: JSON.stringify(updated),
-        },
-        { onConflict: 'rate_date' }
-      );
-      log(`Synced estimation ${record.estimation_number} to Supabase Cloud Sync Vault`);
-    } catch (e) {
-      logWarn('Cloud Vault save notice:', e);
-    }
-  }
-
-  /**
-   * Helper: Update status in Cloud Sync Vault
-   */
-  private async updateStatusInCloudVault(client: any, id: string, status: EstimationStatus) {
-    try {
-      const currentVault = await this.fetchFromCloudVault(client);
-      const updated = currentVault.map((e) =>
-        e.id === id ? { ...e, status, updated_at: new Date().toISOString() } : e
-      );
-
-      await client.from('metal_rates').upsert(
-        {
-          id: VAULT_RECORD_ID,
-          rate_date: VAULT_DATE,
-          gold_24k_per_gram: 0,
-          gold_22k_per_gram: 0,
-          gold_18k_per_gram: 0,
-          silver_per_gram: 0,
-          silver_per_kg: 0,
-          source: 'cloud_sync_vault',
-          notes: JSON.stringify(updated),
-        },
-        { onConflict: 'rate_date' }
-      );
-    } catch (e) {
-      logWarn('Cloud Vault status update notice:', e);
-    }
-  }
-
-  /**
-   * Helper: Delete from Cloud Sync Vault
-   */
-  private async deleteFromCloudVault(client: any, id: string) {
-    try {
-      const currentVault = await this.fetchFromCloudVault(client);
-      const updated = currentVault.filter((e) => e.id !== id);
-
-      await client.from('metal_rates').upsert(
-        {
-          id: VAULT_RECORD_ID,
-          rate_date: VAULT_DATE,
-          gold_24k_per_gram: 0,
-          gold_22k_per_gram: 0,
-          gold_18k_per_gram: 0,
-          silver_per_gram: 0,
-          silver_per_kg: 0,
-          source: 'cloud_sync_vault',
-          notes: JSON.stringify(updated),
-        },
-        { onConflict: 'rate_date' }
-      );
-    } catch (e) {
-      logWarn('Cloud Vault delete notice:', e);
-    }
-  }
-
-  /**
    * Fetch all estimations with optional filters.
-   * Primary source of truth: Supabase PostgreSQL (or Supabase Cloud Vault).
+   * Primary source of truth: Supabase.
+   * Resilient fallback: Local cache with automatic sync on reconnect.
    */
   async getEstimations(options?: EstimationFilterOptions): Promise<Estimation[]> {
     log('Fetch started', options || 'all');
@@ -192,15 +74,9 @@ class EstimationService {
 
         if (error) {
           if (error.code === 'PGRST205') {
-            // Table doesn't exist yet, seamlessly load from Supabase Cloud Sync Vault!
-            log('Supabase table public.estimations not yet present. Loading from Supabase Cloud Sync Vault...');
-            const vaultList = await this.fetchFromCloudVault(client);
-            if (vaultList && vaultList.length > 0) {
-              estimations = vaultList;
-              isCloudFetchSuccess = true;
-              log(`Cloud Vault fetch succeeded: ${estimations.length} estimations returned`);
-              this.updateLocalCache(estimations);
-            }
+            logError(
+              `Table 'public.estimations' does not exist in Supabase schema cache (PGRST205). Please run the SQL migration in Supabase SQL Editor.`
+            );
           } else {
             logError(`Supabase query failed: ${error.message} (code: ${error.code})`);
           }
@@ -208,27 +84,22 @@ class EstimationService {
           estimations = (data as any[]).map((row) => this.normalizeEstimationRecord(row));
           isCloudFetchSuccess = true;
           log(`Cloud fetch succeeded: ${estimations.length} estimations returned`);
+
+          // Cache in local storage for offline read
           this.updateLocalCache(estimations);
 
-          // Push any pending offline items
+          // Check if local cache has any unsynced offline records to push to cloud
           this.syncPendingLocalEstimations(client, estimations).catch((err) =>
             logWarn('Pending sync check error:', err)
           );
         }
       } catch (e: any) {
-        logError('Supabase network error, attempting Cloud Vault read:', e?.message || e);
-        try {
-          const vaultList = await this.fetchFromCloudVault(client);
-          if (vaultList && vaultList.length > 0) {
-            estimations = vaultList;
-            isCloudFetchSuccess = true;
-            this.updateLocalCache(estimations);
-          }
-        } catch {}
+        logError('Supabase network or unexpected error:', e?.message || e);
       }
     }
 
     if (!isCloudFetchSuccess) {
+      // Fallback to local storage
       logWarn('Using local cache fallback for estimations');
       const localDb = getLocalDb();
       estimations = localDb.estimations || [];
@@ -284,9 +155,11 @@ class EstimationService {
       }
     }
 
-    // Local / Cloud Vault fallback
-    const all = await this.getEstimations();
-    const found = all.find((e) => e.id === validId || e.estimation_number === id);
+    // Local fallback
+    const localDb = getLocalDb();
+    const found = (localDb.estimations || []).find(
+      (e) => e.id === validId || e.estimation_number === id
+    );
     return found ? this.normalizeEstimationRecord(found) : null;
   }
 
@@ -319,13 +192,13 @@ class EstimationService {
     const estimationNumber =
       estimationData.estimation_number || (await this.generateEstimationNumber());
 
-    // Metal rates fallback
+    // Fallback metal rates if not provided
     let gold22kRate = Number(estimationData.gold_22k_rate || 0);
     let gold24kRate = Number(estimationData.gold_24k_rate || 0);
     let silverRate = Number(estimationData.silver_rate || 0);
 
     if (!gold22kRate || !silverRate) {
-      const localRates = (getLocalDb().metalRates || []).filter((r) => r.rate_date > '2000-01-01');
+      const localRates = getLocalDb().metalRates || [];
       if (localRates.length > 0) {
         gold24kRate = gold24kRate || localRates[0].gold_24k_per_gram;
         gold22kRate = gold22kRate || localRates[0].gold_22k_per_gram;
@@ -333,7 +206,7 @@ class EstimationService {
       }
     }
 
-    // Process line items
+    // Calculate line items
     const rawItems = estimationData.items || [];
     let subtotalMetal = 0;
     let totalMaking = 0;
@@ -478,11 +351,11 @@ class EstimationService {
       try {
         const { error } = await client.from('estimations').upsert(record);
         if (error) {
+          logError('Supabase estimation upsert failed:', error.message, error.code);
           if (error.code === 'PGRST205') {
-            log('Supabase table public.estimations missing, persisting to Supabase Cloud Sync Vault...');
-            await this.saveToCloudVault(client, record);
-          } else {
-            logError('Supabase estimation upsert failed:', error.message);
+            logError(
+              '⚠️ Table "estimations" missing in Supabase. Run migration 20261001000000_customer_estimations_and_reference_designs.sql'
+            );
           }
         } else {
           log(`Successfully saved estimation ${record.estimation_number} to Supabase cloud!`);
@@ -502,7 +375,7 @@ class EstimationService {
     }
     saveLocalDb(localDb);
 
-    // 3. Notify real-time engine & other browser tabs / devices
+    // 3. Notify real-time engine & other browser tabs
     syncEngine.notifyDataChange('estimations', isNew ? 'INSERT' : 'UPDATE', record);
 
     return record;
@@ -534,8 +407,8 @@ class EstimationService {
     // Mark parent status as revision_requested
     await this.updateEstimationStatus(parent.id, 'revision_requested');
 
-    // Current metal rates
-    const localRates = (getLocalDb().metalRates || []).filter((r) => r.rate_date > '2000-01-01');
+    // Fetch current rates
+    const localRates = getLocalDb().metalRates || [];
     const current22k = localRates?.[0]?.gold_22k_per_gram || parent.gold_22k_rate;
     const current24k = localRates?.[0]?.gold_24k_per_gram || parent.gold_24k_rate;
     const currentSilver = localRates?.[0]?.silver_per_gram || parent.silver_rate;
@@ -580,8 +453,10 @@ class EstimationService {
           .update({ status, updated_at: now })
           .eq('id', validId);
 
-        if (error && error.code === 'PGRST205') {
-          await this.updateStatusInCloudVault(client, validId, status);
+        if (error) {
+          logError('Failed to update status in Supabase:', error.message);
+        } else {
+          log(`Supabase status updated for ${validId}`);
         }
       } catch (e) {
         logError('Supabase status update exception:', e);
@@ -612,8 +487,10 @@ class EstimationService {
     if (client) {
       try {
         const { error } = await client.from('estimations').delete().eq('id', validId);
-        if (error && error.code === 'PGRST205') {
-          await this.deleteFromCloudVault(client, validId);
+        if (error) {
+          logError('Failed to delete estimation from Supabase:', error.message);
+        } else {
+          log(`Supabase estimation deleted for ${validId}`);
         }
       } catch (e) {
         logError('Supabase delete exception:', e);
@@ -731,24 +608,13 @@ class EstimationService {
               highestNum = parsed;
             }
           }
-        } else if (error && error.code === 'PGRST205') {
-          const vaultList = await this.fetchFromCloudVault(client);
-          for (const row of vaultList) {
-            if (row.estimation_number?.startsWith(prefix)) {
-              const numPart = (row.estimation_number || '').replace(prefix, '').split('-')[0];
-              const parsed = parseInt(numPart, 10);
-              if (!isNaN(parsed) && parsed > highestNum) {
-                highestNum = parsed;
-              }
-            }
-          }
         }
       } catch (e) {
         logWarn('Failed to query remote max estimation number, checking local cache:', e);
       }
     }
 
-    // Check local cache
+    // Also check local cache for any numbers created while offline
     const localDb = getLocalDb();
     const localEsts = (localDb.estimations || []).filter((e) =>
       e.estimation_number?.startsWith(prefix)
@@ -767,6 +633,7 @@ class EstimationService {
 
   /**
    * Upload customer reference photo design.
+   * Stores to Supabase storage bucket 'estimation-designs' or provides data URI fallback.
    */
   async uploadReferenceDesignImage(
     file: File | Blob,
@@ -864,8 +731,8 @@ class EstimationService {
           const { error } = await client.from('estimations').upsert(localEst);
           if (!error) {
             log(`Synced local estimation ${localEst.estimation_number} to Supabase`);
-          } else if (error.code === 'PGRST205') {
-            await this.saveToCloudVault(client, localEst);
+          } else {
+            logWarn(`Failed to sync estimation ${localEst.estimation_number}:`, error.message);
           }
         }
       }
@@ -881,10 +748,12 @@ class EstimationService {
     const localDb = getLocalDb();
     const existingMap = new Map<string, Estimation>();
 
+    // Keep existing unsynced records
     for (const est of localDb.estimations || []) {
       existingMap.set(est.id, est);
     }
 
+    // Overwrite/update with fresh cloud records
     for (const remoteEst of remoteEstimations) {
       existingMap.set(remoteEst.id, remoteEst);
     }
