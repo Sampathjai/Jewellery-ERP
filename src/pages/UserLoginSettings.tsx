@@ -159,31 +159,6 @@ export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded =
     }
   };
 
-  // Handle Purging / Resetting All Biometric Data across All Devices
-  const handleClearAllBiometrics = async () => {
-    if (
-      !window.confirm(
-        '⚠️ WIPE ALL BIOMETRIC DATA?\n\nThis will completely purge all biometric, Face ID, fingerprint, and PIN credentials across ALL devices (both mobile and laptop). Every device can then add biometrics as fresh and new.\n\nDo you want to proceed?'
-      )
-    ) {
-      return;
-    }
-
-    setDeviceActionMessage(null);
-    try {
-      await dataService.clearAllBiometricAndDeviceData();
-      await removeLocalDeviceBiometrics();
-      setTrustedDevices([]);
-      setHasLocalDeviceVault(false);
-      setDeviceActionMessage({
-        type: 'success',
-        text: 'All biometric data and device registrations have been completely cleared across all devices. You can now add biometrics as fresh and new.',
-      });
-    } catch (err: any) {
-      setDeviceActionMessage({ type: 'error', text: err?.message || 'Error clearing biometric data.' });
-    }
-  };
-
   // Handle Removing Biometrics from Current Browser
   const handleRemoveLocalDevice = async () => {
     if (
@@ -532,34 +507,21 @@ export const UserLoginSettings: React.FC<{ embedded?: boolean }> = ({ embedded =
 
           {/* Registered Devices List */}
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Registered Trusted Devices ({trustedDevices.length})
               </h4>
 
-              <div className="flex items-center gap-3">
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={handleClearAllBiometrics}
-                    className="text-[11px] font-bold text-red-600 hover:text-red-700 dark:text-red-400 flex items-center gap-1 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 px-2.5 py-1 rounded-lg transition-colors"
-                    title="Wipe all biometric credentials across all devices so you can register fresh"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>Clear All Devices Biometric Data</span>
-                  </button>
-                )}
-                {trustedDevices.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleRevokeAllDevices}
-                    className="text-[11px] font-bold text-slate-600 hover:text-slate-800 dark:text-slate-400 flex items-center gap-1"
-                  >
-                    <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
-                    <span>Revoke Devices</span>
-                  </button>
-                )}
-              </div>
+              {trustedDevices.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleRevokeAllDevices}
+                  className="text-[11px] font-bold text-red-600 hover:text-red-700 dark:text-red-400 flex items-center gap-1"
+                >
+                  <ShieldAlert className="h-3.5 w-3.5" />
+                  <span>Revoke All Devices</span>
+                </button>
+              )}
             </div>
 
             {trustedDevices.length === 0 ? (
