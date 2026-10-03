@@ -239,6 +239,15 @@ class SyncEngineManager {
   }
 
   private handleLocalTabEvent(tableName: string, eventType: 'INSERT' | 'UPDATE' | 'DELETE', payload: any) {
+    if (tableName === 'trusted_devices' && (eventType === 'DELETE' || payload?.resetAll)) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('shankar_erp_device_vault');
+        localStorage.removeItem('shankar_erp_trusted_devices_cache');
+        localStorage.removeItem('sampath_passkey_credentials');
+        localStorage.removeItem('shankar_erp_pin_lockout');
+      }
+    }
+
     this.dataListeners.forEach((listener) => {
       try {
         listener(tableName, eventType, payload);

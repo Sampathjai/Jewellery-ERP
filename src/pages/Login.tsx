@@ -29,6 +29,7 @@ import {
   getLocalDeviceVault,
   hasRegisteredLocalDevice,
   checkPinLockout,
+  removeLocalDeviceBiometrics,
   LocalDeviceVault,
   BiometricCapability,
 } from '@/lib/biometricAuth';
@@ -211,6 +212,20 @@ export const Login: React.FC = () => {
       setPin('');
     } finally {
       setIsAuthenticatingPin(false);
+    }
+  };
+
+  // Reset/Clear Biometric cache on this specific device
+  const handleClearThisDeviceBiometric = async () => {
+    if (
+      window.confirm(
+        'Reset biometric data on this device? This will remove local Face ID / Fingerprint and PIN data so you can sign in with your password and register fresh.'
+      )
+    ) {
+      await removeLocalDeviceBiometrics();
+      setDeviceVault(null);
+      setLoginMode('password');
+      setErrorMessage(null);
     }
   };
 
@@ -433,6 +448,14 @@ export const Login: React.FC = () => {
                     >
                       Sign in with Password instead
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={handleClearThisDeviceBiometric}
+                      className="w-full text-[11px] text-red-400/80 hover:text-red-300 transition-colors py-0.5"
+                    >
+                      Reset Biometrics on this device
+                    </button>
                   </div>
                 </div>
               )}
@@ -544,6 +567,14 @@ export const Login: React.FC = () => {
                       className="w-full text-xs text-slate-400 hover:text-gold-300 transition-colors py-1"
                     >
                       Sign in with Password instead
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleClearThisDeviceBiometric}
+                      className="w-full text-[11px] text-red-400/80 hover:text-red-300 transition-colors py-0.5"
+                    >
+                      Reset Biometrics on this device
                     </button>
                   </div>
                 </div>

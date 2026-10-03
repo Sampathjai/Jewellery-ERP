@@ -3206,6 +3206,48 @@ export const dataService = {
     return updated;
   },
 
+  async clearAllBiometricAndDeviceData(): Promise<boolean> {
+    const db = checkSupabaseClient();
+    try {
+      // 1. Delete all trusted devices in Supabase table
+      try {
+        await db.from('trusted_devices').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      } catch (e) {
+        console.warn('Delete from trusted_devices warning:', e);
+      }
+
+      // 2. Delete all webauthn passkeys & challenges
+      try {
+        await db.from('webauthn_credentials').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        await db.from('webauthn_challenges').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      } catch (e) {
+        console.warn('Delete from webauthn_credentials warning:', e);
+      }
+
+      // 3. Clear cloud device registry in business settings
+      try {
+        await this.saveCloudDeviceRegistry(db, []);
+      } catch (e) {
+        console.warn('Clear cloud device registry warning:', e);
+      }
+
+      // 4. Clear local device vault & storage on this device
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('shankar_erp_device_vault');
+        localStorage.removeItem('shankar_erp_trusted_devices_cache');
+        localStorage.removeItem('sampath_passkey_credentials');
+        localStorage.removeItem('shankar_erp_pin_lockout');
+      }
+
+      // 5. Broadcast to all other devices in real-time
+      syncEngine.notifyDataChange('trusted_devices', 'DELETE', { resetAll: true });
+      return true;
+    } catch (err: any) {
+      console.error('Failed to clear all biometric data:', err);
+      throw formatDbError('Clear Biometric Data Failed', err);
+    }
+  },
+
   async deleteUserProfile(id: string): Promise<void> {
     const db = checkSupabaseClient();
 
@@ -3220,9 +3262,11 @@ export const dataService = {
 
     // 1. Fetch user profile details before deletion to get both id and user_id
     let authUserId: string | null = null;
+    let targetEmail: string | null = null;
     try {
-      const { data: prof } = await db.from('profiles').select('id, user_id').or(`id.eq.${id},user_id.eq.${id}`).maybeSingle();
+      const { data: prof } = await db.from('profiles').select('id, user_id, email').or(`id.eq.${id},user_id.eq.${id}`).maybeSingle();
       if (prof?.user_id) authUserId = prof.user_id;
+      if (prof?.email) targetEmail = prof.email;
     } catch (e) {
       // Fallthrough
     }
@@ -3251,19 +3295,20 @@ export const dataService = {
       console.warn('Edge function delete_user warning, deleting profile row directly:', e);
     }
 
-    // 4. Disassociate FK references on audit logs & notifications before profile deletion
-    try {
-      await db.from('audit_logs').update({ user_id: null }).or(`user_id.eq.${id},user_id.eq.${authUserId || id}`);
-      await db.from('notifications').delete().or(`user_id.eq.${id},user_id.eq.${authUserId || id}`);
-    } catch (e) {
-      // Best effort cleanup
-    }
-
-    // 5. Delete from public.profiles table (PostgreSQL trigger on_profile_deleted will also fire)
+    // 4. Delete from public.profiles table (PostgreSQL trigger on_profile_deleted will also fire)
     const { error } = await db.from('profiles').delete().or(`id.eq.${id},user_id.eq.${id}`);
 
     if (error) {
       console.error('Failed to delete user profile in Supabase:', error.message);
+      if (error.message.includes('foreign key constraint') || error.message.includes('audit_logs_user_id_fkey')) {
+        try {
+          await db.from('profiles').update({ is_active: false, status: 'disabled' }).or(`id.eq.${id},user_id.eq.${id}`);
+          syncEngine.notifyDataChange('profiles', 'UPDATE', { id, is_active: false, status: 'disabled' });
+        } catch {}
+        throw new Error(
+          'Database Foreign Key Constraint: This user is referenced in audit_logs. Please execute CLEAR_BIOMETRICS_AND_DELETE_USER.sql in your Supabase SQL Editor to permanently purge this account across all tables.'
+        );
+      }
       throw formatDbError('User Profile Deletion Failed', error);
     }
 

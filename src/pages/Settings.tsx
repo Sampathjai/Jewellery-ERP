@@ -6,7 +6,7 @@ import { getLocalDb, resetLocalDbToDemo, resetToCleanProductionData } from '@/li
 import { seedDemoData, clearDemoData } from '@/lib/demoData';
 import { dataService } from '@/lib/dataService';
 import { BusinessSettings } from '@/types';
-import { Settings as SettingsIcon, Save, RefreshCw, Upload, ShieldCheck, AlertOctagon, Trash2, Wifi, Building2, Database, Lock } from 'lucide-react';
+import { Settings as SettingsIcon, Save, RefreshCw, Upload, ShieldCheck, AlertOctagon, Trash2, Wifi, Building2, Database, Lock, Fingerprint } from 'lucide-react';
 
 export const Settings: React.FC = () => {
   const [db, setDb] = useState(getLocalDb());
@@ -186,6 +186,35 @@ export const Settings: React.FC = () => {
                 className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:border-charcoal-700 dark:bg-charcoal-800 dark:text-slate-200"
               >
                 <RefreshCw className="h-4 w-4 text-gold-600" /> Reset DB to Demo Seed Data
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20 md:col-span-2">
+              <h4 className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5 mb-1">
+                <Fingerprint className="h-4 w-4 text-amber-600" /> Clear All Biometric & Device Registrations
+              </h4>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300 mb-3">
+                Wipes all Face ID, Touch ID, Passkey, and PIN credentials across all mobile phones and laptops so you can set them up fresh and new.
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (
+                    window.confirm(
+                      '⚠️ CLEAR ALL BIOMETRIC DATA?\n\nThis will completely purge all biometric, Face ID, Fingerprint, and PIN credentials across ALL devices (both mobile and laptop). You will be able to register fresh biometrics on any device.\n\nDo you want to proceed?'
+                    )
+                  ) {
+                    try {
+                      await dataService.clearAllBiometricAndDeviceData();
+                      setToastMessage('All biometric and device registrations have been completely cleared.');
+                    } catch (e: any) {
+                      setToastMessage(`Error: ${e.message}`);
+                    }
+                  }
+                }}
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-amber-700 transition-colors"
+              >
+                <Trash2 className="h-4 w-4" /> Clear All Biometric Data (All Devices)
               </button>
             </div>
           </div>
