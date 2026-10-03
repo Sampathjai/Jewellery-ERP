@@ -145,6 +145,17 @@ CREATE TABLE IF NOT EXISTS public.trusted_devices (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Add any missing columns to existing trusted_devices table
+ALTER TABLE public.trusted_devices ADD COLUMN IF NOT EXISTS device_name TEXT NOT NULL DEFAULT 'Unknown Device';
+ALTER TABLE public.trusted_devices ADD COLUMN IF NOT EXISTS device_type TEXT NOT NULL DEFAULT 'biometric_generic';
+ALTER TABLE public.trusted_devices ADD COLUMN IF NOT EXISTS public_key TEXT;
+ALTER TABLE public.trusted_devices ADD COLUMN IF NOT EXISTS platform TEXT;
+ALTER TABLE public.trusted_devices ADD COLUMN IF NOT EXISTS browser TEXT;
+ALTER TABLE public.trusted_devices ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE public.trusted_devices ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.trusted_devices ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
+ALTER TABLE public.trusted_devices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 CREATE INDEX IF NOT EXISTS idx_trusted_devices_user_id ON public.trusted_devices(user_id);
 CREATE INDEX IF NOT EXISTS idx_trusted_devices_credential_id ON public.trusted_devices(credential_id);
 CREATE INDEX IF NOT EXISTS idx_trusted_devices_status ON public.trusted_devices(status);
@@ -180,6 +191,16 @@ CREATE TABLE IF NOT EXISTS public.webauthn_credentials (
     last_used_at TIMESTAMPTZ DEFAULT NOW(),
     revoked_at TIMESTAMPTZ
 );
+
+-- Add any missing columns to existing webauthn_credentials table
+ALTER TABLE public.webauthn_credentials ADD COLUMN IF NOT EXISTS counter BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE public.webauthn_credentials ADD COLUMN IF NOT EXISTS device_type TEXT NOT NULL DEFAULT 'passkey';
+ALTER TABLE public.webauthn_credentials ADD COLUMN IF NOT EXISTS backed_up BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.webauthn_credentials ADD COLUMN IF NOT EXISTS transports TEXT[] DEFAULT ARRAY['internal']::TEXT[];
+ALTER TABLE public.webauthn_credentials ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT 'Passkey';
+ALTER TABLE public.webauthn_credentials ADD COLUMN IF NOT EXISTS aaguid TEXT;
+ALTER TABLE public.webauthn_credentials ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.webauthn_credentials ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user_id ON public.webauthn_credentials(user_id);
 CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_credential_id ON public.webauthn_credentials(credential_id);
