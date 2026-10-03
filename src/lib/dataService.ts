@@ -3209,11 +3209,13 @@ export const dataService = {
   async deleteUserProfile(id: string): Promise<void> {
     const db = checkSupabaseClient();
 
-    // Revoke all trusted devices for this user immediately
+    // Revoke all trusted devices and passkeys for this user immediately
     try {
       await this.revokeAllTrustedDevices(id);
+      await db.from('webauthn_credentials').delete().or(`user_id.eq.${id}`);
+      await db.from('webauthn_challenges').delete().or(`user_id.eq.${id}`);
     } catch (e) {
-      console.warn('Could not revoke trusted devices before deletion:', e);
+      console.warn('Could not revoke trusted devices/passkeys before deletion:', e);
     }
 
     // 1. Fetch user profile details before deletion to get both id and user_id
@@ -3249,7 +3251,15 @@ export const dataService = {
       console.warn('Edge function delete_user warning, deleting profile row directly:', e);
     }
 
-    // 4. Delete from public.profiles table (PostgreSQL trigger on_profile_deleted will also fire)
+    // 4. Disassociate FK references on audit logs & notifications before profile deletion
+    try {
+      await db.from('audit_logs').update({ user_id: null }).or(`user_id.eq.${id},user_id.eq.${authUserId || id}`);
+      await db.from('notifications').delete().or(`user_id.eq.${id},user_id.eq.${authUserId || id}`);
+    } catch (e) {
+      // Best effort cleanup
+    }
+
+    // 5. Delete from public.profiles table (PostgreSQL trigger on_profile_deleted will also fire)
     const { error } = await db.from('profiles').delete().or(`id.eq.${id},user_id.eq.${id}`);
 
     if (error) {

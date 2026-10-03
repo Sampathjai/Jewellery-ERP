@@ -32,6 +32,11 @@ import {
   LocalDeviceVault,
   BiometricCapability,
 } from '@/lib/biometricAuth';
+import {
+  detectBiometricDeviceInfo,
+  authenticateWithWebAuthnPasskey,
+  BiometricDeviceInfo,
+} from '@/lib/webauthn';
 import { BiometricSetupModal } from '@/components/auth/BiometricSetupModal';
 
 export const Login: React.FC = () => {
@@ -46,6 +51,7 @@ export const Login: React.FC = () => {
   const [loginMode, setLoginMode] = useState<'biometric' | 'pin' | 'password'>('password');
   const [deviceVault, setDeviceVault] = useState<LocalDeviceVault | null>(null);
   const [capability, setCapability] = useState<BiometricCapability | null>(null);
+  const [biometricInfo, setBiometricInfo] = useState<BiometricDeviceInfo | null>(null);
   const [pin, setPin] = useState('');
   const [isAuthenticatingBiometric, setIsAuthenticatingBiometric] = useState(false);
   const [isAuthenticatingPin, setIsAuthenticatingPin] = useState(false);
@@ -62,6 +68,7 @@ export const Login: React.FC = () => {
   useEffect(() => {
     // Detect biometric hardware and local registered device vault
     detectBiometricCapability().then((cap) => setCapability(cap));
+    detectBiometricDeviceInfo().then((info) => setBiometricInfo(info));
     const vault = getLocalDeviceVault();
     if (vault) {
       setDeviceVault(vault);
@@ -147,6 +154,30 @@ export const Login: React.FC = () => {
     } catch (err: any) {
       setErrorMessage(err?.message || 'Biometric unlock failed. Please use your PIN.');
       setLoginMode('pin');
+    } finally {
+      setIsAuthenticatingBiometric(false);
+    }
+  };
+
+  // Handle Standard WebAuthn / FIDO2 Passkey Login
+  const handlePasskeyLogin = async () => {
+    setErrorMessage(null);
+    setIsAuthenticatingBiometric(true);
+
+    try {
+      const res = await authenticateWithWebAuthnPasskey(email.trim() || undefined);
+      if (res.success && res.userProfile) {
+        loginWithProfile(res.userProfile);
+        navigate('/dashboard', { replace: true });
+      } else {
+        setErrorMessage(res.message || 'Passkey authentication failed. Please sign in with password.');
+      }
+    } catch (err: any) {
+      let msg = err?.message || 'Biometric passkey authentication was cancelled or failed.';
+      if (err?.name === 'NotAllowedError' || msg.includes('cancelled')) {
+        msg = 'Authentication was cancelled. Please try again or use your password.';
+      }
+      setErrorMessage(msg);
     } finally {
       setIsAuthenticatingBiometric(false);
     }
@@ -648,6 +679,37 @@ export const Login: React.FC = () => {
                         </>
                       )}
                     </button>
+
+                    {/* OR Divider & Passkey Login Button (Prompt Section 11) */}
+                    {biometricInfo?.isSupported && (
+                      <div className="pt-2">
+                        <div className="relative my-3 flex items-center justify-center">
+                          <div className="h-[1px] w-full bg-gold-500/25" />
+                          <span className="absolute bg-charcoal-900 px-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">
+                            OR
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handlePasskeyLogin}
+                          disabled={isAuthenticatingBiometric}
+                          className="w-full min-h-[48px] rounded-xl border border-gold-400/60 bg-gradient-to-r from-gold-500/15 via-amber-500/15 to-gold-600/15 hover:bg-gold-500/25 active:scale-[0.99] text-gold-200 font-bold text-xs sm:text-sm shadow-[0_0_25px_rgba(212,175,55,0.18)] transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
+                        >
+                          {isAuthenticatingBiometric ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 animate-spin text-gold-400" />
+                              <span>Verifying {biometricInfo.displayName}...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Fingerprint className="h-4.5 w-4.5 text-gold-400" />
+                              <span>{biometricInfo.buttonLabel || 'Use Face ID / Fingerprint / Passkey'}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </form>
                 </div>
               )}

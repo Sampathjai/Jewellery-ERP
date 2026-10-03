@@ -6,7 +6,19 @@ export interface SyncStatusChangeEvent {
   status: SyncStatus;
   message?: string;
   lastSyncedAt?: string;
+  pendingQueueCount?: number;
 }
+
+export interface OfflineMutation {
+  id: string;
+  table: string;
+  operation: 'INSERT' | 'UPDATE' | 'DELETE';
+  payload: any;
+  createdAt: string;
+  retryCount: number;
+}
+
+const OFFLINE_QUEUE_KEY = 'shankar_erp_offline_mutations_queue';
 
 type SyncListener = (event: SyncStatusChangeEvent) => void;
 type DataChangeListener = (tableName: string, eventType: 'INSERT' | 'UPDATE' | 'DELETE', payload: any) => void;
@@ -19,9 +31,122 @@ class SyncEngineManager {
   private broadcastChannel: BroadcastChannel | null = null;
   private realtimeSubscription: any = null;
   private isInitialized = false;
+  private isReplayingQueue = false;
 
   constructor() {
     this.initBroadcastChannel();
+    this.initNetworkListeners();
+  }
+
+  private initNetworkListeners() {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        console.log('[SyncEngine] Network connection restored. Replaying pending offline mutations...');
+        this.replayOfflineQueue();
+      });
+      window.addEventListener('offline', () => {
+        this.setStatus('offline', 'Network offline — changes will queue locally');
+      });
+    }
+  }
+
+  public getPendingQueue(): OfflineMutation[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  public getPendingQueueCount(): number {
+    return this.getPendingQueue().length;
+  }
+
+  public enqueueOfflineMutation(mutation: Omit<OfflineMutation, 'id' | 'createdAt' | 'retryCount'>): string {
+    const id = `mut_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newEntry: OfflineMutation = {
+      ...mutation,
+      id,
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+    };
+    try {
+      const queue = this.getPendingQueue();
+      // Avoid duplicate mutations with identical payload and table
+      const isDuplicate = queue.some(
+        (m) => m.table === mutation.table && m.payload?.id && m.payload?.id === mutation.payload?.id
+      );
+      if (!isDuplicate) {
+        queue.push(newEntry);
+        localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+      }
+      this.setStatus('offline', `${queue.length} change(s) queued for sync`);
+    } catch (e) {
+      console.warn('Failed to persist offline mutation:', e);
+    }
+    return id;
+  }
+
+  public async replayOfflineQueue(): Promise<{ success: boolean; processed: number }> {
+    if (this.isReplayingQueue) return { success: false, processed: 0 };
+    if (!isSupabaseConfigured() || !supabase) return { success: false, processed: 0 };
+
+    const queue = this.getPendingQueue();
+    if (queue.length === 0) return { success: true, processed: 0 };
+
+    this.isReplayingQueue = true;
+    this.setStatus('syncing', `Replaying ${queue.length} pending mutations...`);
+
+    const remainingQueue: OfflineMutation[] = [];
+    let processedCount = 0;
+
+    for (const item of queue) {
+      try {
+        if (item.operation === 'INSERT' || item.operation === 'UPDATE') {
+          // Use upsert to guarantee idempotency and avoid duplicate primary keys
+          const { error } = await supabase.from(item.table).upsert(item.payload, { onConflict: 'id' });
+          if (error) {
+            console.error(`Failed to replay mutation for table ${item.table}:`, error.message);
+            item.retryCount += 1;
+            if (item.retryCount < 5) {
+              remainingQueue.push(item);
+            }
+          } else {
+            processedCount++;
+            this.notifyDataChange(item.table, item.operation, item.payload);
+          }
+        } else if (item.operation === 'DELETE') {
+          const targetId = item.payload?.id || item.payload;
+          const { error } = await supabase.from(item.table).delete().eq('id', targetId);
+          if (error) {
+            item.retryCount += 1;
+            if (item.retryCount < 5) remainingQueue.push(item);
+          } else {
+            processedCount++;
+            this.notifyDataChange(item.table, 'DELETE', item.payload);
+          }
+        }
+      } catch (err) {
+        console.error('Exception during offline queue replay:', err);
+        item.retryCount += 1;
+        if (item.retryCount < 5) remainingQueue.push(item);
+      }
+    }
+
+    try {
+      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remainingQueue));
+    } catch (e) {
+      console.warn('Failed to update offline queue after replay:', e);
+    }
+
+    this.isReplayingQueue = false;
+    this.setStatus(remainingQueue.length > 0 ? 'offline' : 'synced', 
+      remainingQueue.length > 0 ? `${remainingQueue.length} pending sync` : 'All changes synchronized with cloud'
+    );
+
+    return { success: true, processed: processedCount };
   }
 
   private initBroadcastChannel() {
@@ -43,6 +168,7 @@ class SyncEngineManager {
     return {
       status: this.status,
       lastSyncedAt: this.lastSyncedAt,
+      pendingQueueCount: this.getPendingQueueCount(),
     };
   }
 
@@ -70,6 +196,7 @@ class SyncEngineManager {
       status: this.status,
       message,
       lastSyncedAt: this.lastSyncedAt,
+      pendingQueueCount: this.getPendingQueueCount(),
     };
     this.statusListeners.forEach((listener) => {
       try {

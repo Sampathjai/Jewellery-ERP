@@ -222,6 +222,13 @@ serve(async (req: Request) => {
         );
       }
 
+      // Clean up devices, passkeys, and nullify references
+      await adminClient.from("trusted_devices").delete().or(`user_id.eq.${targetUserId}`);
+      await adminClient.from("webauthn_credentials").delete().or(`user_id.eq.${targetUserId}`);
+      await adminClient.from("webauthn_challenges").delete().or(`user_id.eq.${targetUserId}`);
+      await adminClient.from("audit_logs").update({ user_id: null }).or(`user_id.eq.${targetUserId}`);
+      await adminClient.from("notifications").delete().or(`user_id.eq.${targetUserId}`);
+
       // Delete from profiles
       await adminClient.from("profiles").delete().or(`id.eq.${targetUserId},user_id.eq.${targetUserId}`);
 

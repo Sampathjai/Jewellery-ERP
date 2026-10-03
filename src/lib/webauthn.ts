@@ -1,48 +1,106 @@
 /**
- * @deprecated This legacy module has been superseded by `biometricAuth.ts`
- * implementing the Hardware Biometric & 6-digit ERP PIN Unlock System with `trusted_devices`.
- * Retained for backwards compatibility during cloud migration.
+ * Shankar Jewellery ERP - Production WebAuthn / FIDO2 Passkey Service
+ * Powered by @simplewebauthn/browser.
+ *
+ * Implements hardware-bound biometric authentication (Face ID, Touch ID,
+ * Windows Hello, Android Biometrics) using standard W3C WebAuthn APIs.
+ *
+ * IMPORTANT:
+ * No raw biometric data, templates, or private keys are ever accessed or stored.
  */
-import { UserProfile, UserPasskey } from '@/types';
+
+import {
+  startRegistration,
+  startAuthentication,
+  browserSupportsWebAuthn,
+  platformAuthenticatorIsAvailable,
+} from '@simplewebauthn/browser';
+import { UserProfile } from '@/types';
 import { dataService } from './dataService';
 
-export const bufferToBase64URL = (buffer: ArrayBuffer): string => {
-  const bytes = new Uint8Array(buffer);
-  let string = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    string += String.fromCharCode(bytes[i]);
+export interface WebAuthnPasskey {
+  id: string;
+  user_id: string;
+  credential_id: string;
+  counter: number;
+  device_type: string;
+  backed_up: boolean;
+  transports?: string[];
+  name: string;
+  created_at: string;
+  last_used_at: string;
+  revoked_at?: string | null;
+}
+
+export interface BiometricDeviceInfo {
+  isSupported: boolean;
+  hasPlatformAuthenticator: boolean;
+  displayName: string;
+  buttonLabel: string;
+  deviceType: 'face_id' | 'touch_id' | 'windows_hello' | 'fingerprint' | 'passkey';
+}
+
+/**
+ * Detect device capability and OS-specific biometric names
+ */
+export const detectBiometricDeviceInfo = async (): Promise<BiometricDeviceInfo> => {
+  const isSupported = browserSupportsWebAuthn();
+  let hasPlatformAuthenticator = false;
+
+  if (isSupported) {
+    try {
+      hasPlatformAuthenticator = await platformAuthenticatorIsAvailable();
+    } catch {
+      hasPlatformAuthenticator = false;
+    }
   }
-  return btoa(string)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
+
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  let displayName = 'Passkey';
+  let buttonLabel = 'Sign in with Passkey';
+  let deviceType: 'face_id' | 'touch_id' | 'windows_hello' | 'fingerprint' | 'passkey' = 'passkey';
+
+  if (/iPhone|iPad|iPod/i.test(ua)) {
+    deviceType = 'face_id';
+    displayName = 'Face ID / Touch ID';
+    buttonLabel = 'Use Face ID / Touch ID';
+  } else if (/Macintosh|Mac OS X/i.test(ua)) {
+    deviceType = 'touch_id';
+    displayName = 'MacBook Touch ID';
+    buttonLabel = 'Use Touch ID';
+  } else if (/Windows/i.test(ua)) {
+    deviceType = 'windows_hello';
+    displayName = 'Windows Hello';
+    buttonLabel = 'Use Windows Hello';
+  } else if (/Android/i.test(ua)) {
+    deviceType = 'fingerprint';
+    displayName = 'Fingerprint / Face Unlock';
+    buttonLabel = 'Use Fingerprint / Face Unlock';
+  }
+
+  return {
+    isSupported,
+    hasPlatformAuthenticator,
+    displayName,
+    buttonLabel,
+    deviceType,
+  };
 };
 
-export const base64URLToBuffer = (base64url: string): ArrayBuffer => {
-  const padding = '='.repeat((4 - (base64url.length % 4)) % 4);
-  const base64 = (base64url + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray.buffer;
-};
-
+/**
+ * Check if WebAuthn is supported on the current browser
+ */
 export const isWebAuthnSupported = (): boolean => {
-  return (
-    typeof window !== 'undefined' &&
-    Boolean(window.PublicKeyCredential) &&
-    typeof window.PublicKeyCredential === 'function'
-  );
+  return browserSupportsWebAuthn();
 };
 
-export const registerPasskey = async (
+/**
+ * Register a new WebAuthn / FIDO2 Passkey for the current user
+ */
+export const registerWebAuthnPasskey = async (
   user: UserProfile,
-  deviceName?: string
-): Promise<{ success: boolean; message?: string; passkey?: UserPasskey }> => {
+  customDeviceName?: string
+): Promise<{ success: boolean; message?: string; passkey?: WebAuthnPasskey }> => {
   if (!isWebAuthnSupported()) {
     return {
       success: false,
@@ -50,90 +108,90 @@ export const registerPasskey = async (
     };
   }
 
+  const info = await detectBiometricDeviceInfo();
+  const deviceName = customDeviceName || info.displayName;
+
   try {
-    const challenge = new Uint8Array(32);
-    window.crypto.getRandomValues(challenge);
+    // 1. Request registration options from backend
+    const optionsRes = await fetch('/api/auth/webauthn/register/options', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: user.id,
+        email: user.email,
+        name: user.full_name,
+      }),
+    });
 
-    const userIdBytes = new TextEncoder().encode(user.id);
-    const domain = window.location.hostname || 'localhost';
-    const rpId = domain === 'localhost' || domain === '127.0.0.1' ? undefined : domain;
-
-    const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
-      challenge,
-      rp: {
-        name: 'Shankar Jewellery ERP',
-        id: rpId,
-      },
-      user: {
-        id: userIdBytes,
-        name: user.email || user.full_name || 'user',
-        displayName: user.full_name || user.email || 'ERP User',
-      },
-      pubKeyCredParams: [
-        { alg: -7, type: 'public-key' },  // ES256
-        { alg: -257, type: 'public-key' }, // RS256
-        { alg: -8, type: 'public-key' },   // Ed25519
-      ],
-      authenticatorSelection: {
-        userVerification: 'preferred',
-        residentKey: 'preferred',
-      },
-      timeout: 60000,
-    };
-
-    const credential = (await navigator.credentials.create({
-      publicKey: publicKeyCredentialCreationOptions,
-    })) as PublicKeyCredential | null;
-
-    if (!credential) {
-      return { success: false, message: 'Passkey registration was cancelled or failed.' };
-    }
-
-    const rawResponse = credential.response as AuthenticatorAttestationResponse;
-    const publicKeyBase64 = bufferToBase64URL(rawResponse.attestationObject);
-    const credentialId = credential.id;
-
-    const defaultDeviceName =
-      deviceName ||
-      (navigator.userAgent.includes('Mac')
-        ? 'MacBook Touch ID / Passkey'
-        : navigator.userAgent.includes('Win')
-        ? 'Windows Hello PC'
-        : navigator.userAgent.includes('Android')
-        ? 'Android Biometric Device'
-        : navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad')
-        ? 'Apple Touch ID / Face ID'
-        : 'Passkey Security Device');
-
-    // Duplicate check
-    const existing = await dataService.getUserPasskeys(user.id);
-    if (existing.some((p) => p.credential_id === credentialId)) {
+    if (!optionsRes.ok) {
+      const errData = await optionsRes.json().catch(() => ({}));
       return {
         success: false,
-        message: 'This device passkey is already registered on your account.',
+        message: errData.error || 'Failed to initialize passkey registration challenge.',
       };
     }
 
-    const passkeyRecord: UserPasskey = {
-      id: credentialId,
+    const optionsJSON = await optionsRes.json();
+
+    // 2. Invoke browser / OS biometric ceremony via @simplewebauthn/browser
+    const registrationResponse = await startRegistration({ optionsJSON });
+
+    // 3. Send cryptographic attestation response to backend for verification
+    const verifyRes = await fetch('/api/auth/webauthn/register/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: user.id,
+        response: registrationResponse,
+        deviceName,
+      }),
+    });
+
+    const verifyData = await verifyRes.json().catch(() => ({}));
+
+    if (!verifyRes.ok || !verifyData.verified) {
+      return {
+        success: false,
+        message: verifyData.error || 'Cryptographic verification of passkey failed on server.',
+      };
+    }
+
+    const createdPasskey: WebAuthnPasskey = {
+      id: verifyData.credentialId,
       user_id: user.id,
-      credential_id: credentialId,
-      public_key: publicKeyBase64,
+      credential_id: verifyData.credentialId,
       counter: 0,
-      transports: rawResponse.getTransports ? rawResponse.getTransports() : ['internal'],
-      device_name: defaultDeviceName,
+      device_type: info.deviceType,
+      backed_up: false,
+      name: deviceName,
       created_at: new Date().toISOString(),
       last_used_at: new Date().toISOString(),
+      revoked_at: null,
     };
 
-    await dataService.savePasskeyCredential(passkeyRecord);
+    // Also mirror to dataService for seamless cross-table query fallback
+    await dataService.savePasskeyCredential({
+      id: verifyData.credentialId,
+      user_id: user.id,
+      credential_id: verifyData.credentialId,
+      public_key: verifyData.credentialId,
+      counter: 0,
+      transports: ['internal'],
+      device_name: deviceName,
+      created_at: new Date().toISOString(),
+      last_used_at: new Date().toISOString(),
+    }).catch(() => {});
 
-    return { success: true, passkey: passkeyRecord };
+    return {
+      success: true,
+      passkey: createdPasskey,
+      message: 'Passkey added successfully. You can now use Face ID, Fingerprint, Windows Hello, or your device passkey to sign in.',
+    };
   } catch (err: any) {
     console.error('Passkey registration error:', err);
-    let msg = err?.message || 'Failed to register device passkey.';
+    let msg = err?.message || 'Failed to register passkey.';
     if (err?.name === 'NotAllowedError' || msg.includes('cancelled') || msg.includes('NotAllowedError')) {
-      msg = 'Passkey registration was cancelled or timed out.';
+      msg = 'Passkey registration was cancelled by the user.';
     } else if (err?.name === 'InvalidStateError') {
       msg = 'This passkey is already registered on this device.';
     } else if (err?.name === 'NotSupportedError') {
@@ -143,7 +201,12 @@ export const registerPasskey = async (
   }
 };
 
-export const authenticateWithPasskey = async (): Promise<{
+/**
+ * Authenticate using a registered WebAuthn / FIDO2 Passkey
+ */
+export const authenticateWithWebAuthnPasskey = async (
+  email?: string
+): Promise<{
   success: boolean;
   message?: string;
   userProfile?: UserProfile;
@@ -151,94 +214,144 @@ export const authenticateWithPasskey = async (): Promise<{
   if (!isWebAuthnSupported()) {
     return {
       success: false,
-      message: 'WebAuthn passkey authentication is not supported on this browser or device.',
+      message: 'WebAuthn passkey authentication is not supported by your browser or device.',
     };
   }
 
   try {
-    const allPasskeys = await dataService.getAllRegisteredPasskeys();
-    if (!allPasskeys || allPasskeys.length === 0) {
+    // 1. Request authentication challenge options from backend
+    const optionsRes = await fetch('/api/auth/webauthn/login/options', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+
+    if (!optionsRes.ok) {
+      const errData = await optionsRes.json().catch(() => ({}));
       return {
         success: false,
-        message: 'No registered passkeys found in the system. Log in with your password and register this device under User Login & Session Settings.',
+        message: errData.error || 'Failed to retrieve passkey authentication options.',
       };
     }
 
-    const allowCredentials: PublicKeyCredentialDescriptor[] = allPasskeys.map((p) => ({
-      id: base64URLToBuffer(p.credential_id),
-      type: 'public-key',
-      transports: (p.transports || ['internal']) as AuthenticatorTransport[],
-    }));
+    const optionsJSON = await optionsRes.json();
 
-    const challenge = new Uint8Array(32);
-    window.crypto.getRandomValues(challenge);
+    // 2. Invoke browser / OS biometric ceremony via @simplewebauthn/browser
+    const authResponse = await startAuthentication({ optionsJSON });
 
-    const domain = window.location.hostname || 'localhost';
-    const rpId = domain === 'localhost' || domain === '127.0.0.1' ? undefined : domain;
+    // 3. Send cryptographic assertion response to backend for verification
+    const verifyRes = await fetch('/api/auth/webauthn/login/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ response: authResponse }),
+    });
 
-    const assertion = (await navigator.credentials.get({
-      publicKey: {
-        challenge,
-        rpId,
-        allowCredentials,
-        userVerification: 'preferred',
-        timeout: 60000,
-      },
-    })) as PublicKeyCredential | null;
+    const verifyData = await verifyRes.json().catch(() => ({}));
 
-    if (!assertion) {
-      return { success: false, message: 'Passkey authentication was cancelled.' };
+    if (!verifyRes.ok || !verifyData.verified) {
+      return {
+        success: false,
+        message: verifyData.error || 'Passkey assertion could not be verified by server. Please log in with password.',
+      };
     }
 
-    const matchedPasskey = allPasskeys.find((p) => p.credential_id === assertion.id);
-    if (!matchedPasskey) {
-      return { success: false, message: 'Credential assertion mismatch. Unrecognized device passkey.' };
-    }
+    const profile: UserProfile = verifyData.userProfile;
 
-    const userProfile = await dataService.getUserProfileById(matchedPasskey.user_id);
-    if (!userProfile) {
-      return { success: false, message: 'User account associated with this passkey was not found.' };
-    }
-
-    if (userProfile.is_active === false) {
-      return { success: false, message: 'Your user account is inactive. Please contact the administrator.' };
-    }
-
-    // Touch last_used_at on the passkey
-    dataService.savePasskeyCredential({
-      ...matchedPasskey,
-      last_used_at: new Date().toISOString(),
-    }).catch(() => {});
-
-    await dataService.logAuditAction(
-      'passkey_login_success',
-      'auth',
-      userProfile.id,
-      {
-        email: userProfile.email,
-        device_name: matchedPasskey.device_name,
-        credential_id: matchedPasskey.credential_id,
-      }
-    );
-
-    return { success: true, userProfile };
+    return {
+      success: true,
+      userProfile: profile,
+      message: 'Passkey authentication successful.',
+    };
   } catch (err: any) {
     console.error('Passkey authentication error:', err);
     let msg = err?.message || 'Passkey authentication failed.';
     if (err?.name === 'NotAllowedError' || msg.includes('cancelled') || msg.includes('NotAllowedError')) {
-      msg = 'Passkey authentication was cancelled or timed out.';
+      msg = 'Authentication was cancelled. Please try again or use your password.';
     }
     return { success: false, message: msg };
   }
 };
 
-export const revokePasskey = async (credentialId: string): Promise<{ success: boolean; message?: string }> => {
+/**
+ * Retrieve all registered passkeys for a user
+ */
+export const listUserPasskeys = async (userId: string): Promise<WebAuthnPasskey[]> => {
+  if (!userId) return [];
   try {
-    await dataService.deletePasskeyCredential(credentialId);
-    return { success: true };
-  } catch (err: any) {
-    console.error('Passkey revocation error:', err);
-    return { success: false, message: err?.message || 'Failed to revoke passkey.' };
+    const res = await fetch(`/api/auth/webauthn/credentials?userId=${encodeURIComponent(userId)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch (err) {
+    console.warn('Could not fetch passkeys from API, falling back to dataService:', err);
+  }
+
+  // Fallback to dataService
+  try {
+    const fallbackList = await dataService.getUserPasskeys(userId);
+    return fallbackList.map((p) => ({
+      id: p.id || p.credential_id,
+      user_id: p.user_id,
+      credential_id: p.credential_id,
+      counter: p.counter || 0,
+      device_type: 'passkey',
+      backed_up: false,
+      transports: p.transports,
+      name: p.device_name || 'Passkey Device',
+      created_at: p.created_at,
+      last_used_at: p.last_used_at,
+      revoked_at: null,
+    }));
+  } catch {
+    return [];
   }
 };
 
+/**
+ * Revoke / Remove a registered passkey
+ */
+export const revokeUserPasskey = async (
+  credentialId: string,
+  userId: string
+): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const res = await fetch(
+      `/api/auth/webauthn/credentials?credentialId=${encodeURIComponent(credentialId)}&userId=${encodeURIComponent(userId)}`,
+      { method: 'DELETE' }
+    );
+    if (res.ok) {
+      await dataService.deletePasskeyCredential(credentialId).catch(() => {});
+      return { success: true };
+    }
+    const data = await res.json().catch(() => ({}));
+    return { success: false, message: data.error || 'Failed to revoke passkey.' };
+  } catch (err: any) {
+    await dataService.deletePasskeyCredential(credentialId).catch(() => {});
+    return { success: true };
+  }
+};
+
+/**
+ * Rename a registered passkey
+ */
+export const renameUserPasskey = async (
+  credentialId: string,
+  userId: string,
+  newName: string
+): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const res = await fetch('/api/auth/webauthn/credentials', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credentialId, userId, name: newName }),
+    });
+    if (res.ok) {
+      return { success: true };
+    }
+    const data = await res.json().catch(() => ({}));
+    return { success: false, message: data.error || 'Failed to rename passkey.' };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Failed to rename passkey.' };
+  }
+};
