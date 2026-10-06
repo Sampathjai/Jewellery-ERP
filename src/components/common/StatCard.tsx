@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { cardHoverPreset } from '@/animations/presets';
-import { kpiCardVariant } from '@/animations/variants';
+import { staggerItem } from '@/animations/variants';
 import { useMotionSafe } from '@/animations/motionConfig';
 
 interface StatCardProps {
@@ -96,7 +96,7 @@ export const StatCard: React.FC<StatCardProps> = ({
 
   return (
     <motion.div
-      variants={prefersReduced ? undefined : kpiCardVariant}
+      variants={prefersReduced ? undefined : staggerItem}
       {...(prefersReduced ? {} : cardHoverPreset)}
       className={cn(
         'relative overflow-hidden rounded-2xl border p-5 cursor-default',

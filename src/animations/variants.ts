@@ -93,59 +93,19 @@ export const staggerItem: Variants = {
   },
 };
 
+// ─── PAGE & DRAWER ────────────────────────────────────────────────────────────
+
 export const pageTransition: Variants = {
-  hidden: { opacity: 0, y: 8, scale: 0.995 },
+  hidden: { opacity: 0, y: 8 },
   visible: {
     opacity: 1,
     y: 0,
-    scale: 1,
-    transition: { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
+    transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
   },
   exit: {
     opacity: 0,
     y: -4,
-    scale: 1,
-    transition: { duration: 0.16, ease: [0.4, 0, 1, 1] },
-  },
-};
-
-export const dashboardContainer: Variants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.05,
-      delayChildren: 0.02,
-    },
-  },
-};
-
-export const dashboardItem: Variants = {
-  hidden: { opacity: 0, y: 10 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
-  },
-};
-
-export const kpiStaggerContainer: Variants = {
-  hidden: {},
-  visible: {
-    transition: {
-      staggerChildren: 0.04,
-      delayChildren: 0.02,
-    },
-  },
-};
-
-export const kpiCardVariant: Variants = {
-  hidden: { opacity: 0, y: 12, scale: 0.98 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
+    transition: { duration: 0.14, ease: 'easeIn' },
   },
 };
 
@@ -172,7 +132,7 @@ export const backdropVariant: Variants = {
 // ─── DROPDOWN & BADGE ─────────────────────────────────────────────────────────
 
 export const dropdownVariant: Variants = {
-  hidden: { opacity: 0, scale: 0.98, y: -4 },
+  hidden: { opacity: 0, scale: 0.97, y: -4 },
   visible: {
     opacity: 1,
     scale: 1,
@@ -181,7 +141,7 @@ export const dropdownVariant: Variants = {
   },
   exit: {
     opacity: 0,
-    scale: 0.98,
+    scale: 0.97,
     y: -4,
     transition: { duration: 0.12, ease: 'easeIn' },
   },
@@ -199,28 +159,31 @@ export const badgePop: Variants = {
 // ─── TABLE ROW & LIST ITEM ────────────────────────────────────────────────────
 
 export const tableRowVariant: Variants = {
-  hidden: { opacity: 0, y: 4 },
+  hidden: { opacity: 0, y: 6 },
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.18, ease: 'easeOut' },
+    transition: { duration: 0.2, ease: 'easeOut' },
   },
   exit: {
     opacity: 0,
-    transition: { duration: 0.14, ease: 'easeIn' },
+    x: -8,
+    transition: { duration: 0.15, ease: 'easeIn' },
   },
 };
 
 export const toastVariant: Variants = {
-  hidden: { opacity: 0, y: 8 },
+  hidden: { opacity: 0, y: -16, scale: 0.96 },
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+    scale: 1,
+    transition: { type: 'spring', stiffness: 450, damping: 28 },
   },
   exit: {
     opacity: 0,
-    y: -4,
-    transition: { duration: 0.16, ease: 'easeIn' },
+    y: -10,
+    scale: 0.96,
+    transition: { duration: 0.15, ease: 'easeIn' },
   },
 };

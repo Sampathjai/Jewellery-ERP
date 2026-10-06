@@ -12,7 +12,7 @@ export const PageWrapper: React.FC<PageWrapperProps> = ({ children, className })
   const { prefersReduced } = useMotionSafe();
 
   if (prefersReduced) {
-    return <div className={`w-full ${className || ''}`}>{children}</div>;
+    return <div className={className}>{children}</div>;
   }
 
   return (
@@ -21,7 +21,7 @@ export const PageWrapper: React.FC<PageWrapperProps> = ({ children, className })
       initial="hidden"
       animate="visible"
       exit="exit"
-      className={`w-full ${className || ''}`}
+      className={className}
     >
       {children}
     </motion.div>

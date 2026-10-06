@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
@@ -10,28 +10,19 @@ import { useAuth } from '@/lib/auth';
 import { dataService } from '@/lib/dataService';
 import { detectBiometricCapability } from '@/lib/biometricAuth';
 import { Fingerprint, X } from 'lucide-react';
-import { Link, useLocation, Outlet } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { PageWrapper } from '@/components/common/PageWrapper';
 import { motion, AnimatePresence } from 'motion/react';
 import { fadeDown } from '@/animations/variants';
 
-export const DashboardLayout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
+export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const location = useLocation();
-  const mainRef = useRef<HTMLElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [showBiometricBanner, setShowBiometricBanner] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
     return getLocalDb().notifications || [];
   });
-
-  // Smooth scroll to top on every route transition
-  useEffect(() => {
-    if (mainRef.current) {
-      mainRef.current.scrollTo({ top: 0, behavior: 'instant' });
-    }
-  }, [location.pathname]);
 
   useEffect(() => {
     syncEngine.startRealtimeSync();
@@ -94,10 +85,7 @@ export const DashboardLayout: React.FC<{ children?: React.ReactNode }> = ({ chil
           unreadCount={unreadCount}
         />
 
-        <main
-          ref={mainRef}
-          className="flex-1 overflow-y-auto min-h-0 p-4 pb-20 sm:p-6 lg:pb-6 w-full max-w-7xl mx-auto"
-        >
+        <main className="flex-1 overflow-y-auto min-h-0 p-4 pb-20 sm:p-6 lg:pb-6 w-full max-w-7xl mx-auto">
           <AnimatePresence>
             {showBiometricBanner && (
               <motion.div
@@ -139,11 +127,9 @@ export const DashboardLayout: React.FC<{ children?: React.ReactNode }> = ({ chil
               </motion.div>
             )}
           </AnimatePresence>
-          <AnimatePresence mode="popLayout" initial={false}>
-            <PageWrapper key={location.pathname}>
-              {children || <Outlet />}
-            </PageWrapper>
-          </AnimatePresence>
+          <PageWrapper>
+            {children}
+          </PageWrapper>
         </main>
 
         <BottomNav onOpenSidebar={() => setSidebarOpen(true)} />
