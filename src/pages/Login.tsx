@@ -1,9 +1,7 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { UserProfile } from '@/types';
-
-const JewelleryRingCanvas = lazy(() => import('@/components/3d/JewelleryRingCanvas'));
 import {
   Lock,
   Mail,
@@ -306,13 +304,6 @@ export const Login: React.FC = () => {
               <p className="text-xs xl:text-sm text-slate-300 font-light leading-relaxed">
                 Seamlessly orchestrate bullion rates, retail POS counter sales, wholesale credit ledgers, inventory, and staff roles from a single cloud system.
               </p>
-            </div>
-
-            {/* 3D Luxury Jewellery Visual (Lazy loaded, zero impact on mobile) */}
-            <div className="rounded-2xl border border-gold-500/20 bg-charcoal-900/40 p-1 backdrop-blur-sm overflow-hidden">
-              <Suspense fallback={<div className="h-36 w-full animate-pulse bg-charcoal-800/40 rounded-xl" />}>
-                <JewelleryRingCanvas className="h-36 w-full" />
-              </Suspense>
             </div>
 
             <div className="grid grid-cols-3 gap-3 pt-1">
