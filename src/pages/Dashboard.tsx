@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
 import { DashboardSkeleton } from '@/components/common/SkeletonLoader';
@@ -8,7 +8,15 @@ import { dataService } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
 import { useLanguage } from '@/lib/i18n';
 import { formatCurrency, formatWeight } from '@/lib/utils';
-import { staggerContainer, staggerItem, fadeUp, fadeIn } from '@/animations/variants';
+import {
+  dashboardContainer,
+  dashboardItem,
+  kpiStaggerContainer,
+  staggerContainer,
+  staggerItem,
+  fadeUp,
+  fadeIn,
+} from '@/animations/variants';
 import { quickActionPreset } from '@/animations/presets';
 import { useMotionSafe } from '@/animations/motionConfig';
 import {
@@ -246,51 +254,54 @@ export const Dashboard: React.FC = () => {
 
   const COLORS = ['#d4af37', '#b8860b', '#f59e0b', '#3c3e4a'];
 
-  // Loading state
-  if (isLoading) {
-    return <DashboardSkeleton />;
-  }
-
-  // Error state
-  if (hasError) {
-    return (
-      <motion.div
-        variants={prefersReduced ? undefined : fadeIn}
-        initial={prefersReduced ? undefined : 'hidden'}
-        animate={prefersReduced ? undefined : 'visible'}
-        className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center px-4"
-      >
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
-          <AlertTriangle className="h-8 w-8" />
-        </div>
-        <div>
-          <h3 className="font-serif text-xl font-bold text-charcoal-900 dark:text-slate-100">
-            {language === 'ta' ? 'தரவுகளைப் பெற இயலவில்லை' : 'Could Not Load Dashboard Data'}
-          </h3>
-          <p className="mt-1 text-xs text-slate-500 max-w-sm">
-            {language === 'ta'
-              ? 'இணைய இணைப்பு அல்லது சேவையகத் தொடர்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.'
-              : 'Please check your connection and tap below to retry.'}
-          </p>
-        </div>
-        <button
-          onClick={loadDashboardData}
-          className="flex items-center gap-2 rounded-xl bg-gold-500 px-5 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 transition-all"
-        >
-          <RefreshCw className="h-4 w-4" />
-          {language === 'ta' ? 'மீண்டும் முயற்சி செய்' : 'Retry Loading'}
-        </button>
-      </motion.div>
-    );
-  }
-
   return (
-    <motion.div
-      variants={prefersReduced ? undefined : staggerContainer}
-      initial={prefersReduced ? undefined : 'hidden'}
-      animate={prefersReduced ? undefined : 'visible'}
-      className="space-y-6"
-    >
+    <AnimatePresence mode="wait">
+      {isLoading ? (
+        <motion.div
+          key="dashboard-skeleton-view"
+          initial={{ opacity: 1 }}
+          exit={{ opacity: 0, transition: { duration: 0.16, ease: 'easeOut' } }}
+        >
+          <DashboardSkeleton />
+        </motion.div>
+      ) : hasError ? (
+        <motion.div
+          key="dashboard-error-view"
+          variants={prefersReduced ? undefined : fadeIn}
+          initial={prefersReduced ? undefined : 'hidden'}
+          animate={prefersReduced ? undefined : 'visible'}
+          exit="exit"
+          className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center px-4"
+        >
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
+            <AlertTriangle className="h-8 w-8" />
+          </div>
+          <div>
+            <h3 className="font-serif text-xl font-bold text-charcoal-900 dark:text-slate-100">
+              {language === 'ta' ? 'தரவுகளைப் பெற இயலவில்லை' : 'Could Not Load Dashboard Data'}
+            </h3>
+            <p className="mt-1 text-xs text-slate-500 max-w-sm">
+              {language === 'ta'
+                ? 'இணைய இணைப்பு அல்லது சேவையகத் தொடர்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.'
+                : 'Please check your connection and tap below to retry.'}
+            </p>
+          </div>
+          <button
+            onClick={loadDashboardData}
+            className="flex items-center gap-2 rounded-xl bg-gold-500 px-5 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 transition-all"
+          >
+            <RefreshCw className="h-4 w-4" />
+            {language === 'ta' ? 'மீண்டும் முயற்சி செய்' : 'Retry Loading'}
+          </button>
+        </motion.div>
+      ) : (
+        <motion.div
+          key="dashboard-content-view"
+          variants={prefersReduced ? undefined : dashboardContainer}
+          initial={prefersReduced ? undefined : 'hidden'}
+          animate={prefersReduced ? undefined : 'visible'}
+          className="space-y-6"
+        >
       <motion.div variants={prefersReduced ? undefined : staggerItem}>
         <PageHeader
           title={t('dashboard')}
@@ -663,5 +674,7 @@ export const Dashboard: React.FC = () => {
         </motion.div>
       </motion.div>
     </motion.div>
-  );
+  )}
+</AnimatePresence>
+);
 };
