@@ -21,7 +21,7 @@ export const PageWrapper: React.FC<PageWrapperProps> = ({ children, className })
       initial="hidden"
       animate="visible"
       exit="exit"
-      className={`w-full flex-1 flex flex-col min-w-0 ${className || ''}`}
+      className={className}
     >
       {children}
     </motion.div>
