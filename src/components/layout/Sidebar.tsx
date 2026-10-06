@@ -121,11 +121,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     },
   ];
 
-  const renderSidebarContent = () => (
+  // Find single active item path to prevent multiple simultaneous active highlights
+  const activeItemPath = React.useMemo(() => {
+    let bestMatch = '';
+    for (const group of navGroups) {
+      for (const item of group.items) {
+        if (location.pathname === item.path) {
+          return item.path;
+        }
+        if (
+          item.path !== '/dashboard' &&
+          location.pathname.startsWith(item.path) &&
+          item.path.length > bestMatch.length
+        ) {
+          bestMatch = item.path;
+        }
+      }
+    }
+    return bestMatch || (location.pathname === '/' ? '/dashboard' : '');
+  }, [location.pathname, navGroups]);
+
+  const renderSidebarContent = (isMobile: boolean = false) => (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-slate-200 bg-white transition-colors dark:border-charcoal-800 dark:bg-charcoal-900">
       {/* Brand Header */}
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-4 dark:border-charcoal-800">
         <BrandLogo variant="compact" size="md" />
+        {/* Mobile close button */}
+        {isMobile && (
+          <button
+            onClick={onClose}
+            aria-label="Close navigation menu"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-charcoal-800 lg:hidden transition-colors"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* Scrollable Nav Area */}
@@ -141,15 +171,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               </h3>
               <nav className="space-y-1">
                 {filteredItems.map((item) => {
-                  const isActive = location.pathname === item.path ||
-                    (item.path !== '/dashboard' && location.pathname.startsWith(item.path));
+                  const isActive = activeItemPath === item.path;
 
                   return (
                     <NavLink
                       key={item.path}
                       to={item.path}
                       onClick={onClose}
-                      className={`relative flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                      className={`group relative flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
                         isActive
                           ? 'text-charcoal-950 font-bold'
                           : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-charcoal-800 dark:hover:text-slate-100'
@@ -158,9 +187,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                       {/* Smooth animated active indicator sliding across menu items */}
                       {isActive && !prefersReduced && (
                         <motion.div
-                          layoutId="sidebar-active-indicator"
+                          layoutId={isMobile ? 'mobile-sidebar-active-indicator' : 'sidebar-active-indicator'}
                           className="absolute inset-0 rounded-lg bg-gold-500 shadow-gold"
-                          transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                          transition={{ type: 'spring', stiffness: 450, damping: 32 }}
                         />
                       )}
                       {isActive && prefersReduced && (
@@ -171,7 +200,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         className="relative z-10 flex items-center gap-2.5"
                         {...(prefersReduced ? {} : navItemPreset)}
                       >
-                        <item.icon className="h-4 w-4 shrink-0" />
+                        <item.icon className="h-4 w-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5" />
                         <span>{t(item.titleKey)}</span>
                       </motion.div>
 
@@ -231,7 +260,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     <>
       {/* Desktop Persistent Sidebar */}
       <div className="hidden lg:flex h-full shrink-0">
-        {renderSidebarContent()}
+        {renderSidebarContent(false)}
       </div>
 
       {/* Mobile Drawer with Backdrop */}
@@ -255,7 +284,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               exit={prefersReduced ? undefined : 'exit'}
               className="fixed inset-y-0 left-0 z-40 h-full lg:hidden shadow-2xl"
             >
-              {renderSidebarContent()}
+              {renderSidebarContent(true)}
             </motion.div>
           </>
         )}

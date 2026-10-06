@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
 import { DashboardSkeleton } from '@/components/common/SkeletonLoader';
+import { ScrollReveal } from '@/components/common/ScrollReveal';
 import { dataService } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
 import { useLanguage } from '@/lib/i18n';
@@ -246,51 +247,56 @@ export const Dashboard: React.FC = () => {
 
   const COLORS = ['#d4af37', '#b8860b', '#f59e0b', '#3c3e4a'];
 
-  // Loading state
-  if (isLoading) {
-    return <DashboardSkeleton />;
-  }
-
-  // Error state
-  if (hasError) {
-    return (
-      <motion.div
-        variants={prefersReduced ? undefined : fadeIn}
-        initial={prefersReduced ? undefined : 'hidden'}
-        animate={prefersReduced ? undefined : 'visible'}
-        className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center px-4"
-      >
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
-          <AlertTriangle className="h-8 w-8" />
-        </div>
-        <div>
-          <h3 className="font-serif text-xl font-bold text-charcoal-900 dark:text-slate-100">
-            {language === 'ta' ? 'தரவுகளைப் பெற இயலவில்லை' : 'Could Not Load Dashboard Data'}
-          </h3>
-          <p className="mt-1 text-xs text-slate-500 max-w-sm">
-            {language === 'ta'
-              ? 'இணைய இணைப்பு அல்லது சேவையகத் தொடர்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.'
-              : 'Please check your connection and tap below to retry.'}
-          </p>
-        </div>
-        <button
-          onClick={loadDashboardData}
-          className="flex items-center gap-2 rounded-xl bg-gold-500 px-5 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 transition-all"
-        >
-          <RefreshCw className="h-4 w-4" />
-          {language === 'ta' ? 'மீண்டும் முயற்சி செய்' : 'Retry Loading'}
-        </button>
-      </motion.div>
-    );
-  }
-
   return (
-    <motion.div
-      variants={prefersReduced ? undefined : staggerContainer}
-      initial={prefersReduced ? undefined : 'hidden'}
-      animate={prefersReduced ? undefined : 'visible'}
-      className="space-y-6"
-    >
+    <AnimatePresence mode="wait">
+      {isLoading ? (
+        <motion.div
+          key="dashboard-loading"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, transition: { duration: 0.16 } }}
+        >
+          <DashboardSkeleton />
+        </motion.div>
+      ) : hasError ? (
+        <motion.div
+          key="dashboard-error"
+          variants={prefersReduced ? undefined : fadeIn}
+          initial={prefersReduced ? undefined : 'hidden'}
+          animate={prefersReduced ? undefined : 'visible'}
+          exit={{ opacity: 0, transition: { duration: 0.16 } }}
+          className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center px-4"
+        >
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
+            <AlertTriangle className="h-8 w-8" />
+          </div>
+          <div>
+            <h3 className="font-serif text-xl font-bold text-charcoal-900 dark:text-slate-100">
+              {language === 'ta' ? 'தரவுகளைப் பெற இயலவில்லை' : 'Could Not Load Dashboard Data'}
+            </h3>
+            <p className="mt-1 text-xs text-slate-500 max-w-sm">
+              {language === 'ta'
+                ? 'இணைய இணைப்பு அல்லது சேவையகத் தொடர்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.'
+                : 'Please check your connection and tap below to retry.'}
+            </p>
+          </div>
+          <button
+            onClick={loadDashboardData}
+            className="flex items-center gap-2 rounded-xl bg-gold-500 px-5 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 transition-all"
+          >
+            <RefreshCw className="h-4 w-4" />
+            {language === 'ta' ? 'மீண்டும் முயற்சி செய்' : 'Retry Loading'}
+          </button>
+        </motion.div>
+      ) : (
+        <motion.div
+          key="dashboard-content"
+          variants={prefersReduced ? undefined : staggerContainer}
+          initial={prefersReduced ? undefined : 'hidden'}
+          animate={prefersReduced ? undefined : 'visible'}
+          exit={{ opacity: 0, transition: { duration: 0.16 } }}
+          className="space-y-6"
+        >
       <motion.div variants={prefersReduced ? undefined : staggerItem}>
         <PageHeader
           title={t('dashboard')}
@@ -628,40 +634,44 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Dynamic Business Alerts Banner */}
-        <motion.div
-          variants={prefersReduced ? undefined : fadeUp}
-          className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 dark:border-gold-800/60 dark:bg-gold-950/20"
-        >
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-gold-400 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <h4 className="font-bold text-amber-900 dark:text-gold-300 text-xs">
-                {language === 'ta' ? 'கடை எச்சரிக்கைகள் மற்றும் நினைவூட்டல்கள்' : 'System Reminders & Stock Alerts'}
-              </h4>
-              <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs text-amber-800 dark:text-gold-400">
-                <div>
-                  • <strong>{language === 'ta' ? 'குறைந்த இருப்பு எச்சரிக்கை:' : 'Low Stock Alerts:'}</strong>{' '}
-                  {lowStockProducts.length > 0
-                    ? `${lowStockProducts[0].name} (${lowStockProducts[0].quantity} units remaining)`
-                    : 'All inventory levels are optimal.'}
-                </div>
-                <div>
-                  • <strong>{language === 'ta' ? 'மொத்த வியாபார நிலுவை:' : 'Consignment Tracking:'}</strong>{' '}
-                  {overdueWholesaleIssues.length > 0
-                    ? `${overdueWholesaleIssues[0].customer_name} has pending items overdue.`
-                    : 'No overdue consignment returns.'}
-                </div>
-                <div>
-                  • <strong>{language === 'ta' ? 'நிலுவை தொகை பாக்கி:' : 'Pending Settlements:'}</strong>{' '}
-                  {pendingWholesaleSettlements.length > 0
-                    ? `${pendingWholesaleSettlements[0].customer_name} has ${formatCurrency(pendingWholesaleSettlements[0].balance_due)} due.`
-                    : 'All wholesale settlements are clear.'}
+        <ScrollReveal delay={0.08}>
+          <motion.div
+            variants={prefersReduced ? undefined : fadeUp}
+            className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 dark:border-gold-800/60 dark:bg-gold-950/20"
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-gold-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="font-bold text-amber-900 dark:text-gold-300 text-xs">
+                  {language === 'ta' ? 'கடை எச்சரிக்கைகள் மற்றும் நினைவூட்டல்கள்' : 'System Reminders & Stock Alerts'}
+                </h4>
+                <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs text-amber-800 dark:text-gold-400">
+                  <div>
+                    • <strong>{language === 'ta' ? 'குறைந்த இருப்பு எச்சரிக்கை:' : 'Low Stock Alerts:'}</strong>{' '}
+                    {lowStockProducts.length > 0
+                      ? `${lowStockProducts[0].name} (${lowStockProducts[0].quantity} units remaining)`
+                      : 'All inventory levels are optimal.'}
+                  </div>
+                  <div>
+                    • <strong>{language === 'ta' ? 'மொத்த வியாபார நிலுவை:' : 'Consignment Tracking:'}</strong>{' '}
+                    {overdueWholesaleIssues.length > 0
+                      ? `${overdueWholesaleIssues[0].customer_name} has pending items overdue.`
+                      : 'No overdue consignment returns.'}
+                  </div>
+                  <div>
+                    • <strong>{language === 'ta' ? 'நிலுவை தொகை பாக்கி:' : 'Pending Settlements:'}</strong>{' '}
+                    {pendingWholesaleSettlements.length > 0
+                      ? `${pendingWholesaleSettlements[0].customer_name} has ${formatCurrency(pendingWholesaleSettlements[0].balance_due)} due.`
+                      : 'All wholesale settlements are clear.'}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </motion.div>
+          </motion.div>
+        </ScrollReveal>
       </motion.div>
     </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

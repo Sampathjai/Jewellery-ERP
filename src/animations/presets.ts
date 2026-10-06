@@ -7,8 +7,8 @@ import type { TargetAndTransition } from 'motion/react';
 
 export const cardHoverPreset: { whileHover: TargetAndTransition; whileTap: TargetAndTransition } = {
   whileHover: {
-    scale: 1.012,
-    boxShadow: '0 8px 28px rgba(212, 175, 55, 0.12)',
+    scale: 1.01,
+    boxShadow: '0 8px 24px rgba(212, 175, 55, 0.10)',
     transition: { type: 'spring', stiffness: 420, damping: 30, mass: 0.7 },
   },
   whileTap: {
@@ -19,11 +19,11 @@ export const cardHoverPreset: { whileHover: TargetAndTransition; whileTap: Targe
 
 export const buttonHoverPreset: { whileHover: TargetAndTransition; whileTap: TargetAndTransition } = {
   whileHover: {
-    scale: 1.02,
+    scale: 1.01,
     transition: { type: 'spring', stiffness: 450, damping: 28 },
   },
   whileTap: {
-    scale: 0.97,
+    scale: 0.98,
     transition: { duration: 0.08 },
   },
 };

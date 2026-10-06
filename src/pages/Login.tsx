@@ -1,9 +1,9 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '@/lib/auth';
 import { UserProfile } from '@/types';
-
-const JewelleryRingCanvas = lazy(() => import('@/components/3d/JewelleryRingCanvas'));
+import { useMotionSafe } from '@/animations/motionConfig';
 import {
   Lock,
   Mail,
@@ -43,12 +43,14 @@ import {
 import { BiometricSetupModal } from '@/components/auth/BiometricSetupModal';
 
 export const Login: React.FC = () => {
+  const { prefersReduced } = useMotionSafe();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [inactiveBanner, setInactiveBanner] = useState(false);
+  const [isLoginSuccess, setIsLoginSuccess] = useState(false);
 
   // Biometric & PIN Unlock State
   const [loginMode, setLoginMode] = useState<'biometric' | 'pin' | 'password'>('password');
@@ -127,12 +129,15 @@ export const Login: React.FC = () => {
 
     const res = await login(email, password);
     if (res.success) {
+      setIsLoginSuccess(true);
       // Check if device is already registered
       if (!hasRegisteredLocalDevice() && res.userProfile) {
         setPendingUser(res.userProfile);
         setShowSetupModal(true);
       } else {
-        navigate('/dashboard', { replace: true });
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 320);
       }
     } else {
       setErrorMessage(res.message || 'Invalid email address or password.');
@@ -148,7 +153,10 @@ export const Login: React.FC = () => {
       const res = await unlockWithBiometrics();
       if (res.success && res.userProfile) {
         loginWithProfile(res.userProfile);
-        navigate('/dashboard', { replace: true });
+        setIsLoginSuccess(true);
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 320);
       } else {
         setErrorMessage(res.message || 'Biometric authentication failed. Please enter your ERP PIN.');
         // Offer PIN fallback automatically
@@ -171,7 +179,10 @@ export const Login: React.FC = () => {
       const res = await authenticateWithWebAuthnPasskey(email.trim() || undefined);
       if (res.success && res.userProfile) {
         loginWithProfile(res.userProfile);
-        navigate('/dashboard', { replace: true });
+        setIsLoginSuccess(true);
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 320);
       } else {
         setErrorMessage(res.message || 'Passkey authentication failed. Please sign in with password.');
       }
@@ -201,7 +212,10 @@ export const Login: React.FC = () => {
       const res = await unlockWithPin(pin);
       if (res.success && res.userProfile) {
         loginWithProfile(res.userProfile);
-        navigate('/dashboard', { replace: true });
+        setIsLoginSuccess(true);
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 320);
       } else {
         setErrorMessage(res.message || 'Incorrect PIN.');
         setPin('');
@@ -308,11 +322,26 @@ export const Login: React.FC = () => {
               </p>
             </div>
 
-            {/* 3D Luxury Jewellery Visual (Lazy loaded, zero impact on mobile) */}
-            <div className="rounded-2xl border border-gold-500/20 bg-charcoal-900/40 p-1 backdrop-blur-sm overflow-hidden">
-              <Suspense fallback={<div className="h-36 w-full animate-pulse bg-charcoal-800/40 rounded-xl" />}>
-                <JewelleryRingCanvas className="h-36 w-full" />
-              </Suspense>
+            {/* Calm Luxury Trust Showcase — Static BIS 916 Hallmark & 256-Bit Vault Card */}
+            <div className="rounded-2xl border border-gold-500/25 bg-gradient-to-br from-charcoal-900/80 via-charcoal-950/90 to-charcoal-900/80 p-4 backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gold-500/15 border border-gold-500/40 text-gold-400">
+                    <ShieldCheck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-serif text-sm font-bold text-slate-100 flex items-center gap-2">
+                      <span>BIS 916 Hallmarked Security</span>
+                      <span className="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-mono font-semibold">
+                        ACTIVE
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Encrypted Cloud Vault &bull; Multi-Role Access Control &bull; Real-time Bullion Sync
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-3 pt-1">
@@ -366,8 +395,11 @@ export const Login: React.FC = () => {
             </div>
 
             {/* LUXURY GLASSMORPHISM AUTHENTICATION CARD */}
-            <div className="w-full rounded-3xl border border-gold-500/35 bg-charcoal-900/85 backdrop-blur-2xl p-6 sm:p-7 shadow-[0_20px_60px_rgba(0,0,0,0.9),0_0_30px_rgba(212,175,55,0.2)] relative overflow-hidden transition-all">
-              
+            <motion.div
+              animate={isLoginSuccess ? { scale: 0.98, opacity: 0.85 } : { scale: 1, opacity: 1 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="w-full rounded-3xl border border-gold-500/35 bg-charcoal-900/85 backdrop-blur-2xl p-6 sm:p-7 shadow-[0_20px_60px_rgba(0,0,0,0.9),0_0_30px_rgba(212,175,55,0.2)] relative overflow-hidden transition-all"
+            >
               {/* Top Golden Ambient Accent Line */}
               <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-gold-400 to-transparent" />
 
@@ -382,12 +414,17 @@ export const Login: React.FC = () => {
                 </div>
               )}
 
-              {/* Error Alert */}
+              {/* Error Alert with subtle shake */}
               {errorMessage && (
-                <div className="mb-4 rounded-xl border border-red-500/60 bg-red-950/70 p-3 text-xs text-red-200 flex items-center gap-2 shadow-md">
+                <motion.div
+                  initial={prefersReduced ? false : { x: -4, opacity: 0 }}
+                  animate={prefersReduced ? { opacity: 1 } : { x: [0, -4, 4, -2, 2, 0], opacity: 1 }}
+                  transition={{ duration: 0.35, ease: 'easeOut' }}
+                  className="mb-4 rounded-xl border border-red-500/60 bg-red-950/70 p-3 text-xs text-red-200 flex items-center gap-2 shadow-md"
+                >
                   <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
                   <span>{errorMessage}</span>
-                </div>
+                </motion.div>
               )}
 
               {/* ------------------------------------------------------------- */}
@@ -759,7 +796,7 @@ export const Login: React.FC = () => {
                 <ShieldCheck className="h-3.5 w-3.5 text-gold-400 shrink-0" />
                 <span>Device Biometric & PIN Security Protection Active</span>
               </div>
-            </div>
+            </motion.div>
           </section>
         </main>
 

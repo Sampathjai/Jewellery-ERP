@@ -1,7 +1,7 @@
 import React from 'react';
 
 export const CardSkeleton: React.FC = () => (
-  <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm animate-pulse space-y-3">
+  <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm animate-[pulse_2.2s_ease-in-out_infinite] space-y-3">
     <div className="flex items-center justify-between">
       <div className="h-3 w-28 rounded bg-slate-200 dark:bg-charcoal-800" />
       <div className="h-9 w-9 rounded-xl bg-slate-200 dark:bg-charcoal-800" />
@@ -50,7 +50,7 @@ export const SectionSkeleton: React.FC<{ lines?: number }> = ({ lines = 3 }) => 
 );
 
 export const DashboardSkeleton: React.FC = () => (
-  <div className="space-y-6 animate-pulse">
+  <div className="space-y-6 animate-[pulse_2.2s_ease-in-out_infinite]">
     <div className="flex items-center justify-between">
       <div className="space-y-2">
         <div className="h-6 w-36 rounded bg-slate-200 dark:bg-charcoal-800" />
