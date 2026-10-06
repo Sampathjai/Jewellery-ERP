@@ -11,7 +11,7 @@ import { dataService } from '@/lib/dataService';
 import { detectBiometricCapability } from '@/lib/biometricAuth';
 import { Fingerprint, X } from 'lucide-react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
-import { PageWrapper } from '@/components/common/PageWrapper';
+import { RouteTransition } from '@/components/common/RouteTransition';
 import { motion, AnimatePresence } from 'motion/react';
 import { fadeDown } from '@/animations/variants';
 
@@ -78,7 +78,7 @@ export const DashboardLayout: React.FC<{ children?: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     if (mainRef.current) {
-      mainRef.current.scrollTo({ top: 0, behavior: 'instant' });
+      mainRef.current.scrollTop = 0;
     }
   }, [location.pathname]);
 
@@ -139,11 +139,9 @@ export const DashboardLayout: React.FC<{ children?: React.ReactNode }> = ({ chil
             )}
           </AnimatePresence>
 
-          <AnimatePresence mode="popLayout" initial={false}>
-            <PageWrapper key={location.pathname}>
-              {children || <Outlet />}
-            </PageWrapper>
-          </AnimatePresence>
+          <RouteTransition>
+            {children || <Outlet />}
+          </RouteTransition>
         </main>
 
         <BottomNav onOpenSidebar={() => setSidebarOpen(true)} />

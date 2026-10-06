@@ -248,23 +248,14 @@ export const Dashboard: React.FC = () => {
   const COLORS = ['#d4af37', '#b8860b', '#f59e0b', '#3c3e4a'];
 
   return (
-    <AnimatePresence mode="wait">
+    <div className="space-y-6">
       {isLoading ? (
-        <motion.div
-          key="dashboard-loading"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0, transition: { duration: 0.16 } }}
-        >
+        <div key="dashboard-loading">
           <DashboardSkeleton />
-        </motion.div>
+        </div>
       ) : hasError ? (
-        <motion.div
+        <div
           key="dashboard-error"
-          variants={prefersReduced ? undefined : fadeIn}
-          initial={prefersReduced ? undefined : 'hidden'}
-          animate={prefersReduced ? undefined : 'visible'}
-          exit={{ opacity: 0, transition: { duration: 0.16 } }}
           className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center px-4"
         >
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
@@ -287,14 +278,13 @@ export const Dashboard: React.FC = () => {
             <RefreshCw className="h-4 w-4" />
             {language === 'ta' ? 'மீண்டும் முயற்சி செய்' : 'Retry Loading'}
           </button>
-        </motion.div>
+        </div>
       ) : (
         <motion.div
           key="dashboard-content"
           variants={prefersReduced ? undefined : staggerContainer}
           initial={prefersReduced ? undefined : 'hidden'}
           animate={prefersReduced ? undefined : 'visible'}
-          exit={{ opacity: 0, transition: { duration: 0.16 } }}
           className="space-y-6"
         >
       <motion.div variants={prefersReduced ? undefined : staggerItem}>
@@ -672,6 +662,6 @@ export const Dashboard: React.FC = () => {
       </motion.div>
     </motion.div>
       )}
-    </AnimatePresence>
+    </div>
   );
 };

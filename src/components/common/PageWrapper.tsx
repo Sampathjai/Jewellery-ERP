@@ -1,29 +1,19 @@
 import React from 'react';
-import { motion } from 'motion/react';
-import { pageTransition } from '@/animations/variants';
-import { useMotionSafe } from '@/animations/motionConfig';
 
 interface PageWrapperProps {
   children: React.ReactNode;
   className?: string;
 }
 
-export const PageWrapper: React.FC<PageWrapperProps> = ({ children, className }) => {
-  const { prefersReduced } = useMotionSafe();
-
-  if (prefersReduced) {
-    return <div className={className}>{children}</div>;
-  }
-
+/**
+ * PageWrapper
+ * Lightweight layout utility wrapper for page components.
+ * Route transitions are handled universally by RouteTransition in DashboardLayout.
+ */
+export const PageWrapper: React.FC<PageWrapperProps> = ({ children, className = '' }) => {
   return (
-    <motion.div
-      variants={pageTransition}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-      className={className}
-    >
+    <div className={`w-full flex-1 flex flex-col min-w-0 ${className}`}>
       {children}
-    </motion.div>
+    </div>
   );
 };
