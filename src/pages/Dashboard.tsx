@@ -446,84 +446,89 @@ export const Dashboard: React.FC = () => {
       </motion.div>
 
       {/* SECTION 3: INVENTORY & STOCK */}
-      <motion.div variants={prefersReduced ? undefined : staggerItem} className="space-y-3 pt-2">
-        <div className="border-b border-slate-200/80 pb-2 dark:border-charcoal-800">
-          <h3 className="font-serif text-lg font-bold text-charcoal-950 dark:text-slate-100 flex items-center gap-2">
-            <Boxes className="h-5 w-5 text-gold-600 shrink-0" />
-            {t('section_inventory_stock')}
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t('subtitle_inventory_stock')}
-          </p>
-        </div>
+      <ScrollReveal delay={0.04}>
+        <motion.div variants={prefersReduced ? undefined : staggerItem} className="space-y-3 pt-2">
+          <div className="border-b border-slate-200/80 pb-2 dark:border-charcoal-800">
+            <h3 className="font-serif text-lg font-bold text-charcoal-950 dark:text-slate-100 flex items-center gap-2">
+              <Boxes className="h-5 w-5 text-gold-600 shrink-0" />
+              {t('section_inventory_stock')}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {t('subtitle_inventory_stock')}
+            </p>
+          </div>
 
-        <motion.div
-          variants={prefersReduced ? undefined : staggerContainer}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-        >
-          <StatCard
-            title={t('gold_stock_weight')}
-            value={formatWeight(totalGoldWeight)}
-            subtitle={language === 'ta' ? 'கடையிலுள்ள 22K/24K தங்கம்' : 'Total net 22K/24K gold in hand'}
-            icon={Coins}
-          />
-          <StatCard
-            title={t('silver_stock_weight')}
-            value={formatWeight(totalSilverWeight)}
-            subtitle={language === 'ta' ? 'கடையிலுள்ள வெள்ளி நகைகள்' : '925 sterling & fine silver'}
-            icon={Coins}
-          />
-          <StatCard
-            title={t('stock_valuation')}
-            value={formatCurrency(totalStockValue)}
-            subtitle={language === 'ta' ? 'கடை நகைகளின் அடக்க மதிப்பு' : 'Showroom stock retail valuation'}
-            icon={Boxes}
-          />
+          <motion.div
+            variants={prefersReduced ? undefined : staggerContainer}
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+          >
+            <StatCard
+              title={t('gold_stock_weight')}
+              value={formatWeight(totalGoldWeight)}
+              subtitle={language === 'ta' ? 'கடையிலுள்ள 22K/24K தங்கம்' : 'Total net 22K/24K gold in hand'}
+              icon={Coins}
+            />
+            <StatCard
+              title={t('silver_stock_weight')}
+              value={formatWeight(totalSilverWeight)}
+              subtitle={language === 'ta' ? 'கடையிலுள்ள வெள்ளி நகைகள்' : '925 sterling & fine silver'}
+              icon={Coins}
+            />
+            <StatCard
+              title={t('stock_valuation')}
+              value={formatCurrency(totalStockValue)}
+              subtitle={language === 'ta' ? 'கடை நகைகளின் அடக்க மதிப்பு' : 'Showroom stock retail valuation'}
+              icon={Boxes}
+            />
+          </motion.div>
         </motion.div>
-      </motion.div>
+      </ScrollReveal>
 
       {/* SECTION 4: MONTHLY & FINANCIAL OVERVIEW */}
-      <motion.div variants={prefersReduced ? undefined : staggerItem} className="space-y-3 pt-2">
-        <div className="border-b border-slate-200/80 pb-2 dark:border-charcoal-800">
-          <h3 className="font-serif text-lg font-bold text-charcoal-950 dark:text-slate-100 flex items-center gap-2">
-            <Receipt className="h-5 w-5 text-gold-600 shrink-0" />
-            {t('section_monthly_financial')}
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t('subtitle_monthly_financial')}
-          </p>
-        </div>
+      <ScrollReveal delay={0.06}>
+        <motion.div variants={prefersReduced ? undefined : staggerItem} className="space-y-3 pt-2">
+          <div className="border-b border-slate-200/80 pb-2 dark:border-charcoal-800">
+            <h3 className="font-serif text-lg font-bold text-charcoal-950 dark:text-slate-100 flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-gold-600 shrink-0" />
+              {t('section_monthly_financial')}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {t('subtitle_monthly_financial')}
+            </p>
+          </div>
 
-        <motion.div
-          variants={prefersReduced ? undefined : staggerContainer}
-          className="grid grid-cols-1 sm:grid-cols-2 gap-4"
-        >
-          <StatCard
-            title={t('total_expenses')}
-            value={formatCurrency(totalExpenses)}
-            subtitle={language === 'ta' ? 'வாடகை, மின்சாரம், கூலிச் செலவு' : 'Rent, electricity, labour, wages'}
-            icon={Receipt}
-          />
-          <StatCard
-            title={t('net_profit')}
-            value={formatCurrency(netProfit)}
-            subtitle={language === 'ta' ? 'செலவு போக நிகர லாபம்' : 'Gross profit minus shop expenses'}
-            icon={Sparkles}
-          />
+          <motion.div
+            variants={prefersReduced ? undefined : staggerContainer}
+            className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+          >
+            <StatCard
+              title={t('total_expenses')}
+              value={formatCurrency(totalExpenses)}
+              subtitle={language === 'ta' ? 'வாடகை, மின்சாரம், கூலிச் செலவு' : 'Rent, electricity, labour, wages'}
+              icon={Receipt}
+            />
+            <StatCard
+              title={t('net_profit')}
+              value={formatCurrency(netProfit)}
+              subtitle={language === 'ta' ? 'செலவு போக நிகர லாபம்' : 'Gross profit minus shop expenses'}
+              icon={Sparkles}
+            />
+          </motion.div>
         </motion.div>
-      </motion.div>
+      </ScrollReveal>
 
       {/* SECTION 5: ANALYTICS & CHARTS */}
-      <motion.div variants={prefersReduced ? undefined : staggerItem} className="space-y-3 pt-2">
-        <div className="border-b border-slate-200/80 pb-2 dark:border-charcoal-800">
-          <h3 className="font-serif text-lg font-bold text-charcoal-950 dark:text-slate-100 flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-gold-600 shrink-0" />
-            {t('section_analytics_charts')}
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t('subtitle_analytics_charts')}
-          </p>
-        </div>
+      <ScrollReveal delay={0.08}>
+        <motion.div variants={prefersReduced ? undefined : staggerItem} className="space-y-3 pt-2">
+          <div className="border-b border-slate-200/80 pb-2 dark:border-charcoal-800">
+            <h3 className="font-serif text-lg font-bold text-charcoal-950 dark:text-slate-100 flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-gold-600 shrink-0" />
+              {t('section_analytics_charts')}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {t('subtitle_analytics_charts')}
+            </p>
+          </div>
 
         {/* Dashboard Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -670,6 +675,7 @@ export const Dashboard: React.FC = () => {
           </motion.div>
         </ScrollReveal>
       </motion.div>
+      </ScrollReveal>
     </motion.div>
       )}
     </AnimatePresence>

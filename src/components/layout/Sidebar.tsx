@@ -178,22 +178,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                       key={item.path}
                       to={item.path}
                       onClick={onClose}
-                      className={`group relative flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                      className={`group relative flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-[color,background-color] duration-150 ${
                         isActive
                           ? 'text-charcoal-950 font-bold'
-                          : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-charcoal-800 dark:hover:text-slate-100'
+                          : 'text-slate-700 hover:bg-slate-900/[0.05] hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/[0.06] dark:hover:text-slate-100'
                       }`}
                     >
                       {/* Smooth animated active indicator sliding across menu items */}
                       {isActive && !prefersReduced && (
                         <motion.div
                           layoutId={isMobile ? 'mobile-sidebar-active-indicator' : 'sidebar-active-indicator'}
-                          className="absolute inset-0 rounded-lg bg-gold-500 shadow-gold"
-                          transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                          className="absolute inset-0 rounded-lg bg-gold-500 shadow-gold pointer-events-none"
+                          transition={{ type: 'spring', stiffness: 500, damping: 35 }}
                         />
                       )}
                       {isActive && prefersReduced && (
-                        <div className="absolute inset-0 rounded-lg bg-gold-500 shadow-gold" />
+                        <div className="absolute inset-0 rounded-lg bg-gold-500 shadow-gold pointer-events-none" />
                       )}
 
                       <motion.div

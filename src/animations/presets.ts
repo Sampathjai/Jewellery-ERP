@@ -30,11 +30,14 @@ export const buttonHoverPreset: { whileHover: TargetAndTransition; whileTap: Tar
 
 export const quickActionPreset: { whileHover: TargetAndTransition; whileTap: TargetAndTransition } = {
   whileHover: {
-    scale: 1.025,
-    transition: { type: 'spring', stiffness: 450, damping: 28 },
+    scale: 1.015,
+    y: -2,
+    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)',
+    transition: { duration: 0.18, ease: 'easeOut' },
   },
   whileTap: {
-    scale: 0.97,
+    scale: 0.98,
+    y: 0,
     transition: { duration: 0.08 },
   },
 };
