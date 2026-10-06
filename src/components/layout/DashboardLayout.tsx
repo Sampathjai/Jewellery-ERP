@@ -11,6 +11,9 @@ import { dataService } from '@/lib/dataService';
 import { detectBiometricCapability } from '@/lib/biometricAuth';
 import { Fingerprint, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { PageWrapper } from '@/components/common/PageWrapper';
+import { motion, AnimatePresence } from 'motion/react';
+import { fadeDown } from '@/animations/variants';
 
 export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
@@ -83,40 +86,50 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
         />
 
         <main className="flex-1 overflow-y-auto min-h-0 p-4 pb-20 sm:p-6 lg:pb-6 w-full max-w-7xl mx-auto">
-          {showBiometricBanner && (
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-gold-400/40 bg-gold-500/10 p-3.5 text-xs text-charcoal-950 dark:text-slate-100 shadow-sm backdrop-blur">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gold-500 text-charcoal-950 shrink-0 shadow-sm">
-                  <Fingerprint className="h-4 w-4" />
+          <AnimatePresence>
+            {showBiometricBanner && (
+              <motion.div
+                variants={fadeDown}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-gold-400/40 bg-gold-500/10 p-3.5 text-xs text-charcoal-950 dark:text-slate-100 shadow-sm backdrop-blur"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gold-500 text-charcoal-950 shrink-0 shadow-sm">
+                    <Fingerprint className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-charcoal-950 dark:text-slate-100">
+                      Enable Biometric & PIN Sign-In (Touch ID / Face ID / Windows Hello)
+                    </p>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                      Your device supports biometrics! Register this device to unlock Shankar Jewellery ERP using Touch ID, Face ID, or your 6-digit PIN.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-bold text-charcoal-950 dark:text-slate-100">
-                    Enable Biometric & PIN Sign-In (Touch ID / Face ID / Windows Hello)
-                  </p>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                    Your device supports biometrics! Register this device to unlock Shankar Jewellery ERP using Touch ID, Face ID, or your 6-digit PIN.
-                  </p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link
+                    to="/admin/user-login-settings"
+                    className="rounded-xl bg-gold-500 px-3.5 py-1.5 text-xs font-bold text-charcoal-950 hover:bg-gold-600 transition-colors shadow-sm"
+                  >
+                    Enable Biometrics & PIN
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleDismissBanner}
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 dark:hover:bg-charcoal-800 transition-colors"
+                    title="Dismiss"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Link
-                  to="/admin/user-login-settings"
-                  className="rounded-xl bg-gold-500 px-3.5 py-1.5 text-xs font-bold text-charcoal-950 hover:bg-gold-600 transition-colors shadow-sm"
-                >
-                  Enable Biometrics & PIN
-                </Link>
-                <button
-                  type="button"
-                  onClick={handleDismissBanner}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 dark:hover:bg-charcoal-800 transition-colors"
-                  title="Dismiss"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          )}
-          {children}
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <PageWrapper>
+            {children}
+          </PageWrapper>
         </main>
 
         <BottomNav onOpenSidebar={() => setSidebarOpen(true)} />

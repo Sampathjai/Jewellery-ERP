@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { UserProfile } from '@/types';
+
+const JewelleryRingCanvas = lazy(() => import('@/components/3d/JewelleryRingCanvas'));
 import {
   Lock,
   Mail,
@@ -306,7 +308,14 @@ export const Login: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 pt-2">
+            {/* 3D Luxury Jewellery Visual (Lazy loaded, zero impact on mobile) */}
+            <div className="rounded-2xl border border-gold-500/20 bg-charcoal-900/40 p-1 backdrop-blur-sm overflow-hidden">
+              <Suspense fallback={<div className="h-36 w-full animate-pulse bg-charcoal-800/40 rounded-xl" />}>
+                <JewelleryRingCanvas className="h-36 w-full" />
+              </Suspense>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 pt-1">
               <div className="rounded-2xl border border-gold-500/20 bg-charcoal-900/60 p-3 backdrop-blur-md">
                 <div className="flex items-center gap-2 text-gold-400 mb-1">
                   <TrendingUp className="h-4 w-4" />

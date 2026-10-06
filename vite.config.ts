@@ -26,8 +26,17 @@ export default defineConfig({
             if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('purify')) {
               return 'vendor-pdf';
             }
-            if (id.includes('@supabase')) {
-              return 'vendor-supabase';
+            if (id.includes('three') || id.includes('@react-three')) {
+              return 'vendor-three';
+            }
+            if (id.includes('motion')) {
+              return 'vendor-motion';
+            }
+            if (id.includes('gsap')) {
+              return 'vendor-gsap';
+            }
+            if (id.includes('lottie')) {
+              return 'vendor-lottie';
             }
           }
         },

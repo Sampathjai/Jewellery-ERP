@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
+import { DashboardSkeleton } from '@/components/common/SkeletonLoader';
 import { dataService } from '@/lib/dataService';
 import { syncEngine } from '@/lib/syncEngine';
 import { useLanguage } from '@/lib/i18n';
 import { formatCurrency, formatWeight } from '@/lib/utils';
+import { staggerContainer, staggerItem, fadeUp, fadeIn } from '@/animations/variants';
+import { quickActionPreset } from '@/animations/presets';
+import { useMotionSafe } from '@/animations/motionConfig';
 import {
   BarChart,
   Bar,
@@ -31,11 +36,13 @@ import {
   AlertTriangle,
   Coins,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
+  const { prefersReduced } = useMotionSafe();
 
   const [invoicesList, setInvoicesList] = useState<any[]>([]);
   const [productsList, setProductsList] = useState<any[]>([]);
@@ -46,9 +53,11 @@ export const Dashboard: React.FC = () => {
   const [wholesalePaymentsList, setWholesalePaymentsList] = useState<any[]>([]);
   const [retailPaymentsList, setRetailPaymentsList] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
 
   const loadDashboardData = useCallback(async () => {
     setIsLoading(true);
+    setHasError(false);
     try {
       const [cData, pData, rData, wData, eData, sData, wpData, rpData] = await Promise.all([
         dataService.getCustomers(),
@@ -70,6 +79,7 @@ export const Dashboard: React.FC = () => {
       setRetailPaymentsList(rpData);
     } catch (e) {
       console.error('Error loading live dashboard metrics:', e);
+      setHasError(true);
     } finally {
       setIsLoading(false);
     }
@@ -98,7 +108,7 @@ export const Dashboard: React.FC = () => {
     };
   }, [loadDashboardData]);
 
-  // Aggregate metrics from live Supabase data
+  // Aggregate metrics from live Supabase data (100% identical business logic)
   const todaySales = (invoicesList || [])
     .filter((i) => i.invoice_date === new Date().toISOString().split('T')[0])
     .reduce((sum, i) => sum + (i.total_amount || 0), 0);
@@ -132,7 +142,6 @@ export const Dashboard: React.FC = () => {
 
   const totalExpenses = (expensesList || []).reduce((sum, e) => sum + (e.amount || 0), 0);
 
-  // Compute real gross profit from actual database invoices and wholesale settlements
   const retailGrossProfit = (invoicesList || []).reduce((sum, inv) => {
     const invCost = (inv.items || []).reduce((iSum: number, item: any) => iSum + (item.metal_value || 0), 0);
     const profit = Math.max(0, (inv.total_amount || 0) - invCost);
@@ -140,11 +149,9 @@ export const Dashboard: React.FC = () => {
   }, 0);
 
   const wholesaleGrossProfit = (wholesaleSettlementsList || []).reduce((sum, s) => sum + (s.shop_profit_share || 0), 0);
-
   const grossProfit = retailGrossProfit + wholesaleGrossProfit;
   const netProfit = Math.max(0, grossProfit - totalExpenses);
 
-  // Compute actual pending retail payments from outstanding retail invoices
   const pendingRetailPayments = (invoicesList || [])
     .filter((i) => i.status !== 'cancelled' && i.status !== 'refunded' && i.payment_status !== 'paid')
     .reduce((sum, i) => {
@@ -159,7 +166,6 @@ export const Dashboard: React.FC = () => {
       return sum + Math.max(0, due);
     }, 0);
 
-  // Compute actual pending wholesale payments across consignment issues & settlements
   const issuesDues = (wholesaleIssuesList || [])
     .filter((i) => i.status !== 'cancelled' && i.status !== 'settled')
     .reduce((sum, issue) => {
@@ -186,11 +192,9 @@ export const Dashboard: React.FC = () => {
 
   const pendingWholesalePayments = issuesDues + settlementsDues;
 
-  // Dynamic Stock & Settlement Alerts from Database
   const lowStockProducts = (productsList || []).filter((p) => (p.quantity || 0) <= (p.minimum_stock || 5));
-  const overdueWholesaleIssues = (wholesaleIssuesList || []).filter(
-    (w) => w.status === 'active' && w.expected_return_date && new Date(w.expected_return_date) < new Date()
-  );
+  const overdueWholesaleIssues = (wholesaleIssuesList || [])
+    .filter((w) => w.status === 'active' && w.expected_return_date && new Date(w.expected_return_date) < new Date());
   const pendingWholesaleSettlements = (wholesaleSettlementsList || []).filter((s) => (s.balance_due || 0) > 0);
 
   // Dynamic Chart Data from DB
@@ -242,89 +246,102 @@ export const Dashboard: React.FC = () => {
 
   const COLORS = ['#d4af37', '#b8860b', '#f59e0b', '#3c3e4a'];
 
+  // Loading state
+  if (isLoading) {
+    return <DashboardSkeleton />;
+  }
+
+  // Error state
+  if (hasError) {
+    return (
+      <motion.div
+        variants={prefersReduced ? undefined : fadeIn}
+        initial={prefersReduced ? undefined : 'hidden'}
+        animate={prefersReduced ? undefined : 'visible'}
+        className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center px-4"
+      >
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
+          <AlertTriangle className="h-8 w-8" />
+        </div>
+        <div>
+          <h3 className="font-serif text-xl font-bold text-charcoal-900 dark:text-slate-100">
+            {language === 'ta' ? 'தரவுகளைப் பெற இயலவில்லை' : 'Could Not Load Dashboard Data'}
+          </h3>
+          <p className="mt-1 text-xs text-slate-500 max-w-sm">
+            {language === 'ta'
+              ? 'இணைய இணைப்பு அல்லது சேவையகத் தொடர்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.'
+              : 'Please check your connection and tap below to retry.'}
+          </p>
+        </div>
+        <button
+          onClick={loadDashboardData}
+          className="flex items-center gap-2 rounded-xl bg-gold-500 px-5 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 transition-all"
+        >
+          <RefreshCw className="h-4 w-4" />
+          {language === 'ta' ? 'மீண்டும் முயற்சி செய்' : 'Retry Loading'}
+        </button>
+      </motion.div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={t('dashboard')}
-        subtitle={language === 'ta' ? 'விற்பனை, நகை இருப்பு மற்றும் மொத்த வியாபார நிலவரங்கள்' : 'Live metrics for retail sales, goldsmith inventory, and wholesale credit consignment'}
-        actionBtn={
-          <button
-            onClick={() => navigate('/pos')}
-            className="flex items-center gap-2 rounded-xl bg-gold-500 px-4 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 transition-all"
-          >
-            <ShoppingCart className="h-4 w-4" />
-            {t('new_retail_bill')}
-          </button>
-        }
-      />
+    <motion.div
+      variants={prefersReduced ? undefined : staggerContainer}
+      initial={prefersReduced ? undefined : 'hidden'}
+      animate={prefersReduced ? undefined : 'visible'}
+      className="space-y-6"
+    >
+      <motion.div variants={prefersReduced ? undefined : staggerItem}>
+        <PageHeader
+          title={t('dashboard')}
+          subtitle={language === 'ta' ? 'விற்பனை, நகை இருப்பு மற்றும் மொத்த வியாபார நிலவரங்கள்' : 'Live metrics for retail sales, goldsmith inventory, and wholesale credit consignment'}
+          actionBtn={
+            <motion.button
+              onClick={() => navigate('/pos')}
+              {...(prefersReduced ? {} : quickActionPreset)}
+              className="flex items-center gap-2 rounded-xl bg-gold-500 px-4 py-2.5 text-xs font-bold text-charcoal-950 shadow-gold hover:bg-gold-600 transition-all"
+            >
+              <ShoppingCart className="h-4 w-4" />
+              {t('new_retail_bill')}
+            </motion.button>
+          }
+        />
+      </motion.div>
 
       {/* Quick Action Shortcuts */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm">
+      <motion.div
+        variants={prefersReduced ? undefined : staggerItem}
+        className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm"
+      >
         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 dark:text-slate-400">
           {t('quick_actions')}
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-          <button
-            onClick={() => navigate('/pos')}
-            className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-800 hover:border-gold-500 hover:bg-gold-50/50 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-200 transition-all shadow-sm"
-          >
-            <ShoppingCart className="h-4 w-4 text-gold-600 mb-1" />
-            {t('new_retail_bill')}
-          </button>
-          <button
-            onClick={() => navigate('/products/add')}
-            className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-800 hover:border-gold-500 hover:bg-gold-50/50 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-200 transition-all shadow-sm"
-          >
-            <Boxes className="h-4 w-4 text-gold-600 mb-1" />
-            {t('add_product')}
-          </button>
-          <button
-            onClick={() => navigate('/customers/add')}
-            className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-800 hover:border-gold-500 hover:bg-gold-50/50 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-200 transition-all shadow-sm"
-          >
-            <Users className="h-4 w-4 text-gold-600 mb-1" />
-            {t('add_customer')}
-          </button>
-          <button
-            onClick={() => navigate('/wholesale-issues/new')}
-            className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-800 hover:border-gold-500 hover:bg-gold-50/50 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-200 transition-all shadow-sm"
-          >
-            <HandCoins className="h-4 w-4 text-gold-600 mb-1" />
-            {t('new_wholesale_issue')}
-          </button>
-          <button
-            onClick={() => navigate('/wholesale-returns')}
-            className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-800 hover:border-gold-500 hover:bg-gold-50/50 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-200 transition-all shadow-sm"
-          >
-            <RotateCcw className="h-4 w-4 text-gold-600 mb-1" />
-            {t('receive_return')}
-          </button>
-          <button
-            onClick={() => navigate('/payments')}
-            className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-800 hover:border-gold-500 hover:bg-gold-50/50 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-200 transition-all shadow-sm"
-          >
-            <DollarSign className="h-4 w-4 text-gold-600 mb-1" />
-            {t('record_payment')}
-          </button>
-          <button
-            onClick={() => navigate('/expenses')}
-            className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-800 hover:border-gold-500 hover:bg-gold-50/50 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-200 transition-all shadow-sm"
-          >
-            <Receipt className="h-4 w-4 text-gold-600 mb-1" />
-            {t('add_expense')}
-          </button>
-          <button
-            onClick={() => navigate('/reports')}
-            className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-800 hover:border-gold-500 hover:bg-gold-50/50 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-200 transition-all shadow-sm"
-          >
-            <TrendingUp className="h-4 w-4 text-gold-600 mb-1" />
-            {t('reports_analytics')}
-          </button>
+          {[
+            { path: '/pos', icon: ShoppingCart, label: t('new_retail_bill') },
+            { path: '/products/add', icon: Boxes, label: t('add_product') },
+            { path: '/customers/add', icon: Users, label: t('add_customer') },
+            { path: '/wholesale-issues/new', icon: HandCoins, label: t('new_wholesale_issue') },
+            { path: '/wholesale-returns', icon: RotateCcw, label: t('receive_return') },
+            { path: '/payments', icon: DollarSign, label: t('record_payment') },
+            { path: '/expenses', icon: Receipt, label: t('add_expense') },
+            { path: '/reports', icon: TrendingUp, label: t('reports_analytics') },
+          ].map(({ path, icon: Icon, label }) => (
+            <motion.button
+              key={path}
+              onClick={() => navigate(path)}
+              {...(prefersReduced ? {} : quickActionPreset)}
+              className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-800 hover:border-gold-500 hover:bg-gold-50/50 dark:border-charcoal-800 dark:bg-charcoal-800 dark:text-slate-200 transition-all shadow-sm"
+            >
+              <Icon className="h-4 w-4 text-gold-600 mb-1" />
+              {label}
+            </motion.button>
+          ))}
         </div>
-      </div>
+      </motion.div>
 
       {/* SECTION 1: RETAIL SALES */}
-      <div className="space-y-3 pt-2">
+      <motion.div variants={prefersReduced ? undefined : staggerItem} className="space-y-3 pt-2">
         <div className="border-b border-slate-200/80 pb-2 dark:border-charcoal-800">
           <h3 className="font-serif text-lg font-bold text-charcoal-950 dark:text-slate-100 flex items-center gap-2">
             <ShoppingCart className="h-5 w-5 text-gold-600 shrink-0" />
@@ -335,7 +352,10 @@ export const Dashboard: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <motion.div
+          variants={prefersReduced ? undefined : staggerContainer}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+        >
           <StatCard
             title={t('today_retail_sales')}
             value={formatCurrency(todaySales)}
@@ -364,11 +384,11 @@ export const Dashboard: React.FC = () => {
             subtitle={language === 'ta' ? 'இந்த மாத மொத்த பில்கள்' : 'Total current month invoice value'}
             icon={TrendingUp}
           />
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* SECTION 2: WHOLESALE BUSINESS */}
-      <div className="space-y-3 pt-2">
+      <motion.div variants={prefersReduced ? undefined : staggerItem} className="space-y-3 pt-2">
         <div className="border-b border-slate-200/80 pb-2 dark:border-charcoal-800">
           <h3 className="font-serif text-lg font-bold text-charcoal-950 dark:text-slate-100 flex items-center gap-2">
             <HandCoins className="h-5 w-5 text-gold-600 shrink-0" />
@@ -379,7 +399,10 @@ export const Dashboard: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <motion.div
+          variants={prefersReduced ? undefined : staggerContainer}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+        >
           <StatCard
             title={t('pending_wholesale_payments')}
             value={formatCurrency(pendingWholesalePayments)}
@@ -413,11 +436,11 @@ export const Dashboard: React.FC = () => {
             subtitle={language === 'ta' ? 'வியாபாரிகளிடம் உள்ள மூக்குத்தி/தோடு' : 'Unsold nose rings/ear rings with partners'}
             icon={RotateCcw}
           />
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* SECTION 3: INVENTORY & STOCK */}
-      <div className="space-y-3 pt-2">
+      <motion.div variants={prefersReduced ? undefined : staggerItem} className="space-y-3 pt-2">
         <div className="border-b border-slate-200/80 pb-2 dark:border-charcoal-800">
           <h3 className="font-serif text-lg font-bold text-charcoal-950 dark:text-slate-100 flex items-center gap-2">
             <Boxes className="h-5 w-5 text-gold-600 shrink-0" />
@@ -428,7 +451,10 @@ export const Dashboard: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <motion.div
+          variants={prefersReduced ? undefined : staggerContainer}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+        >
           <StatCard
             title={t('gold_stock_weight')}
             value={formatWeight(totalGoldWeight)}
@@ -447,11 +473,11 @@ export const Dashboard: React.FC = () => {
             subtitle={language === 'ta' ? 'கடை நகைகளின் அடக்க மதிப்பு' : 'Showroom stock retail valuation'}
             icon={Boxes}
           />
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* SECTION 4: MONTHLY & FINANCIAL OVERVIEW */}
-      <div className="space-y-3 pt-2">
+      <motion.div variants={prefersReduced ? undefined : staggerItem} className="space-y-3 pt-2">
         <div className="border-b border-slate-200/80 pb-2 dark:border-charcoal-800">
           <h3 className="font-serif text-lg font-bold text-charcoal-950 dark:text-slate-100 flex items-center gap-2">
             <Receipt className="h-5 w-5 text-gold-600 shrink-0" />
@@ -462,7 +488,10 @@ export const Dashboard: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <motion.div
+          variants={prefersReduced ? undefined : staggerContainer}
+          className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+        >
           <StatCard
             title={t('total_expenses')}
             value={formatCurrency(totalExpenses)}
@@ -475,11 +504,11 @@ export const Dashboard: React.FC = () => {
             subtitle={language === 'ta' ? 'செலவு போக நிகர லாபம்' : 'Gross profit minus shop expenses'}
             icon={Sparkles}
           />
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* SECTION 5: ANALYTICS & CHARTS */}
-      <div className="space-y-3 pt-2">
+      <motion.div variants={prefersReduced ? undefined : staggerItem} className="space-y-3 pt-2">
         <div className="border-b border-slate-200/80 pb-2 dark:border-charcoal-800">
           <h3 className="font-serif text-lg font-bold text-charcoal-950 dark:text-slate-100 flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-gold-600 shrink-0" />
@@ -493,7 +522,10 @@ export const Dashboard: React.FC = () => {
         {/* Dashboard Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Daily Sales Revenue Chart */}
-          <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm">
+          <motion.div
+            variants={prefersReduced ? undefined : fadeUp}
+            className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm"
+          >
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-serif text-lg font-bold text-charcoal-900 dark:text-slate-100">
@@ -514,15 +546,34 @@ export const Dashboard: React.FC = () => {
                     formatter={(val: any) => formatCurrency(Number(val))}
                     contentStyle={{ backgroundColor: '#1e1f26', borderColor: '#d4af37', borderRadius: '12px', color: '#fff' }}
                   />
-                  <Bar dataKey="retail" fill="#d4af37" name={language === 'ta' ? 'சில்லறை விற்பனை' : 'Retail Shop'} radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="wholesale" fill="#3c3e4a" name={language === 'ta' ? 'மொத்த விற்பனை' : 'Wholesale Credit'} radius={[6, 6, 0, 0]} />
+                  <Bar
+                    dataKey="retail"
+                    fill="#d4af37"
+                    name={language === 'ta' ? 'சில்லறை விற்பனை' : 'Retail Shop'}
+                    radius={[6, 6, 0, 0]}
+                    isAnimationActive={!prefersReduced}
+                    animationDuration={650}
+                    animationEasing="ease-out"
+                  />
+                  <Bar
+                    dataKey="wholesale"
+                    fill="#3c3e4a"
+                    name={language === 'ta' ? 'மொத்த விற்பனை' : 'Wholesale Credit'}
+                    radius={[6, 6, 0, 0]}
+                    isAnimationActive={!prefersReduced}
+                    animationDuration={650}
+                    animationEasing="ease-out"
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </motion.div>
 
           {/* Category Distribution Pie */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm">
+          <motion.div
+            variants={prefersReduced ? undefined : fadeUp}
+            className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-charcoal-800 dark:bg-charcoal-900 shadow-sm"
+          >
             <h3 className="font-serif text-lg font-bold text-charcoal-900 dark:text-slate-100">
               {language === 'ta' ? 'நகை வகைப்பிரிவு (Category)' : 'Product Category Share'}
             </h3>
@@ -539,7 +590,18 @@ export const Dashboard: React.FC = () => {
                 <div className="h-56 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={categoryDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={4} dataKey="value">
+                      <Pie
+                        data={categoryDistribution}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={75}
+                        paddingAngle={4}
+                        dataKey="value"
+                        isAnimationActive={!prefersReduced}
+                        animationDuration={650}
+                        animationEasing="ease-out"
+                      >
                         {categoryDistribution.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
@@ -562,11 +624,14 @@ export const Dashboard: React.FC = () => {
                 </div>
               </>
             )}
-          </div>
+          </motion.div>
         </div>
 
         {/* Dynamic Business Alerts Banner */}
-        <div className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 dark:border-gold-800/60 dark:bg-gold-950/20">
+        <motion.div
+          variants={prefersReduced ? undefined : fadeUp}
+          className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 dark:border-gold-800/60 dark:bg-gold-950/20"
+        >
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-gold-400 shrink-0 mt-0.5" />
             <div className="flex-1">
@@ -595,10 +660,8 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+        </motion.div>
+      </motion.div>
+    </motion.div>
   );
 };
-
-

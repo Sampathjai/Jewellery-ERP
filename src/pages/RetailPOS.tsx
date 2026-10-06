@@ -7,9 +7,13 @@ import { syncEngine } from '@/lib/syncEngine';
 import { Product, Customer, RetailInvoiceItem, RetailInvoice, BusinessSettings, MetalRate } from '@/types';
 import { formatCurrency, formatWeight } from '@/lib/utils';
 import { ShoppingCart, Search, Plus, Minus, Trash2, Printer, Barcode, UserCheck, Percent, Sliders, ShieldCheck, CheckCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useMotionSafe } from '@/animations/motionConfig';
+import { fadeDown } from '@/animations/variants';
 
 export const RetailPOS: React.FC = () => {
   const navigate = useNavigate();
+  const { prefersReduced } = useMotionSafe();
   const [customersList, setCustomersList] = useState<Customer[]>([]);
   const [productsList, setProductsList] = useState<Product[]>([]);
   const [settings, setSettings] = useState<BusinessSettings | null>(null);
@@ -327,11 +331,19 @@ export const RetailPOS: React.FC = () => {
         }
       />
 
-      {stockError && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-900 shadow-md dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300 flex items-center gap-2">
-          <span>⚠️</span> {stockError}
-        </div>
-      )}
+      <AnimatePresence>
+        {stockError && (
+          <motion.div
+            variants={prefersReduced ? undefined : fadeDown}
+            initial={prefersReduced ? undefined : 'hidden'}
+            animate={prefersReduced ? undefined : 'visible'}
+            exit={prefersReduced ? undefined : 'exit'}
+            className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-900 shadow-md dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300 flex items-center gap-2"
+          >
+            <span>⚠️</span> {stockError}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-w-0">
         {/* Left 7 Cols: Product Selector & Customer Select */}
@@ -517,56 +529,62 @@ export const RetailPOS: React.FC = () => {
                     <span>Cart is empty. Select products to add.</span>
                   </div>
                 ) : (
-                  cartItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between rounded-xl border border-slate-100 p-2.5 text-xs dark:border-charcoal-800 dark:bg-charcoal-800/40 min-w-0 gap-2"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <h5 className="font-bold text-charcoal-900 dark:text-slate-100 truncate">{item.product_name_snapshot}</h5>
-                        <p className="text-[10px] text-slate-500 truncate">
-                          {formatWeight(item.net_weight_g)} @ ₹{item.metal_rate_snapshot}/g
-                        </p>
-                      </div>
+                  <AnimatePresence>
+                    {cartItems.map((item) => (
+                      <motion.div
+                        key={item.id}
+                        initial={prefersReduced ? false : { opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={prefersReduced ? undefined : { opacity: 0, x: -12 }}
+                        transition={{ duration: 0.18 }}
+                        className="flex items-center justify-between rounded-xl border border-slate-100 p-2.5 text-xs dark:border-charcoal-800 dark:bg-charcoal-800/40 min-w-0 gap-2"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <h5 className="font-bold text-charcoal-900 dark:text-slate-100 truncate">{item.product_name_snapshot}</h5>
+                          <p className="text-[10px] text-slate-500 truncate">
+                            {formatWeight(item.net_weight_g)} @ ₹{item.metal_rate_snapshot}/g
+                          </p>
+                        </div>
 
-                      {/* Quantity Add / Minus Controls */}
-                      <div className="flex items-center gap-1 bg-slate-100 dark:bg-charcoal-800 rounded-lg p-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQuantity(item.id, -1)}
-                          className="rounded p-0.5 hover:bg-slate-200 dark:hover:bg-charcoal-700 text-slate-600 dark:text-slate-300 transition-colors"
-                          title="Decrease Quantity (-)"
-                        >
-                          <Minus className="h-3 w-3" />
-                        </button>
-                        <span className="px-1.5 font-bold font-mono text-xs text-charcoal-900 dark:text-slate-100 min-w-[18px] text-center">
-                          {item.quantity}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQuantity(item.id, 1)}
-                          className="rounded p-0.5 hover:bg-slate-200 dark:hover:bg-charcoal-700 text-slate-600 dark:text-slate-300 transition-colors"
-                          title="Increase Quantity (+)"
-                        >
-                          <Plus className="h-3 w-3" />
-                        </button>
-                      </div>
+                        {/* Quantity Add / Minus Controls */}
+                        <div className="flex items-center gap-1 bg-slate-100 dark:bg-charcoal-800 rounded-lg p-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQuantity(item.id, -1)}
+                            className="rounded p-0.5 hover:bg-slate-200 dark:hover:bg-charcoal-700 text-slate-600 dark:text-slate-300 transition-colors"
+                            title="Decrease Quantity (-)"
+                          >
+                            <Minus className="h-3 w-3" />
+                          </button>
+                          <span className="px-1.5 font-bold font-mono text-xs text-charcoal-900 dark:text-slate-100 min-w-[18px] text-center">
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQuantity(item.id, 1)}
+                            className="rounded p-0.5 hover:bg-slate-200 dark:hover:bg-charcoal-700 text-slate-600 dark:text-slate-300 transition-colors"
+                            title="Increase Quantity (+)"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <strong className="font-serif text-xs text-amber-900 dark:text-gold-300">
-                          {formatCurrency(item.line_total)}
-                        </strong>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFromCart(item.id)}
-                          className="text-red-500 hover:text-red-700 p-1 transition-colors"
-                          title="Remove Item"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                        <div className="flex items-center gap-2 shrink-0">
+                          <strong className="font-serif text-xs text-amber-900 dark:text-gold-300">
+                            {formatCurrency(item.line_total)}
+                          </strong>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFromCart(item.id)}
+                            className="text-red-500 hover:text-red-700 p-1 transition-colors"
+                            title="Remove Item"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 )}
               </div>
             </div>
