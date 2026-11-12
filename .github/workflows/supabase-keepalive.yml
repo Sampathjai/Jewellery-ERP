@@ -19,17 +19,17 @@ jobs:
     steps:
       - name: Send Keep-Alive Ping
         env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
         run: |
           # 1. Validate required configuration
           if [ -z "${SUPABASE_URL}" ]; then
-            echo "::error::Missing repository variable 'SUPABASE_URL'. Please configure it under Settings > Secrets and variables > Actions > Variables."
+            echo "::error::Missing 'SUPABASE_URL'. Please configure it under Settings > Secrets and variables > Actions (under either Variables or Secrets)."
             exit 1
           fi
 
           if [ -z "${SUPABASE_ANON_KEY}" ]; then
-            echo "::error::Missing repository secret 'SUPABASE_ANON_KEY'. Please configure it under Settings > Secrets and variables > Actions > Secrets."
+            echo "::error::Missing 'SUPABASE_ANON_KEY'. Please configure it under Settings > Secrets and variables > Actions > Secrets."
             exit 1
           fi
 
