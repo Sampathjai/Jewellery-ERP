@@ -1,0 +1,88 @@
+name: Supabase Keep-Alive
+
+'on':
+  schedule:
+    # Runs 3 times daily at 06:30, 14:30, and 22:30 IST (India Standard Time = UTC+5:30)
+    # 06:30 IST = 01:00 UTC
+    # 14:30 IST = 09:00 UTC
+    # 22:30 IST = 17:00 UTC
+    - cron: '0 1,9,17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping-supabase:
+    name: Ping Supabase Database
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Keep-Alive Ping
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          # 1. Validate required configuration
+          if [ -z "${SUPABASE_URL}" ]; then
+            echo "::error::Missing repository variable 'SUPABASE_URL'. Please configure it under Settings > Secrets and variables > Actions > Variables."
+            exit 1
+          fi
+
+          if [ -z "${SUPABASE_ANON_KEY}" ]; then
+            echo "::error::Missing repository secret 'SUPABASE_ANON_KEY'. Please configure it under Settings > Secrets and variables > Actions > Secrets."
+            exit 1
+          fi
+
+          # Strip any trailing slashes from the URL
+          BASE_URL="${SUPABASE_URL%/}"
+          ENDPOINT="${BASE_URL}/rest/v1/business_settings?select=id&limit=1"
+
+          echo "Initiating Supabase keep-alive ping..."
+          echo "Target table: business_settings (read-only select=id&limit=1)"
+
+          MAX_RETRIES=3
+          RETRY_DELAY=5
+          SUCCESS=false
+
+          for attempt in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $attempt of $MAX_RETRIES..."
+
+            # Perform lightweight read-only request using anon/public key only
+            HTTP_RESPONSE=$(curl -sS \
+              --max-time 30 \
+              --retry 2 \
+              --retry-delay 3 \
+              --retry-connrefused \
+              -w "\n%{http_code}" \
+              -H "apikey: ${SUPABASE_ANON_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+              -H "Accept: application/json" \
+              "${ENDPOINT}" 2>&1) || CURL_EXIT=$?
+
+            CURL_EXIT=${CURL_EXIT:-0}
+
+            if [ $CURL_EXIT -eq 0 ]; then
+              HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n1)
+              HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+
+              if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+                echo "Keep-alive ping succeeded with HTTP ${HTTP_STATUS}."
+                SUCCESS=true
+                break
+              else
+                echo "::warning::Attempt $attempt received HTTP status ${HTTP_STATUS}. Response: ${HTTP_BODY}"
+              fi
+            else
+              echo "::warning::Attempt $attempt failed with curl error code ${CURL_EXIT}. Output: ${HTTP_RESPONSE}"
+            fi
+
+            if [ $attempt -lt $MAX_RETRIES ]; then
+              echo "Retrying in ${RETRY_DELAY} seconds..."
+              sleep $RETRY_DELAY
+            fi
+          done
+
+          if [ "$SUCCESS" != "true" ]; then
+            echo "::error::Supabase keep-alive failed after ${MAX_RETRIES} attempts. Check Supabase project status and credentials."
+            exit 1
+          fi
